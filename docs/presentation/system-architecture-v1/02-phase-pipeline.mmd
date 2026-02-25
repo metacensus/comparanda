@@ -1,0 +1,246 @@
+%%{ init: { 'theme': 'base', 'themeVariables': { 'fontSize': '14px', 'fontFamily': 'Helvetica' }, 'flowchart': { 'nodeSpacing': 25, 'rankSpacing': 40, 'curve': 'basis' } } }%%
+graph TD
+
+    %% ==========================================================
+    %% PHASE 0 — Domain Onboarding
+    %% ==========================================================
+    subgraph P0["PHASE 0 — Domain Onboarding"]
+        Questionnaire(["Questionnaire Doc"])
+        DeepResearch(["Deep Research Doc<br/>(MVP: manually triggered)"])
+        DomainCtx[/"Domain Context Package"/]
+
+        Questionnaire --> DomainCtx
+        DeepResearch --> DomainCtx
+    end
+
+    %% ==========================================================
+    %% PHASE 0.5 — Survey Schema Generation
+    %% ==========================================================
+    subgraph P05["PHASE 0.5 — Survey Schema Generation"]
+        UniversalFields["Universal Schema Fields<br/>(hardcoded)"]
+        SchemaGen["Schema Generator Agent"]
+        SurveySchema[/"survey_schema.json"/]
+
+        UniversalFields --> SchemaGen
+        SchemaGen --> SurveySchema
+    end
+
+    DomainCtx --> SchemaGen
+
+    %% ==========================================================
+    %% PHASE 1 — Paper Survey
+    %% ==========================================================
+    subgraph P1["PHASE 1 — Paper Survey"]
+        AllPapers(["All Papers — PDFs"])
+        SurveyAgents["Survey Agents<br/>(1 Haiku agent per paper)"]
+        SurveyOutputs[/"Survey Outputs<br/>(1 per paper)"/]
+        Synthesizer["Synthesis Agent"]
+        TestSubset[/"Test Subset<br/>(5-8 diverse papers)"/]
+
+        AllPapers --> SurveyAgents
+        SurveyAgents --> SurveyOutputs
+        SurveyOutputs --> Synthesizer
+        Synthesizer --> TestSubset
+    end
+
+    SurveySchema --> SurveyAgents
+
+    %% ==========================================================
+    %% CORE LOOP — Phases 2, 3, 4
+    %% ==========================================================
+    subgraph CoreLoop["CORE LOOP — Phases 2-4: Schema Discovery + Extraction"]
+
+        %% ---- Phase 2 — Schema Proposal ----
+        subgraph P2["PHASE 2 — Schema Proposal"]
+            SchemaProposer["Schema Proposer Agent"]
+            ProposedSchema[/"Proposed Schema<br/>(universal + domain fields,<br/>identity dimensions,<br/>normalization needs)"/]
+
+            SchemaProposer --> ProposedSchema
+        end
+
+        %% ---- Phase 3 — Extraction + MA Readiness ----
+        subgraph P3["PHASE 3 — Extraction + MA Readiness"]
+            subgraph ExtPool["Extraction Agents (1 per paper)"]
+                direction LR
+                EA1["Agent<br/>Paper 1"]
+                EA2["Agent<br/>Paper 2"]
+                EAN["Agent<br/>Paper N"]
+                EA1 ~~~ EA2 ~~~ EAN
+            end
+            RawRows[/"Raw Rows"/]
+            NormAgent["Normalization Agent"]
+            NormRows[/"Normalized Rows"/]
+            NormTables[/"Normalization Tables<br/>(agent-built)"/]
+            MAAgent["META-ANALYSIS<br/>READINESS AGENT"]
+            MAFeedback[/"MA Readiness Feedback<br/>(inclusion/exclusion, effect sizes,<br/>missing data, cross-paper pooling)"/]
+
+            ExtPool --> RawRows
+            RawRows --> NormAgent
+            NormAgent --> NormRows
+            NormAgent --> NormTables
+            NormRows --> MAAgent
+            MAAgent --> MAFeedback
+        end
+
+        %% ---- Phase 4 — Schema Refinement ----
+        subgraph P4["PHASE 4 — Schema Refinement (C16: only place schema changes)"]
+            EvalMetrics["Evaluation Metrics<br/>(deterministic)"]
+            S2Instr["System 2:<br/>instruction file changes"]
+            GapAnalysis["Gap Analysis Agent"]
+            RefinedSchema[/"Refined Schema"/]
+
+            EvalMetrics --> GapAnalysis
+            S2Instr -.-> GapAnalysis
+            GapAnalysis --> RefinedSchema
+        end
+
+        %% Connections within the core loop across phases
+        ProposedSchema --> ExtPool
+        NormRows --> EvalMetrics
+        MAFeedback --> GapAnalysis
+    end
+
+    %% Feed Phase 1 outputs into the core loop
+    SurveyOutputs --> SchemaProposer
+    DomainCtx -.-> SchemaProposer
+    TestSubset --> ExtPool
+
+    %% ==========================================================
+    %% CORE LOOP ACCEPTANCE — controls iteration
+    %% ==========================================================
+    AcceptCheck{"Schema converged?<br/>(less than 1% composite gain<br/>over 3 iterations)"}
+    RefinedSchema --> AcceptCheck
+    AcceptCheck -->|"NO: refine + re-extract"| ExtPool
+
+    %% ==========================================================
+    %% PHASE 5 — Progressive Expansion
+    %% ==========================================================
+    subgraph P5["PHASE 5 — Progressive Expansion"]
+        AllDoneCheck{"All papers<br/>processed?"}
+        ExpandBatch["Add next batch<br/>to working set"]
+        OverfitNote["System 2 monitors for<br/>metric regression on<br/>new papers (overfitting)"]
+
+        AllDoneCheck -->|"NO: expand"| ExpandBatch
+        ExpandBatch -.- OverfitNote
+    end
+
+    AcceptCheck -->|"YES: schema stable"| AllDoneCheck
+    ExpandBatch --> ExtPool
+
+    %% ==========================================================
+    %% PHASE 6 — Final Convergence
+    %% ==========================================================
+    subgraph P6["PHASE 6 — Final Convergence"]
+        FinalMA["MA Readiness Agent<br/>(final run, full dataset)"]
+        FinalCheck{"Meta-analysis<br/>ready?"}
+
+        FinalMA --> FinalCheck
+    end
+
+    AllDoneCheck -->|"YES: all papers done"| FinalMA
+    FinalCheck -->|"NO: gaps remain"| GapAnalysis
+
+    %% ==========================================================
+    %% OUTPUTS
+    %% ==========================================================
+    subgraph Outputs["OUTPUTS"]
+        FinalSchema[/"Final Schema"/]
+        FinalAtomicRows[/"Atomic Rows<br/>(structured data)"/]
+        FinalNormTables[/"Normalization Tables<br/>(synonym mappings)"/]
+    end
+
+    FinalCheck -->|"YES"| FinalSchema
+    FinalCheck -->|"YES"| FinalAtomicRows
+    FinalCheck -->|"YES"| FinalNormTables
+
+    %% ==========================================================
+    %% LEGEND
+    %% ==========================================================
+    subgraph Legend["LEGEND"]
+        direction LR
+        L1(["Human Input"])
+        L2["Static Input"]
+        L3["Agent"]
+        L4[/"Artifact"/]
+        L5["Deterministic"]
+        L6{"Decision"}
+        L7["System 2"]
+        L8["MA Readiness Agent"]
+        L1 ~~~ L2 ~~~ L3 ~~~ L4 ~~~ L5 ~~~ L6 ~~~ L7 ~~~ L8
+    end
+
+    FinalNormTables ~~~ Legend
+
+    %% ==========================================================
+    %% CLASS DEFINITIONS
+    %% ==========================================================
+    classDef input fill:#4A90D9,stroke:#2C5F8A,color:#fff,stroke-width:2px
+    classDef static fill:#5BC0DE,stroke:#31A2C3,color:#fff,stroke-width:2px
+    classDef agent fill:#2EAD6B,stroke:#1C7A48,color:#fff,stroke-width:2px
+    classDef artifact fill:#1B8A5A,stroke:#0E6B43,color:#fff,stroke-width:2px
+    classDef deterministic fill:#8FBC8F,stroke:#5F8A5F,color:#1a1a1a,stroke-width:2px,stroke-dasharray:4 2
+    classDef decision fill:#D4740E,stroke:#A35A0B,color:#fff,stroke-width:2px
+    classDef s2ref fill:#E8873D,stroke:#B5652A,color:#fff,stroke-width:2px
+    classDef output fill:#7B68C4,stroke:#54478C,color:#fff,stroke-width:2px
+    classDef maAgent fill:#1A7A4A,stroke:#0E5533,color:#fff,stroke-width:3px
+    classDef expansion fill:#F0AD4E,stroke:#D4940E,color:#1a1a1a,stroke-width:2px
+    classDef annotation fill:#FFF8E1,stroke:#D4740E,color:#333,stroke-width:1px,stroke-dasharray:5 5
+
+    %% Apply — Human inputs
+    class Questionnaire,DeepResearch,AllPapers input
+    class L1 input
+
+    %% Apply — Static inputs
+    class UniversalFields static
+    class L2 static
+
+    %% Apply — Agents
+    class SchemaGen,SchemaProposer,GapAnalysis,Synthesizer,NormAgent,SurveyAgents,EA1,EA2,EAN,FinalMA agent
+    class L3 agent
+
+    %% Apply — MA Agent (visually prominent)
+    class MAAgent maAgent
+    class L8 maAgent
+
+    %% Apply — Artifacts
+    class DomainCtx,SurveySchema,SurveyOutputs,TestSubset artifact
+    class ProposedSchema,RefinedSchema artifact
+    class RawRows,NormRows,NormTables,MAFeedback artifact
+    class L4 artifact
+
+    %% Apply — Deterministic
+    class EvalMetrics deterministic
+    class L5 deterministic
+
+    %% Apply — Decisions
+    class AcceptCheck,AllDoneCheck,FinalCheck decision
+    class L6 decision
+
+    %% Apply — System 2
+    class S2Instr s2ref
+    class L7 s2ref
+
+    %% Apply — Expansion
+    class ExpandBatch expansion
+
+    %% Apply — Annotations
+    class OverfitNote annotation
+
+    %% Apply — Outputs
+    class FinalSchema,FinalAtomicRows,FinalNormTables output
+
+    %% ==========================================================
+    %% SUBGRAPH STYLES
+    %% ==========================================================
+    style P0 fill:#E3F2FD,stroke:#4A90D9,stroke-width:2px,color:#2C5F8A
+    style P05 fill:#E0F7FA,stroke:#5BC0DE,stroke-width:2px,color:#31A2C3
+    style P1 fill:#E3F2FD,stroke:#4A90D9,stroke-width:2px,color:#2C5F8A
+    style CoreLoop fill:#D4EDDA,stroke:#28A745,stroke-width:3px,color:#1C7A48
+    style P2 fill:#E8F5E9,stroke:#2EAD6B,stroke-width:2px,color:#1C7A48
+    style P3 fill:#E8F5E9,stroke:#2EAD6B,stroke-width:2px,color:#1C7A48
+    style P4 fill:#FFF3E0,stroke:#E8873D,stroke-width:2px,color:#B5652A
+    style P5 fill:#FFF8E1,stroke:#F0AD4E,stroke-width:2px,color:#8B6914
+    style P6 fill:#F3E5F5,stroke:#7B68C4,stroke-width:2px,color:#54478C
+    style Outputs fill:#EDE7F6,stroke:#7B68C4,stroke-width:3px,color:#54478C
+    style ExtPool fill:#C8E6C9,stroke:#2EAD6B,stroke-width:2px,stroke-dasharray:4 2,color:#1C7A48
+    style Legend fill:#F5F5F5,stroke:#AAAAAA,stroke-width:1px,color:#333333

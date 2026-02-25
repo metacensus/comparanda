@@ -1,0 +1,127 @@
+%%{ init: { 'theme': 'base', 'themeVariables': { 'fontSize': '16px', 'fontFamily': 'Helvetica' } } }%%
+graph TD
+
+    %% -------------------------------------------------------
+    %% INPUTS
+    %% -------------------------------------------------------
+    Papers(["Scientific Papers (PDFs)"])
+    Domain(["Domain Context<br/>(questionnaire + deep research)"])
+
+    %% -------------------------------------------------------
+    %% SYSTEM 1 — Inner Loop (left/top peer)
+    %% -------------------------------------------------------
+    subgraph S1["SYSTEM 1 — Do the Work"]
+        direction LR
+
+        Survey["Survey<br/>All Papers"]
+
+        subgraph InnerLoop["Refinement Loop"]
+            direction TB
+            Propose["Propose<br/>Schema"]
+            Extract["Extract Data<br/>(subset)"]
+            Refine["Refine<br/>Schema"]
+
+            Propose --> Extract --> Refine
+            Refine -->|iterate| Propose
+        end
+
+        FullExtract["Full<br/>Extraction"]
+
+        Survey --> Propose
+        Refine -->|stable| FullExtract
+    end
+
+    %% -------------------------------------------------------
+    %% SHARED ARTIFACT — Instruction Files
+    %% -------------------------------------------------------
+    InstrFiles[/"Instruction Files<br/>(versioned markdown)"/]
+
+    %% -------------------------------------------------------
+    %% SYSTEM 2 — Outer Loop (right/bottom peer)
+    %% -------------------------------------------------------
+    subgraph S2["SYSTEM 2 — Improve the Work"]
+        direction LR
+
+        Observe["Observe"]
+        Evaluate["Evaluate<br/>vs. Benchmark"]
+        ModifyInstr["Modify<br/>Instructions"]
+        Converge{"Converged?"}
+
+        Observe --> Evaluate --> ModifyInstr --> Converge
+    end
+
+    %% -------------------------------------------------------
+    %% OUTPUTS
+    %% -------------------------------------------------------
+    Schema[/"Schema<br/>(discovered, not predefined)"/]
+    Rows[/"Atomic Rows<br/>(structured data)"/]
+    Norms[/"Normalization Tables<br/>(synonym mappings)"/]
+    Done(["Done"])
+
+    %% -------------------------------------------------------
+    %% CONNECTIONS — Inputs to System 1
+    %% -------------------------------------------------------
+    Papers --> Survey
+    Domain --> Survey
+
+    %% -------------------------------------------------------
+    %% CONNECTIONS — System 1 reads Instruction Files
+    %% -------------------------------------------------------
+    InstrFiles -.-> Survey
+    InstrFiles -.-> Propose
+    InstrFiles -.-> Extract
+    InstrFiles -.-> Refine
+    InstrFiles -.-> FullExtract
+
+    %% -------------------------------------------------------
+    %% CONNECTIONS — System 1 feeds System 2
+    %% -------------------------------------------------------
+    FullExtract -. "traces + metrics +<br/>meta-commentary" .-> Observe
+
+    %% -------------------------------------------------------
+    %% CONNECTIONS — System 2 writes Instruction Files
+    %% -------------------------------------------------------
+    ModifyInstr -. "updated<br/>instruction files" .-> InstrFiles
+
+    %% -------------------------------------------------------
+    %% CONNECTIONS — Convergence feedback and exit
+    %% -------------------------------------------------------
+    Converge -->|"no: next iteration"| Survey
+    Converge -. "yes" .-> Done
+
+    %% -------------------------------------------------------
+    %% CONNECTIONS — System 1 to Outputs
+    %% -------------------------------------------------------
+    FullExtract --> Schema
+    FullExtract --> Rows
+    FullExtract --> Norms
+
+    %% -------------------------------------------------------
+    %% CONNECTIONS — Outputs feed System 2 evaluation
+    %% -------------------------------------------------------
+    Schema -.-> Evaluate
+    Rows -.-> Evaluate
+    Norms -.-> Evaluate
+
+    %% -------------------------------------------------------
+    %% STYLES
+    %% -------------------------------------------------------
+    classDef input fill:#4A90D9,stroke:#2C5F8A,color:#fff,stroke-width:2px
+    classDef s1node fill:#2EAD6B,stroke:#1C7A48,color:#fff,stroke-width:2px
+    classDef s2node fill:#E8873D,stroke:#B5652A,color:#fff,stroke-width:2px
+    classDef output fill:#7B68C4,stroke:#54478C,color:#fff,stroke-width:2px
+    classDef decision fill:#D4740E,stroke:#A35A0B,color:#fff,stroke-width:2px
+    classDef shared fill:#D4A017,stroke:#A07D12,color:#fff,stroke-width:3px
+    classDef doneNode fill:#7B68C4,stroke:#54478C,color:#fff,stroke-width:2px
+
+    class Papers,Domain input
+    class Survey,Propose,Extract,Refine,FullExtract s1node
+    class Observe,Evaluate,ModifyInstr s2node
+    class Converge decision
+    class Schema,Rows,Norms output
+    class InstrFiles shared
+    class Done doneNode
+
+    style S1 fill:#E8F5E9,stroke:#2EAD6B,stroke-width:3px,color:#1C7A48
+    style S2 fill:#FFF3E0,stroke:#E8873D,stroke-width:3px,color:#B5652A
+    style InnerLoop fill:#D4EDDA,stroke:#28A745,stroke-width:2px,stroke-dasharray:5 5,color:#1C7A48

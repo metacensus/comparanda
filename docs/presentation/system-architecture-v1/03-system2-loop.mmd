@@ -1,0 +1,160 @@
+%%{ init: { 'theme': 'base', 'themeVariables': { 'fontSize': '16px', 'fontFamily': 'Helvetica' } } }%%
+graph TD
+
+    %% ==========================================================
+    %% HUMAN OBSERVER — top of diagram
+    %% ==========================================================
+    Human(["Human Observer<br/>(log-first, gate-optional)"])
+
+    %% ==========================================================
+    %% SYSTEM 1 — Simplified reference box
+    %% ==========================================================
+    subgraph S1ref["SYSTEM 1 — Inner Loop (does the work)"]
+        direction LR
+        S1Survey["Survey"] --> S1Schema["Schema<br/>Dev"] --> S1Extract["Extract"] --> S1Validate["Validate"]
+    end
+
+    %% ==========================================================
+    %% INSTRUCTION FILES — the interface
+    %% ==========================================================
+    subgraph InstrFiles["INSTRUCTION FILES (the interface)"]
+        direction LR
+        ISurvey[/"Survey<br/>Instructions"/]
+        ISchema[/"Schema Proposer<br/>Instructions"/]
+        IExtract[/"Extraction<br/>Instructions"/]
+        INorm[/"Normalization<br/>Instructions"/]
+        IValid[/"Validation<br/>Rules"/]
+    end
+
+    %% System 1 reads instruction files
+    InstrFiles ==>|"System 1 READS"| S1ref
+
+    %% ==========================================================
+    %% SYSTEM 2 — The 6-step cycle
+    %% ==========================================================
+    subgraph S2["SYSTEM 2 — Outer Loop (improves how the work is done)"]
+
+        Observe["1. OBSERVE<br/>workflow traces, agent<br/>meta-commentary, eval metrics"]
+
+        Evaluate["2. EVALUATE vs Benchmark<br/>schema quality P/R | extraction F1<br/>composite: schema 40% + extraction 60%"]
+
+        Diagnose["3. DIAGNOSE<br/>lowest-accuracy fields | hardest papers<br/>error types: omission, hallucination, wrong value<br/>schema convergence: rate of change, entropy"]
+
+        Propose["4. PROPOSE Changes<br/>generate instruction file diffs<br/>each change tied to diagnosis rationale"]
+
+        ApplyLog["5. APPLY & LOG<br/>apply diffs | log iteration # + metrics<br/>snapshot current state"]
+
+        ConvergeCheck{"6. CONVERGED?"}
+
+        %% The cycle
+        Observe --> Evaluate --> Diagnose --> Propose --> ApplyLog --> ConvergeCheck
+    end
+
+    %% ==========================================================
+    %% CONNECTIONS — System 1 outputs feed System 2
+    %% ==========================================================
+    S1Validate -. "traces + commentary<br/>+ metrics" .-> Observe
+
+    %% ==========================================================
+    %% CONNECTIONS — System 2 writes instruction files
+    %% ==========================================================
+    ApplyLog ==>|"System 2 WRITES<br/>updated instructions"| InstrFiles
+
+    %% ==========================================================
+    %% CONVERGENCE OUTCOMES
+    %% ==========================================================
+    ConvergeCheck -->|"NO"| NextIter["Next Iteration<br/>re-run System 1"]
+    ConvergeCheck -. "YES" .-> Complete(["Done"])
+
+    NextIter --> S1ref
+
+    %% ==========================================================
+    %% STOPPING RULES
+    %% ==========================================================
+    StopRules["Stopping Rules<br/>< 1% improvement over 3 iterations<br/>hard cap: 10 iterations<br/>overfitting: metrics drop on new papers"]
+    ConvergeCheck -.- StopRules
+
+    %% ==========================================================
+    %% ITERATION HISTORY
+    %% ==========================================================
+    subgraph History["Iteration History (accumulates)"]
+        direction LR
+        H1["Iter 1"] ~~~ H2["Iter 2"] ~~~ H3["Iter 3"] ~~~ Hn["...N"]
+    end
+
+    ApplyLog -. "log" .-> History
+
+    %% ==========================================================
+    %% DISPUTED VALUES — feeds back
+    %% ==========================================================
+    Disputed["Disputed Values Log<br/>(system consistently disagrees<br/>with gold standard)"]
+    Evaluate -.- Disputed
+
+    %% ==========================================================
+    %% HUMAN CONNECTIONS
+    %% ==========================================================
+    Human -. "watch logs,<br/>intercept, stop" .-> S2
+    Human -. "approve / reject<br/>instruction changes" .-> Propose
+
+    %% ==========================================================
+    %% KEY MESSAGE annotation
+    %% ==========================================================
+    KeyMsg["KEY: System 2 modifies INSTRUCTIONS only<br/>never touches schema, data, or normalization tables directly"]
+
+    %% ==========================================================
+    %% STYLES
+    %% ==========================================================
+
+    %% System 1 reference — green
+    classDef s1node fill:#2EAD6B,stroke:#1C7A48,color:#fff,stroke-width:2px
+
+    %% System 2 cycle steps — orange
+    classDef s2node fill:#E8873D,stroke:#B5652A,color:#fff,stroke-width:2px
+
+    %% Instruction files — gold, prominent
+    classDef instrFile fill:#F5A623,stroke:#C17D12,color:#000,stroke-width:3px
+
+    %% Decision — dark orange
+    classDef decision fill:#D4740E,stroke:#A35A0B,color:#fff,stroke-width:3px
+
+    %% Human — blue
+    classDef human fill:#4A90D9,stroke:#2C5F8A,color:#fff,stroke-width:2px
+
+    %% Outcome — purple
+    classDef outcome fill:#7B68C4,stroke:#54478C,color:#fff,stroke-width:2px
+
+    %% Next iteration — orange
+    classDef nextiter fill:#E8873D,stroke:#B5652A,color:#fff,stroke-width:2px
+
+    %% History — muted orange
+    classDef history fill:#FFE0B2,stroke:#E8873D,color:#333,stroke-width:1px
+
+    %% Annotation — light yellow
+    classDef annotation fill:#FFF8E1,stroke:#D4740E,color:#333,stroke-width:2px,stroke-dasharray:5 5
+
+    %% Stopping rules — warm gray
+    classDef stoprule fill:#FFF8E1,stroke:#D4740E,color:#333,stroke-width:1px,stroke-dasharray:5 5
+
+    %% Disputed values — light red
+    classDef disputed fill:#FFCCBC,stroke:#E64A19,color:#333,stroke-width:1px
+
+    %% Apply classes
+    class S1Survey,S1Schema,S1Extract,S1Validate s1node
+    class ISurvey,ISchema,IExtract,INorm,IValid instrFile
+    class Observe,Evaluate,Diagnose,Propose,ApplyLog s2node
+    class ConvergeCheck decision
+    class Human human
+    class Complete outcome
+    class NextIter nextiter
+    class H1,H2,H3,Hn history
+    class KeyMsg annotation
+    class StopRules stoprule
+    class Disputed disputed
+
+    %% ==========================================================
+    %% SUBGRAPH STYLES
+    %% ==========================================================
+    style S1ref fill:#E8F5E9,stroke:#2EAD6B,stroke-width:3px,color:#1C7A48
+    style InstrFiles fill:#FFF8E1,stroke:#F5A623,stroke-width:4px,color:#8B6914
+    style S2 fill:#FFF3E0,stroke:#E8873D,stroke-width:3px,color:#B5652A
+    style History fill:#FFF3E0,stroke:#E8873D,stroke-width:2px,stroke-dasharray:5 5,color:#B5652A
