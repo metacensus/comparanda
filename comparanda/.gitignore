@@ -1,0 +1,7 @@
+# Data files (large PDFs and spreadsheets)
+data/
+
+# Source data archive
+
+# macOS
+.DS_Store
