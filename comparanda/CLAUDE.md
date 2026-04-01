@@ -21,14 +21,27 @@
 - System 2 built, not bought — autocontext evaluated but LLM-judge-centric architecture doesn't fit our deterministic gold standard comparison
 - Multiple valid schemas can reach the same mountain — LLM judge handles "is `patient_ethnicity` equivalent to `ancestry`?" type questions
 
-**Build order**:
-1. Two-layer eval harness (deterministic + LLM judge) — foundation for everything
-2. System 2 improvement loop — wraps eval harness, ported autocontext patterns
-3. Minimal System 1 pipeline — survey, schema proposal, extraction (crude is fine)
-4. PaperQA2 index — once DPYD PDFs are accessible
-5. Wire together — first autonomous improvement iteration
+**Build status** (2026-04-01):
+- ✅ Two-layer eval harness — 108 tests passing (matchers, alignment, scoring, regression, LLM judge, integration)
+- ✅ System 2 improvement loop — lesson store, trajectory, playbook enrichment, runner
+- ✅ System 1 agents — survey, schema proposer, extractor, normalizer, subset selector
+- ✅ PDF ingestion — PyMuPDF4LLM, tested on real papers
+- ✅ Domain context — deep research output for DPYD
+- ✅ Survey schema — generated from domain context (34 fields, two-layer design)
+- ✅ Proposed extraction schema — 74 fields discovered from 4 surveys (no gold standard leakage)
+- ✅ Orchestrator — end-to-end pipeline runner
+- ✅ First extraction — Amstutz 2009, 38 atomic rows
+- 🔄 First autonomous iteration — running
+- 🔲 PaperQA2 integration
+- 🔲 Progressive subset expansion (Phase 5)
 
-**Blocker**: DPYD PDFs + the domain expert's gold standard spreadsheet (gold-standard workbook + QC dataset) need to be placed in `data/raw/`.
+**Project organization**:
+- Agent definitions: `.claude/agents/*.md` (work both interactively and via SDK)
+- System 2 instruction files: `src/comparanda/instructions/` (modification targets)
+- Skills: `.claude/skills/comparanda/` (pipeline knowledge)
+- Orchestrator: `src/comparanda/orchestrator.py` (chains all phases)
+- Agent SDK: `claude-agent-sdk` with `setting_sources=["project"]` for config loading
+
 
 ## CRITICAL: The Schema IS the Product
 
