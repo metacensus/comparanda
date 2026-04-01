@@ -2,9 +2,33 @@
 
 ## Session Recovery — READ FIRST
 
-**Current phase**: Pre-planning (researching open questions before writing spec)
-4. Check `docs/research/` for any new research outputs that have been added
+**Current phase**: Build — all pre-planning decisions locked, constructing the system.
 
+1. Read this section fully for current state and build plan
+4. Check `docs/research/` for deep research outputs (R1, R2, R3, R5, System 2 reference architectures)
+
+**Decisions summary** (all locked as of 2026-04-01):
+- **Q1-Q3**: Custom pytest/pandas eval harness, PyMuPDF4LLM + Claude vision for PDFs, JSONL output with versioned JSON Schema
+- **Q4-Q6**: Two-phase extract-then-normalize, files-on-disk git-tracked state, composite hill-climbing convergence
+- **Q7-Q10**: Deterministic relational checks (defer LLM reviewer), two metric families (schema + extraction), per-agent context budgets, log-first autonomous with observability
+- **Q11-Q13**: Seven-phase schema development loop, DPYD benchmark metrics, hybrid progressive expansion
+- **Q14-Q15**: PaperQA2 retrieval backbone (buy), PubTator/UMLS/scispaCy normalization seeding (buy)
+- **Q16**: Build custom System 2 (~500 lines), porting patterns from autocontext (lesson store, dimensional scoring, regression detection, playbook enrichment). Two-layer eval: deterministic for countable/exact/numeric + LLM judge for schema equivalence, semantic matching, structural assessment.
+
+**Key architectural decisions**:
+- Schema is the product, not a fixed template (Critical Reframe, 2026-02-22)
+- Two-layer eval harness: deterministic (fast/cheap, rapid iteration) + LLM judge (semantic equivalence at generation boundaries)
+- System 2 built, not bought — autocontext evaluated but LLM-judge-centric architecture doesn't fit our deterministic gold standard comparison
+- Multiple valid schemas can reach the same mountain — LLM judge handles "is `patient_ethnicity` equivalent to `ancestry`?" type questions
+
+**Build order**:
+1. Two-layer eval harness (deterministic + LLM judge) — foundation for everything
+2. System 2 improvement loop — wraps eval harness, ported autocontext patterns
+3. Minimal System 1 pipeline — survey, schema proposal, extraction (crude is fine)
+4. PaperQA2 index — once DPYD PDFs are accessible
+5. Wire together — first autonomous improvement iteration
+
+**Blocker**: DPYD PDFs + the domain expert's gold standard spreadsheet (gold-standard workbook + QC dataset) need to be placed in `data/raw/`.
 
 ## CRITICAL: The Schema IS the Product
 
@@ -91,32 +115,34 @@ visibility into System 1 via:
 
 ## Agent Roles
 
+### Shared Infrastructure
+- **PaperQA2 index** — retrieval backbone shared across agents; ingests corpus once, provides citation-grounded Q&A [Q14]
+- **Biomedical API layer** — PubTator 3.0, UMLS, scispaCy for normalization seeding [Q15]
+
 ### System 1 Agents
-1. **Survey Agent** (per paper) — cheap/fast model, catalogs what data exists in a paper
+1. **Survey Agent** (per paper) — cheap/fast model, catalogs what data exists in a paper; queries PaperQA2 for retrieval
 2. **Subset Selector Agent** — reads all surveys, picks diverse test batch
-3. **Schema Proposer Agent** — synthesizes surveys into schema proposal
-4. **Extraction Agent** (per paper) — extracts data into current schema, with web search capability
-5. **Validation Agent** — deterministic checks + LLM-based semantic review
+3. **Schema Proposer Agent** — synthesizes surveys into schema proposal; uses PaperQA2 for cross-corpus queries
+4. **Extraction Agent** (per paper) — extracts data into current schema, with web search capability; uses PaperQA2 for targeted retrieval
+5. **Normalization Agent** — separate pass mapping raw values to canonical IDs; seeded by PubTator/UMLS/scispaCy
+6. **Validation Agent** — deterministic checks + LLM-based semantic review
 
 ### System 2 Agents
 6. **Progression Monitor** — tracks metrics across iterations, records problems
 7. **Critic Agent** — analyzes failure patterns, proposes instruction/prompt changes
 8. **Human-in-the-Loop** — approves/edits/rejects schema changes and instruction changes
 
-## Current Phase: Pre-Planning
+## Current Phase: Build
 
-We are in **pre-planning** — discussing design decisions before writing a detailed spec.
-
-- Key research complete: R1 (eval frameworks), R2 (PDF ingestion), R3 (structured output), R5 (adversarial review)
-- **Currently discussing**: Q11-Q13 (schema development loop, evaluation, sequencing)
-
-Key decisions locked — see TRACKER for full list (C1-C10).
 
 ## Tech Stack (MVP)
 
 - **Claude Code** — primary multi-agent development harness (subagents, skills, hooks)
-- **Evaluation framework** — TBD, researching (Promptfoo leading candidate)
-- **PDF ingestion** — TBD, researching
+- **PaperQA2** — retrieval backbone for scientific paper Q&A with citation provenance (MIT, self-hosted) [Q14]
+- **PubTator 3.0 + UMLS + scispaCy** — biomedical terminology APIs for normalization seeding [Q15]
+- **PyMuPDF4LLM + Claude vision** — PDF ingestion (markdown conversion + complex table extraction) [Q2]
+- **Anthropic Structured Outputs + Instructor** — structured extraction with schema enforcement [Q3]
+- **Custom pytest + pandas** — evaluation harness [Q1]
 
 ## Tech Stack (Long-term)
 
@@ -141,3 +167,15 @@ See `docs/context/` for deep-dive reference documents:
 - `mvp-scope.md` — deliverables, priorities, development approach, inputs needed
 
 See `docs/research/` for completed research outputs.
+
+## Working Conventions
+
+### Git Commits
+- **Commit incrementally** — after each meaningful step (new module, passing test suite, etc.), not in big batches
+- **Commit messages**: imperative mood, concise first line, body explains why not how
+- **Use HEREDOC** for multi-line commit messages
+- **Don't batch** — one logical change per commit
+
+### Session Behavior
+- **Never suggest stopping** — only the user decides when the session is over
+- **After completing a step**: state what's done, state what's next, proceed
