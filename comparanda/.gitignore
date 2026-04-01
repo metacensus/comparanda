@@ -3,5 +3,11 @@ data/
 
 # Source data archive
 
+# Python
+__pycache__/
+*.pyc
+.venv/
+*.egg-info/
+
 # macOS
 .DS_Store
