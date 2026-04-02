@@ -192,3 +192,9 @@ See `docs/research/` for completed research outputs.
 ### Session Behavior
 - **Never suggest stopping** — only the user decides when the session is over
 - **After completing a step**: state what's done, state what's next, proceed
+
+### Parallel Worktrees
+- There may be **parallel pipeline runs in separate git worktrees** (e.g., `harness-improvements`, `paper-qa2`)
+- **Never kill processes or modify files in other worktrees** without explicit user direction
+- Bug fixes that affect the pipeline loop (orchestrator, critic, versioning) may need to be **cherry-picked into active worktree branches** — flag this to the user
+- Check `ps aux | grep "uv run python"` before assuming a process is stale — it may belong to another worktree
