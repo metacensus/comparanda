@@ -17,6 +17,7 @@ You are the orchestrator. Follow the phases below. Agents are in `.claude/agents
 - **Surveys:** `projects/dpyd/surveys/{paper_id}.json`
 - **Extractions:** `projects/dpyd/extractions/{paper_id}.jsonl`
 - **Normalization:** `projects/dpyd/normalization/{table}.json`
+- **Critiques:** `projects/dpyd/critiques/iter_{NNN}.json`
 - **PDFs:** `projects/dpyd/data/` (symlink to corpus)
 - **Phase 0 papers:** `data/raw/pdfs/phase0-references/`
 

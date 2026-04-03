@@ -31,4 +31,5 @@ __pycache__/
 /projects/*/extractions/
 /projects/*/normalization/
 /projects/*/observations/
+/projects/*/critiques/
 /projects/*/data
