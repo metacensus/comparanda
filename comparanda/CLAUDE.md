@@ -207,16 +207,28 @@ Repeat Phases 2-4 until MA Critique says "ready" or 5 iterations reached.
 ### Phase 4 — Schema Refinement
 
 1. Invoke @schema-proposer in subsequent-iteration mode:
-   - Reads: MA Critique output (from observation log), current schema, all surveys, observation log
+   - Reads: MA Critique output (from critique JSON + observation log), current schema, all surveys, observation log
    - Applies MA Critique recommendations: add/remove/modify fields
    - Writes new schema version: `v001.yaml` → `v002.yaml`
    - Logs `schema_rationale` entries to observation log for every change
 
-2. Select new subset (invoke @subset-selector — rotate papers, keep 1 anchor)
+2. **Determine next action based on critique severity:**
 
-3. **Commit:** `"Phase 4: Schema v{N} → v{N+1} — {changes}"`
+   **Major schema change** (new identity dimensions, fields added/removed):
+   → Clear ALL extraction cache. Re-extract entire current subset.
+   → Return to Phase 3a with same papers + updated schema.
 
-4. Return to Phase 3a with updated schema + new subset.
+   **Minor schema change** (extraction guidance updates, vocabulary fixes):
+   → Clear extraction cache for AFFECTED papers only (named in the critique).
+   → Re-extract only those papers. Keep other extractions.
+   → Return to Phase 3a with partial re-extraction.
+
+   **Schema works** (critique says "ready" or "near-ready, no structural changes needed"):
+   → Rotate subset (invoke @subset-selector for new 3-4 papers).
+   → Return to Phase 3a with new papers + current schema.
+   → This tests whether the schema generalizes beyond the current subset.
+
+3. **Commit:** `"Phase 4: Schema v{N} → v{N+1} — {changes}, {action taken}"`
 
 ---
 

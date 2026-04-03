@@ -196,6 +196,13 @@ Produce a JSON object with this structure. Write the full critique to `projects/
     "explanation": "Why the data is or is not sufficient for meta-analysis",
     "remaining_blockers": ["List of critical issues still open, if not_ready"],
     "iteration_delta": "What improved since last iteration, if applicable"
+  },
+
+  "recommended_action": {
+    "type": "major_schema_change | minor_guidance_update | rotate_subset",
+    "rationale": "Why this action type — e.g., identity dimensions changed, or only guidance fixes needed, or schema is stable",
+    "papers_to_reextract": ["paper_ids that need re-extraction, or 'all' for major changes, or empty for rotation"],
+    "extraction_cache_action": "clear_all | clear_affected | keep"
   }
 }
 ```
