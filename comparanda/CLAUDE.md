@@ -62,6 +62,26 @@ Commit after each phase completes. Message format: `"Phase {N}: {what changed}"`
 
 ---
 
+## RAG Index Build
+
+**Start this immediately on first run — it runs in the background while other phases proceed.**
+
+The PaperQA2 RAG index over the corpus papers is used by the Extraction Agent in Phase 3 for targeted passage retrieval instead of full-paper reads. Building it takes time and costs money (OpenAI API for chunk summarization).
+
+```python
+# Build via Python:
+from comparanda.data.rag import create_paper_index
+index = await create_paper_index(pdf_dir="projects/dpyd/data", cache_dir=".rag_cache")
+```
+
+Or run in background: `uv run python -c "import asyncio; from comparanda.data.rag import create_paper_index; asyncio.run(create_paper_index(pdf_dir='projects/dpyd/data', cache_dir='.rag_cache'))" &`
+
+The cache persists at `.rag_cache/` — do NOT delete it. It is NOT gitignored because it costs money to rebuild.
+
+If the cache already exists, this step is instant (loads from disk).
+
+---
+
 ## Phase 0 — Domain Onboarding
 
 > Run once per new domain. For DPYD, deep research and seed knowledge already exist.
