@@ -1,200 +1,226 @@
-# MetaCensus — DPYD Schema Extraction Prototype
+# Comparanda
 
-## Session Recovery — READ FIRST
+Scientific paper schema extraction system. Given a domain and a corpus of papers, Comparanda discovers a structured schema and extracts data into atomic rows suitable for meta-analysis.
 
-**Current phase**: Build — all pre-planning decisions locked, constructing the system.
+## Active Project
 
-1. Read this section fully for current state and build plan
-4. Check `docs/research/` for deep research outputs (R1, R2, R3, R5, System 2 reference architectures)
+Project: `projects/dpyd/` (DPYD pharmacogenetics)
 
-**Decisions summary** (all locked as of 2026-04-01):
-- **Q1-Q3**: Custom pytest/pandas eval harness, PyMuPDF4LLM + Claude vision for PDFs, JSONL output with versioned JSON Schema
-- **Q4-Q6**: Two-phase extract-then-normalize, files-on-disk git-tracked state, composite hill-climbing convergence
-- **Q7-Q10**: Deterministic relational checks (defer LLM reviewer), two metric families (schema + extraction), per-agent context budgets, log-first autonomous with observability
-- **Q11-Q13**: Seven-phase schema development loop, DPYD benchmark metrics, hybrid progressive expansion
-- **Q14-Q15**: PaperQA2 retrieval backbone (buy), PubTator/UMLS/scispaCy normalization seeding (buy)
-- **Q16**: Build custom System 2 (~500 lines), porting patterns from autocontext (lesson store, dimensional scoring, regression detection, playbook enrichment). Two-layer eval: deterministic for countable/exact/numeric + LLM judge for schema equivalence, semantic matching, structural assessment.
+## How This Works
 
-**Key architectural decisions**:
-- Schema is the product, not a fixed template (Critical Reframe, 2026-02-22)
-- Two-layer eval harness: deterministic (fast/cheap, rapid iteration) + LLM judge (semantic equivalence at generation boundaries)
-- System 2 built, not bought — autocontext evaluated but LLM-judge-centric architecture doesn't fit our deterministic gold standard comparison
-- Multiple valid schemas can reach the same mountain — LLM judge handles "is `patient_ethnicity` equivalent to `ancestry`?" type questions
+You are the orchestrator. Follow the phases below. Agents are in `.claude/agents/`. Invoke them with @agent-name. All project state is in `projects/dpyd/`.
 
-**Build status** (2026-04-01):
-- ✅ Two-layer eval harness — 108 tests passing (matchers, alignment, scoring, regression, LLM judge, integration)
-- ✅ System 2 improvement loop — lesson store, trajectory, playbook enrichment, runner
-- ✅ System 1 agents — survey, schema proposer, extractor, normalizer, subset selector
-- ✅ PDF ingestion — PyMuPDF4LLM, tested on real papers
-- ✅ Domain context — deep research output for DPYD
-- ✅ Survey schema — generated from domain context (34 fields, two-layer design)
-- ✅ Proposed extraction schema — 74 fields discovered from 4 surveys (no gold standard leakage)
-- ✅ Orchestrator — end-to-end pipeline runner
-- ✅ First extraction — Amstutz 2009, 38 atomic rows
-- 🔄 First autonomous iteration — running
-- 🔲 PaperQA2 integration
-- 🔲 Progressive subset expansion (Phase 5)
+### Key Files
+- **Schema:** `projects/dpyd/schema/` — rich YAML, versioned (v001.yaml, v002.yaml, ...)
+- **Observations:** `projects/dpyd/observations/log.jsonl` — append-only structured log
+- **Domain refs:** `projects/dpyd/domain/` — per-agent domain knowledge
+- **Surveys:** `projects/dpyd/surveys/{paper_id}.json`
+- **Extractions:** `projects/dpyd/extractions/{paper_id}.jsonl`
+- **Normalization:** `projects/dpyd/normalization/{table}.json`
+- **PDFs:** `projects/dpyd/data/` (symlink to corpus)
+- **Phase 0 papers:** `data/raw/pdfs/phase0-references/`
 
-**Project organization**:
-- Agent definitions: `.claude/agents/*.md` (work both interactively and via SDK)
-- System 2 instruction files: `src/comparanda/instructions/` (modification targets)
-- Skills: `.claude/skills/comparanda/` (pipeline knowledge)
-- Orchestrator: `src/comparanda/orchestrator.py` (chains all phases)
-- Agent SDK: `claude-agent-sdk` with `setting_sources=["project"]` for config loading
+### Observation Log Format
+Append one JSON object per line to `projects/dpyd/observations/log.jsonl`:
+```json
+{"id": "OBS-001", "iteration": 1, "phase": "3.5_ma_critique", "agent": "ma_critique", "category": "schema_rationale", "content": "...", "related_fields": [], "timestamp": "2026-04-03T14:00:00Z"}
+```
+Categories: `schema_rationale`, `domain_pattern`, `paper_flag`, `normalization_note`, `extraction_difficulty`
 
+### Rich Schema Format
+Schema files are YAML at `projects/dpyd/schema/v{NNN}.yaml`:
+```yaml
+schema_version: "v001"
+domain: "dpyd_pharmacogenetics"
+created_iteration: 1
+last_modified_iteration: 1
 
-## CRITICAL: The Schema IS the Product
+identity_dimensions:
+  - field: pmid
+    description: "PubMed identifier"
+  - field: variant_raw
+    description: "Genetic variant as reported"
+  - field: outcome_category
+    description: "Clinical outcome measured"
+  - field: comparison_group
+    description: "Categorical group this row represents"
 
-The principal output of this system is the **schema itself** — not just data extracted into a
-pre-existing schema. The core challenge: given a domain and a collection of papers, how do you
-build a schema that enables apples-to-apples comparisons across papers?
+fields:
+  - name: pmid
+    type: integer
+    required: true
+    identity_dimension: true
+    extraction_guidance: "PubMed ID of the paper"
+    normalization: null
+    added_iteration: 1
+    removal_rationale: null
+```
 
-- **Universal fields** are invariant across domains (title, DOI, PMID, authors, etc.)
-- **Domain-specific fields** must be DISCOVERED from the papers themselves
-  schema + extraction looks like — not a fixed template to extract into
-- The DPYD dataset is a BENCHMARK to validate whether the agent system can produce comparable
-  schema + extraction quality to human expert work
-- The **Schema Development Agent is the core** of the system, not a deferred concern
+### Git Protocol
+Commit after each phase completes. Message format: `"Phase {N}: {what changed}"`
 
-## Project Summary
+---
 
-Build an **agentic system** that reviews scientific papers, develops a structured data schema
-for encoding findings as **atomic rows**, and extracts data into that schema. The immediate
+## Phase 0 — Domain Onboarding
 
-## Key Concepts
+> Run once per new domain. For DPYD, deep research and seed knowledge already exist.
 
-- **Atomic Rows**: Maximum-granularity data points extracted from papers. One row = one indivisible finding. A single paper can yield hundreds of rows. Goal: extract once, never re-extract.
-- **Dynamic ETL**: Not static Extract-Transform-Load. Transformations are definitions run at query time ("just-in-time"), keeping data fluid as new papers or definitions arrive.
-- **Schema/Extraction Loop**: Schema definition and data extraction are tightly iterative — you extract to discover what schema you need, then refine and re-extract. This is the central mechanism, not a side process.
+### Prerequisites
+Check that these exist:
+- `projects/dpyd/domain/deep_research.md` — deep research report
+- `projects/dpyd/domain/dpyd_seed_knowledge.md` — seed domain knowledge
+- `data/raw/pdfs/phase0-references/` — methodology + prior MA papers
 
-## Two-System Architecture
+### Steps
 
-The system has two distinct loops:
+1. **Generate domain reference files.** For each agent that has a domain reference:
 
-### System 1: Inner Loop (Do the Work)
-Schema development + extraction workflow. Reads papers, proposes schema, extracts data, validates.
+   Invoke the agent with this prefix before its normal prompt:
+   ```
+   REFERENCE GENERATION MODE
 
-**Workflow phases:**
+   Read the following materials and extract what is relevant to your role:
+   - Deep research: projects/dpyd/domain/deep_research.md
+   - Seed knowledge: projects/dpyd/domain/dpyd_seed_knowledge.md
+   - Phase 0 papers: [list relevant PDFs from data/raw/pdfs/phase0-references/]
 
-0. **Domain Onboarding** — User fills scoping questionnaire. System runs deep research (via API)
-   to build a domain context document. For DPYD benchmark: can use domain knowledge but NOT
+   Write your domain reference file to: projects/dpyd/domain/{agent}_ref.md
 
-1. **Paper Survey** — Survey ALL papers using cheap/fast model (Haiku). One subagent per paper,
-   standardized output schema to file. Then a synthesis subagent reads all survey outputs and
-   picks a diverse subset for the test batch.
+   Include domain-specific knowledge that will help you perform your operational
+   role: patterns, terminology, pitfalls, examples, normalization needs.
+   ```
 
-2. **Schema Proposal** — Subagent synthesizes survey into a proposed schema: universal fields +
-   domain-specific fields + identity dimensions + normalization needs. Human reviews and
-   approves. This prompt is one of the main targets for improvement through the outer loop.
+   Generate refs for: survey, schema-proposer, extractor, normalizer, ma-critique
 
-3. **Test Extraction** — Extract the subset papers. One subagent per paper. May use web search
-   for ambiguous questions — provenance tagged as `paper`, `derived`, or `external`.
+   **For MA Critique:** Focus on the DPYD-specific meta-analysis papers (Le Teuff, Meulendijks, Sharma, de Moraes, Kim, etc.) — what schemas they used, what statistical models, what worked/failed.
 
-4. **Schema Refinement** — Analyze extraction results, identify schema gaps, propose changes.
-   Human approves schema changes. Re-extract affected papers. Iterate on subset.
+   **For Extractor:** Focus on what good atomic rows look like for DPYD, common extraction pitfalls.
 
-5. **Full Extraction** — Schema stable, extract all remaining papers. Continue discovering
-   normalization entries. Progressive subset expansion to detect overfitting.
+   **For Normalizer:** Focus on variant naming aliases, drug regimen nomenclature, grading scale differences.
 
-6. **Convergence Check** — Can you build the meta-analysis from this data? (C8 test)
+2. **Review** generated domain reference files for quality and completeness.
 
-### System 2: Outer Loop (Improve How the Work is Done)
-Progression monitoring + improvement system. Observes System 1's outputs and metrics, records
-problems, creates critique, modifies prompts/instructions (version controlled), kicks off the
-next iteration. **Implementation-blind** — sees inputs, outputs, and metrics, not internal
+3. **Commit:** `"Phase 0: Generate domain reference files for dpyd"`
 
-### Separation Principle
-System 2 improves behavior by modifying instruction files, not by patching agent code. It has
-visibility into System 1 via:
-- **Structured workflow trace** — which agents ran, what they produced, timing, token usage
-- **System 1 meta-commentary** — agents record reflections on what worked/didn't, what was
-  ambiguous, what required inference vs direct extraction (C14)
-- **Verification results** — what went wrong, error taxonomy, field-level metrics
-- **Current instruction files** — what agents were told to do
-- **Progression metrics** — across iterations, including convergence signals
+---
 
-## Agentic Design Principles
+## Phase 0.5 — Survey Schema Generation
 
-1. **Isolated context per subagent** — each subagent gets only what it needs. No shared mutable state during execution. Communicate via files.
-2. **Context window discipline everywhere** — limited context is a constraint at every step. Multiple focused passes rather than trying to hold everything in one context. Deep research outputs must be synthesized to fit.
-3. **Instructions-as-config** — extraction and schema behavior lives in versioned markdown instruction files, not code. Enables System 2 (critic) to propose changes.
-4. **Provenance on everything** — every extracted value tagged with source: `paper` (from PDF text), `derived` (calculated), or `external` (web search / database lookup).
-5. **One subagent per paper** for extraction tasks. Parallelizable and context-isolated.
-6. **Cheap models for survey, expensive models for extraction** — use the right model tier for each task.
-7. **Progressive subset expansion** — start with small test batch, expand as schema stabilizes, detect overfitting by measuring performance on new papers.
-8. **Human-in-the-loop for schema decisions** — schema changes require human approval. Extraction review can be automated for benchmark runs.
-9. **System 1 meta-commentary** — all agents record reflections on their process (what worked, what didn't, ambiguities, inference vs direct extraction). Feeds System 2 and supports auditability.
-10. **Gold standard is assumed imperfect** — track a disputed values log for cases where the system consistently disagrees with human extraction. Consistent disagreement = flag for review, not automatic failure.
+1. Invoke @schema-proposer in survey schema mode:
+   ```
+   Generate a survey schema (not extraction schema) for the DPYD pharmacogenetics domain.
+   Read: projects/dpyd/domain/deep_research.md
+   Write: projects/dpyd/schema/survey_schema.json
 
-## Agent Roles
+   The survey schema defines what the survey agent catalogs in each paper.
+   Layer 1: universal fields (study ID, design, sample size, tables).
+   Layer 2: domain-specific fields (variants, outcomes, regimens, grading).
+   ```
 
-### Shared Infrastructure
-- **PaperQA2 index** — retrieval backbone shared across agents; ingests corpus once, provides citation-grounded Q&A [Q14]
-- **Biomedical API layer** — PubTator 3.0, UMLS, scispaCy for normalization seeding [Q15]
+2. **Commit:** `"Phase 0.5: Generate survey schema"`
 
-### System 1 Agents
-1. **Survey Agent** (per paper) — cheap/fast model, catalogs what data exists in a paper; queries PaperQA2 for retrieval
-2. **Subset Selector Agent** — reads all surveys, picks diverse test batch
-3. **Schema Proposer Agent** — synthesizes surveys into schema proposal; uses PaperQA2 for cross-corpus queries
-4. **Extraction Agent** (per paper) — extracts data into current schema, with web search capability; uses PaperQA2 for targeted retrieval
-5. **Normalization Agent** — separate pass mapping raw values to canonical IDs; seeded by PubTator/UMLS/scispaCy
-6. **Validation Agent** — deterministic checks + LLM-based semantic review
+---
 
-### System 2 Agents
-6. **Progression Monitor** — tracks metrics across iterations, records problems
-7. **Critic Agent** — analyzes failure patterns, proposes instruction/prompt changes
-8. **Human-in-the-Loop** — approves/edits/rejects schema changes and instruction changes
+## Phase 1 — Paper Survey
 
-## Current Phase: Build
+1. **Survey all papers.** For each PDF in `projects/dpyd/data/`:
+   - Read the PDF (use PyMuPDF4LLM or Read tool for PDF)
+   - Invoke @survey with the paper text + survey schema
+   - Agent writes `projects/dpyd/surveys/{paper_id}.json`
+   - Can run multiple surveys in sequence (or note for parallelism)
 
+2. **Select subset.** Invoke @subset-selector:
+   - Reads all survey outputs
+   - Selects 3-4 diverse papers
+   - Writes selection rationale to observation log
 
-## Tech Stack (MVP)
+3. **Commit:** `"Phase 1: Survey {N} papers, select subset [{paper_ids}]"`
 
-- **Claude Code** — primary multi-agent development harness (subagents, skills, hooks)
-- **PaperQA2** — retrieval backbone for scientific paper Q&A with citation provenance (MIT, self-hosted) [Q14]
-- **PubTator 3.0 + UMLS + scispaCy** — biomedical terminology APIs for normalization seeding [Q15]
-- **PyMuPDF4LLM + Claude vision** — PDF ingestion (markdown conversion + complex table extraction) [Q2]
-- **Anthropic Structured Outputs + Instructor** — structured extraction with schema enforcement [Q3]
-- **Custom pytest + pandas** — evaluation harness [Q1]
+---
 
-## Tech Stack (Long-term)
+## Inner Loop
 
-- **OpenAI Agent SDK** (with Temporal flag) — durable workflow execution
-- **Temporal** — orchestration engine (workflows + activities)
-- **Go** — workers and core API
+Repeat Phases 2-4 until MA Critique says "ready" or 5 iterations reached.
 
-- **R Shiny** — meta-analysis tool (forest plots, odds ratios)
+### Phase 2 — Schema Proposal (first iteration only)
 
+1. Invoke @schema-proposer:
+   - Reads: all surveys, domain reference (`domain/schema_ref.md`), observation log
+   - Writes: `projects/dpyd/schema/v001.yaml` (rich schema with extraction guidance per field)
 
-- **~106 DPYD PDFs** — scientific papers, naming convention: `Author Year (Journal) [PMID].pdf`
-- See `docs/context/data-inventory.md` for complete inventory
+2. **Commit:** `"Phase 2: Propose schema v001 — {N} fields"`
 
-## Detailed Context
+### Phase 3a — Extraction
 
-See `docs/context/` for deep-dive reference documents:
-- `project-vision.md` — problem, vision, differentiators, end-to-end flow
-- `atomic-rows.md` — core data model, characteristics, role in system
-- `dpyd-pilot.md` — pharmacogenetics use case, domain fields, gold standard benchmark
+1. For each paper in current subset:
+   - Read the paper (PDF → markdown)
+   - Optionally query RAG index for targeted passages
+   - Invoke @extractor with: paper text/passages, rich schema, survey output, domain reference
+   - Agent writes: `projects/dpyd/extractions/{paper_id}.jsonl`
+   - Agent writes paper flags to observation log
 
-- `risks-and-mitigations.md` — sycophancy, copyright, quality control, technical risks
-- `mvp-scope.md` — deliverables, priorities, development approach, inputs needed
+2. **Commit:** `"Phase 3a: Extract {N} papers ({total_rows} rows)"`
 
-See `docs/research/` for completed research outputs.
+### Phase 3b — Normalization
 
-## Working Conventions
+1. Invoke @normalizer:
+   - Reads: all extractions, schema (for `x-normalizable` fields), normalization tables, domain reference
+   - Writes: updated extraction files, normalization table files
+   - Writes normalization notes to observation log
 
-### Git Commits
-- **Commit incrementally** — after each meaningful step (new module, passing test suite, etc.), not in big batches
-- **Commit messages**: imperative mood, concise first line, body explains why not how
-- **Use HEREDOC** for multi-line commit messages
-- **Don't batch** — one logical change per commit
+2. **Commit:** `"Phase 3b: Normalize ({resolved} resolved, {disputes} disputes)"`
 
-### Session Behavior
-- **Never suggest stopping** — only the user decides when the session is over
-- **After completing a step**: state what's done, state what's next, proceed
+### Phase 3.5 — MA Critique
 
-### Parallel Worktrees
-- There may be **parallel pipeline runs in separate git worktrees** (e.g., `harness-improvements`, `paper-qa2`)
-- **Never kill processes or modify files in other worktrees** without explicit user direction
-- Bug fixes that affect the pipeline loop (orchestrator, critic, versioning) may need to be **cherry-picked into active worktree branches** — flag this to the user
-- Check `ps aux | grep "uv run python"` before assuming a process is stale — it may belong to another worktree
+1. Invoke @ma-critique:
+   - Reads: extractions, current schema, domain reference, deep research, observation log (including own prior feedback)
+   - Writes: structured critique to observation log
+   - Reports: convergence assessment ("ready" or "not ready" with reasons)
+
+2. **If "ready":** Exit inner loop. Proceed to Phase 5.
+
+3. **If "not ready":** Proceed to Phase 4.
+
+4. **Commit:** `"Phase 3.5: MA critique — {ready|not ready}, {summary}"`
+
+### Phase 4 — Schema Refinement
+
+1. Apply MA Critique recommendations to schema:
+   - Add fields with extraction guidance
+   - Remove fields with removal rationale (log in observation log)
+   - Modify extraction guidance for existing fields
+   - Write new version: `v001.yaml` → `v002.yaml`
+
+2. Select new subset (invoke @subset-selector — rotate papers, keep 1 anchor)
+
+3. **Commit:** `"Phase 4: Schema v{N} → v{N+1} — {changes}"`
+
+4. Return to Phase 3a with updated schema + new subset.
+
+---
+
+## Phase 5 — Progressive Expansion
+> Not yet implemented. After inner loop converges, expand to more papers.
+
+## Phase 6 — Final Convergence
+> Not yet implemented. Run MA Critique on full dataset.
+
+---
+
+## Critical Rules
+
+1. **Schema changes ONLY after MA Critique** (Phase 4)
+2. **Extract raw, never normalize during extraction** — strict phase separation
+3. **Use null for missing data** — never empty string, 0, "N/A", or "unknown"
+4. **Commit after every phase** — git history is the audit trail
+5. **Read observation log before each phase** — maintain context across iterations
+6. **One row = one finding** — Cartesian expansion: paper × entities × outcomes × grade levels × groups
+7. **Reference/wildtype group is always a row** — not implicit background
+8. **Provenance on everything** — tag as `paper`, `derived`, or `external`
+
+## Architecture Reference
+
+See `docs/specs/comparanda-v2-spec.md` for full architecture.
+See `docs/specs/implementation-plan.md` for implementation plan.
+See `docs/research/v1-lessons-extracted.md` for v1 lessons.
+See `docs/research/prompt-engineering-reference.md` for prompting guide.
