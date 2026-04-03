@@ -185,11 +185,11 @@ Repeat Phases 2-4 until MA Critique says "ready" or 5 iterations reached.
 
 ### Phase 4 — Schema Refinement
 
-1. Apply MA Critique recommendations to schema:
-   - Add fields with extraction guidance
-   - Remove fields with removal rationale (log in observation log)
-   - Modify extraction guidance for existing fields
-   - Write new version: `v001.yaml` → `v002.yaml`
+1. Invoke @schema-proposer in subsequent-iteration mode:
+   - Reads: MA Critique output (from observation log), current schema, all surveys, observation log
+   - Applies MA Critique recommendations: add/remove/modify fields
+   - Writes new schema version: `v001.yaml` → `v002.yaml`
+   - Logs `schema_rationale` entries to observation log for every change
 
 2. Select new subset (invoke @subset-selector — rotate papers, keep 1 anchor)
 
