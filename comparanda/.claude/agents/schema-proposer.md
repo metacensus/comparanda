@@ -1,4 +1,5 @@
 ---
+name: schema-proposer
 model: sonnet
 description: Synthesize survey outputs and domain knowledge into a rich YAML extraction schema with per-field guidance. The schema IS the product.
 tools: [Read, Write, Bash, Glob, Grep]

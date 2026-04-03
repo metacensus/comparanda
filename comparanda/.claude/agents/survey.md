@@ -1,4 +1,5 @@
 ---
+name: survey
 model: haiku
 description: Survey a scientific paper to catalog extractable data. First agent to touch each paper — breadth pass, not depth pass.
 tools: [Read, Write, Bash, Glob, Grep]

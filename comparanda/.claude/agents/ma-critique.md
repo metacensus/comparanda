@@ -1,4 +1,5 @@
 ---
+name: ma-critique
 model: sonnet
 description: Evaluate whether extracted data is sufficient for meta-analysis and propose the minimum schema changes needed to reach convergence.
 tools: [Read, Write, Bash, Glob, Grep]
