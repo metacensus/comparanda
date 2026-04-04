@@ -34,7 +34,9 @@ Rows are the Cartesian expansion of: `paper × entities × outcomes × grade_lev
 
 **CRITICAL: The reference/wildtype group is ALWAYS a row.** Every carrier finding requires a corresponding reference group row. Without it, 2x2 tables cannot be reconstructed downstream.
 
-**CRITICAL: Extract ALL categorical groups when data is per-group.** If a table shows data for AA, AB, BB separately, produce 3 rows. Never collapse groups into a single row.
+**CRITICAL: Extract ALL categorical groups when data is per-group.** If a table shows data for AA, AB, BB separately, produce 3 rows — one per genotype. Never collapse per-genotype data into a single "any carrier" row.
+
+**CRITICAL: When a paper reports BOTH per-genotype AND collapsed carrier data, extract BOTH.** Many papers report individual genotype groups (AA, AG, GG) AND a combined carrier group (AG+GG vs AA). Each is a separate row with a different `zygosity_group` value. The per-genotype rows use `heterozygous_carrier`, `homozygous_carrier`, `homozygous_wildtype`. The collapsed rows use `any_carrier`, `wildtype`. Do not choose one model over the other — extract all rows the paper reports.
 
 **CRITICAL: Split by grade category.** If the paper reports Grade 1-2 and Grade >=3 separately, those are separate rows with distinct values in the grade field.
 

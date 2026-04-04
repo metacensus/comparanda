@@ -232,11 +232,49 @@ Repeat Phases 2-4 until MA Critique says "ready" or 5 iterations reached.
 
 ---
 
-## Phase 5 — Progressive Expansion
-> Not yet implemented. After inner loop converges, expand to more papers.
+## Phase 5 — Subset Rotation (schema generalization testing)
 
-## Phase 6 — Final Convergence
-> Not yet implemented. Run MA Critique on full dataset.
+After the inner loop converges on a subset, rotate to NEW papers to test
+whether the schema generalizes. Do NOT expand to all papers yet.
+
+1. **Archive current subset extractions.** Move to `extractions/archived/iter_{N}/`.
+   These are no longer the active extraction — they were produced during schema
+   development and may not reflect the final schema.
+
+2. **Select new subset.** Invoke @subset-selector for 3-4 fresh papers (no overlap
+   with previous subsets except the anchor).
+
+3. **Extract new subset** with the current schema. Run Phase 3a → 3b → 3.5.
+
+4. **If MA Critique says "ready"** on the new subset: schema generalizes.
+   Rotate once more with different papers to confirm. After 2-3 successful
+   rotations, the schema is stable → proceed to Phase 6.
+
+5. **If MA Critique says "not ready"**: the schema has gaps exposed by the new
+   papers. Return to Phase 4, refine, and continue the inner loop.
+
+**Key principle:** Previous subset extractions are development artifacts, not
+final output. Only the final full-corpus extraction (Phase 6) is the deliverable.
+
+## Phase 6 — Final Full-Corpus Extraction
+
+Once the schema is validated across multiple rotated subsets:
+
+1. **Clear all extraction cache.** Start fresh with the final schema.
+
+2. **Extract ALL papers** using the final schema. One extractor agent per paper.
+
+3. **Normalize** the full corpus.
+
+4. **Validate extractions.** For each paper, cross-check:
+   - Extracted row count vs survey's estimated_atomic_rows
+   - All variants mentioned in survey appear in extraction
+   - All identity dimensions are populated
+   - Flag papers with large row count discrepancies for human review
+
+5. **Final MA Critique** on the full dataset.
+
+6. **Commit final output.** This is the deliverable.
 
 ---
 
