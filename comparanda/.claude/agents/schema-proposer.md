@@ -43,6 +43,8 @@ You will receive or locate the following:
 
 5. **Determine identity dimensions.** Ask: what combination of fields makes a single row unique? A row should represent one atomic finding. Consider: paper x entity x outcome x comparison group x any domain-specific splits. Getting this wrong is the most consequential error — if you collapse dimensions, you lose data. If you over-split, you create sparse rows.
 
+   **Granularity principle:** Identity dimensions must accommodate the **finest granularity reported across papers in the corpus**. Check the surveys: if ANY paper reports data at a finer level (e.g., per-subgroup, per-dose-level, per-time-point), the identity dimensions must have values that can hold that granularity — even if most papers report at a coarser level. Data can always be aggregated downstream, but data lost to forced collapsing during extraction cannot be recovered. When writing extraction_guidance for identity dimension fields, explicitly list both fine-grained and collapsed values as valid.
+
 6. **Draft universal fields.** These are invariant across domains: `pmid`, `doi`, `author`, `year`, `journal`, `study_design`, `total_n`. Additional sample size fields (e.g., number assayed, number evaluable for outcome) are domain-specific — discover them from surveys.
 
 7. **Draft domain-specific fields.** For each field: decide name (short, conventional), type, whether it is an identity dimension, write extraction_guidance, and flag normalization needs. Err toward inclusion — easier to drop a field later than add one and re-extract.

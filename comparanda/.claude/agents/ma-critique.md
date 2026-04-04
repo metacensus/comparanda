@@ -97,13 +97,15 @@ Compare the same fields across papers:
 - Are identity dimensions applied consistently? (Same row granularity across papers)
 - Are there papers that report data in formats incompatible with the schema? (e.g., medians where means are expected)
 
-## Step 6: Assess granularity
+## Step 6: Assess granularity and data preservation
 
 For each field, determine whether it is at the right level of detail:
 - **Too coarse**: a field collapses distinctions that matter for pooling (e.g., "any toxicity" when grade-specific rates are needed)
 - **Too fine**: a field creates splits that fragment the data beyond what any analysis needs (e.g., per-cycle toxicity when cumulative is standard)
 
 Consult the domain reference for what granularity prior meta-analyses used.
+
+**Check for forced data compression.** Review whether identity dimensions are fine-grained enough to hold the data papers actually report. Compare the surveys' reported groupings against the schema's identity dimension values. If surveys indicate that papers report data at a finer level than the schema's identity dimensions can represent (e.g., per-subgroup data but only a binary grouping dimension), the schema is forcing lossy compression — data will be silently dropped or collapsed during extraction. This is the most dangerous form of under-extraction because neither the extractor nor the MA Critique can detect the loss. Flag any identity dimension where the allowed values are coarser than what the surveys show papers report.
 
 ## Step 7: Formulate critique
 
