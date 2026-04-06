@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash /path/to/comparanda-harness/.claude/hooks/guard-comparanda.sh",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}
