@@ -36,6 +36,7 @@ class PaperEval:
     variant_coverage: float  # matched / gold
     field_fill_rates: dict[str, float] = field(default_factory=dict)
     identity_dim_completeness: dict[str, float] = field(default_factory=dict)
+    normalization: dict = field(default_factory=dict)  # detailed normalization status
     flags: list[str] = field(default_factory=list)
 
 
@@ -46,12 +47,14 @@ class AggregateEval:
     papers: list[PaperEval]
     mean_row_coverage: float
     mean_variant_coverage: float
+    mean_finding_accuracy: float | None  # None = not evaluated (requires detailed mode)
     total_gold_rows: int
     total_extracted_rows: int
     overall_row_coverage: float
     papers_below_50pct: list[str]  # paper_ids with < 50% row coverage
     papers_below_70pct: list[str]  # paper_ids with < 70% row coverage
-    composite_score: float
+    schema_contradictions: list[dict] = field(default_factory=list)  # required fields with <100% fill
+    composite_score: float = 0.0
 
 
 def _load_extraction(extraction_path: Path) -> list[dict]:
@@ -72,12 +75,18 @@ def _load_extraction(extraction_path: Path) -> list[dict]:
 
 
 def _extract_variants(rows: list[dict]) -> set[str]:
-    """Extract unique variant names from extraction rows."""
+    """Extract unique variant identifiers from extraction rows.
+
+    Uses all available variant fields (canonical, rsid, raw) so that
+    matching against gold standard works regardless of naming convention.
+    """
     variants = set()
     for row in rows:
-        v = row.get("variant_raw") or row.get("variant")
-        if v:
-            variants.add(str(v))
+        # Prefer canonical (normalizer output), then rsid, then raw
+        for field in ("variant_canonical", "variant_rsid", "variant_raw", "variant"):
+            v = row.get(field)
+            if v:
+                variants.add(str(v))
     return variants
 
 
@@ -110,19 +119,158 @@ def _compute_id_dim_completeness(
     return result
 
 
-def _normalize_variant_name(name: str) -> str:
-    """Rough normalization for variant matching.
+def _compute_normalization_status(rows: list[dict]) -> dict:
+    """Compute detailed normalization status for extraction rows.
 
-    Strips whitespace, lowercases, removes common prefixes.
-    This is approximate — for real matching, use the normalizer.
+    Reports what the normalizer actually produced, not what it could have produced.
+    Surfaces enough detail for the diagnostician to trace problems to specific agents.
     """
-    name = name.strip().lower()
-    # Remove genotype suffixes for matching (gold has "rs3918290 GA", extraction has "rs3918290")
-    # Split on space, take first token if it looks like an rs number
-    parts = name.split()
-    if parts and parts[0].startswith("rs"):
-        return parts[0]
-    return name
+    if not rows:
+        return {"total_rows": 0}
+
+    total = len(rows)
+    has_canonical = 0
+    has_rsid = 0
+    raw_only = 0
+    raw_only_examples: list[str] = []
+
+    for row in rows:
+        v_raw = row.get("variant_raw")
+        v_canon = row.get("variant_canonical")
+        v_rsid = row.get("variant_rsid")
+
+        if v_canon:
+            has_canonical += 1
+        if v_rsid:
+            has_rsid += 1
+        if v_raw and not v_canon and not v_rsid:
+            raw_only += 1
+            if len(raw_only_examples) < 10:
+                raw_only_examples.append(str(v_raw))
+
+    return {
+        "total_rows": total,
+        "has_variant_canonical": has_canonical,
+        "has_variant_rsid": has_rsid,
+        "raw_only_no_canonical_no_rsid": raw_only,
+        "canonical_rate": round(has_canonical / total, 3) if total else 0.0,
+        "unnormalized_rate": round(raw_only / total, 3) if total else 0.0,
+        "unnormalized_examples": sorted(set(raw_only_examples)),
+    }
+
+
+def _load_schema_field_metadata(schema_dir: Path | None = None) -> dict[str, dict]:
+    """Load field metadata from the latest schema version.
+
+    Returns dict of field_name → {"required": bool, "extraction_guidance": str, "removed": bool}.
+    Used to split fill rates by required/optional and flag contradictions.
+    """
+    if schema_dir is None:
+        schema_dir = Path(__file__).parent.parent.parent.parent.parent / "comparanda" / "projects" / "dpyd" / "schema"
+
+    if not schema_dir.exists():
+        return {}
+
+    import yaml
+    schemas = sorted(schema_dir.glob("v*.yaml"))
+    if not schemas:
+        return {}
+
+    with open(schemas[-1]) as f:
+        schema = yaml.safe_load(f)
+
+    result = {}
+    for field_def in schema.get("fields", []):
+        name = field_def.get("name", "")
+        result[name] = {
+            "required": bool(field_def.get("required", False)),
+            "extraction_guidance": str(field_def.get("extraction_guidance", ""))[:500],
+            "removed": bool(field_def.get("removal_rationale")),
+        }
+    return result
+
+
+def _compute_schema_contradictions(
+    fill_rates: dict[str, float],
+    schema_meta: dict[str, dict],
+) -> list[dict]:
+    """Find fields marked required: true but with <100% fill rate.
+
+    These may indicate schema internal contradictions (required but guidance permits null)
+    or genuine extraction gaps.
+    """
+    contradictions = []
+    for field_name, rate in fill_rates.items():
+        meta = schema_meta.get(field_name, {})
+        if meta.get("required") and not meta.get("removed") and rate < 1.0:
+            contradictions.append({
+                "field": field_name,
+                "fill_rate": round(rate, 3),
+                "required": True,
+                "extraction_guidance_excerpt": meta.get("extraction_guidance", "")[:200],
+            })
+    return sorted(contradictions, key=lambda x: x["fill_rate"])
+
+
+def _normalize_variant_name(name: str) -> str:
+    """Normalize variant name for matching between gold standard and extraction.
+
+    Gold standard bundles variant + genotype (e.g., "rs3918290 GA", "IVS14+1G>A het").
+    Extraction separates them (variant_raw + zygosity_group).
+    This strips genotype suffixes and normalizes notation to enable matching.
+    Does NOT use System 1's normalization table — the eval measures what System 1
+    actually produced, not what it could have produced.
+    """
+    import re
+
+    name = name.strip()
+
+    # 1. Extract rsID if present anywhere — strongest match signal
+    rsid_match = re.search(r'(rs\d+)', name, re.IGNORECASE)
+    if rsid_match:
+        return rsid_match.group(1).lower()
+
+    name_lower = name.lower()
+
+    # 2. Strip parenthetical genotype annotations first (before whitespace collapse)
+    # "(HET)", "(WT)", "(heterozygous)", "(homozygous)", "(compound heterozygote)"
+    # Also "MUT (het/ho)"
+    cleaned = re.sub(
+        r'\s*(?:MUT\s*)?\((?:het(?:/ho(?:m)?)?|hom|wt|heterozygous|homozygous|compound heterozygote)\)',
+        '', name_lower, flags=re.IGNORECASE,
+    ).strip()
+
+    # 3. Strip trailing genotype suffixes (non-parenthetical)
+    # "het/hom", "het/ho", "het", "hom", "ho", "WT", "wt"
+    # Diplotype genotypes: "GG", "GA", "AA", "TT", "AT", "AT/TT"
+    cleaned = re.sub(
+        r'\s+(?:het/hom|het/ho|het|hom|ho|wt|[ACGT]{2}(?:/[ACGT]{2,})?)\s*$',
+        '', cleaned, flags=re.IGNORECASE,
+    ).strip()
+
+    # 4. Strip parenthetical protein annotations: "(E412)", "(R357H)", "(S534N)"
+    cleaned = re.sub(r'\s*\([A-Z]\d+[A-Z]?\)', '', cleaned, flags=re.IGNORECASE).strip()
+
+    # 5. Strip leading gene prefix: "DPYD " → keep the rest
+    cleaned = re.sub(r'^dpyd\s+', '', cleaned).strip()
+
+    # 6. Normalize whitespace in HGVS notation: "c.1236 G>A" → "c.1236g>a"
+    cleaned = re.sub(r'\s+', '', cleaned) if re.match(r'[ci]\.', cleaned) else cleaned
+    # Also for IVS notation: "IVS14 + 1G>A" → "ivs14+1g>a"
+    if cleaned.startswith('ivs'):
+        cleaned = re.sub(r'\s+', '', cleaned)
+
+    # 7. Remove trailing whitespace artifacts
+    cleaned = cleaned.strip()
+
+    if not cleaned:
+        return name_lower
+
+    # 8. Try "c." prefix for bare HGVS (e.g., "1236g>a" → "c.1236g>a")
+    if re.match(r'\d', cleaned):
+        return "c." + cleaned
+
+    return cleaned
 
 
 def evaluate_paper(
@@ -155,6 +303,7 @@ def evaluate_paper(
         if identity_dimensions
         else {}
     )
+    norm_status = _compute_normalization_status(rows)
 
     flags = []
     if row_coverage < 0.5:
@@ -165,6 +314,12 @@ def evaluate_paper(
         flags.append(f"WARNING: over-extraction {row_coverage:.0%} > 150%")
     if missing_keys:
         flags.append(f"Missing {len(missing_keys)} gold variants: {sorted(missing_keys)[:5]}")
+    if norm_status.get("unnormalized_rate", 0) > 0.2:
+        flags.append(
+            f"NORMALIZATION: {norm_status['raw_only_no_canonical_no_rsid']}/{norm_status['total_rows']} rows "
+            f"({norm_status['unnormalized_rate']:.0%}) have variant_raw but no canonical/rsid. "
+            f"Examples: {norm_status['unnormalized_examples'][:5]}"
+        )
 
     return PaperEval(
         paper_id=paper_id,
@@ -180,6 +335,7 @@ def evaluate_paper(
         variant_coverage=round(variant_coverage, 3),
         field_fill_rates=fill_rates,
         identity_dim_completeness=id_completeness,
+        normalization=norm_status,
         flags=flags,
     )
 
@@ -189,19 +345,30 @@ def evaluate_all(
     gold_standard_path: Path,
     pmid_map_path: Path,
     identity_dimensions: list[str] | None = None,
+    schema_dir: Path | None = None,
 ) -> AggregateEval:
     """Evaluate all extracted papers against gold standard."""
     gold_df = load_gold_standard(gold_standard_path)
     pmid_map = load_pmid_map(pmid_map_path)
+    schema_meta = _load_schema_field_metadata(schema_dir)
 
     papers = []
     for extraction_file in sorted(extractions_dir.glob("*.jsonl")):
         paper_id = extraction_file.stem
         pmid = pmid_map.get(paper_id)
         if pmid is None:
-            # Try matching by stem patterns
+            # Try matching by stem patterns, but verify PMID if embedded in filename
             for map_key, map_pmid in pmid_map.items():
                 if paper_id.lower().startswith(map_key.lower().split()[0].lower()):
+                    # If filename contains a PMID, it must match the map entry
+                    parts = paper_id.split("_")
+                    embedded_pmid = None
+                    for part in parts:
+                        if part.isdigit() and len(part) >= 7:
+                            embedded_pmid = int(part)
+                            break
+                    if embedded_pmid is not None and embedded_pmid != map_pmid:
+                        continue  # PMID mismatch — skip this mapping
                     pmid = map_pmid
                     break
         if pmid is None:
@@ -225,6 +392,7 @@ def evaluate_all(
             papers=[],
             mean_row_coverage=0.0,
             mean_variant_coverage=0.0,
+            mean_finding_accuracy=None,
             total_gold_rows=0,
             total_extracted_rows=0,
             overall_row_coverage=0.0,
@@ -235,7 +403,8 @@ def evaluate_all(
 
     total_gold = sum(p.gold_rows for p in papers)
     total_ext = sum(p.extracted_rows for p in papers)
-    mean_row_cov = sum(p.row_coverage for p in papers) / len(papers)
+    # Cap row coverage at 1.0 per paper for composite (over-extraction shouldn't inflate score)
+    mean_row_cov = sum(min(p.row_coverage, 1.0) for p in papers) / len(papers)
     mean_var_cov = sum(p.variant_coverage for p in papers) / len(papers)
     mean_fill = sum(
         sum(p.field_fill_rates.values()) / len(p.field_fill_rates)
@@ -243,18 +412,30 @@ def evaluate_all(
         if p.field_fill_rates
     ) / len(papers) if papers else 0.0
 
-    # Composite: 40% row coverage, 30% accuracy (placeholder 1.0), 20% variant, 10% fill
-    composite = 0.4 * mean_row_cov + 0.3 * 1.0 + 0.2 * mean_var_cov + 0.1 * mean_fill
+    # Schema contradiction detection: required fields with <100% fill across all papers
+    all_fill_rates: dict[str, list[float]] = {}
+    for p in papers:
+        for fname, rate in p.field_fill_rates.items():
+            all_fill_rates.setdefault(fname, []).append(rate)
+    avg_fill_rates = {f: sum(rates) / len(rates) for f, rates in all_fill_rates.items()}
+    schema_contradictions = _compute_schema_contradictions(avg_fill_rates, schema_meta) if schema_meta else []
+
+    # Aggregate mode: completeness metrics only. finding_accuracy requires detailed mode
+    # (the eval agent reasoning about matched rows, not a Python scoring function).
+    # Composite excludes finding_accuracy — max possible is 0.7.
+    composite = 0.4 * mean_row_cov + 0.2 * mean_var_cov + 0.1 * mean_fill
 
     return AggregateEval(
         papers=papers,
         mean_row_coverage=round(mean_row_cov, 3),
         mean_variant_coverage=round(mean_var_cov, 3),
+        mean_finding_accuracy=None,  # requires eval agent detailed mode
         total_gold_rows=total_gold,
         total_extracted_rows=total_ext,
         overall_row_coverage=round(total_ext / total_gold, 3) if total_gold else 0.0,
         papers_below_50pct=[p.paper_id for p in papers if p.row_coverage < 0.5],
         papers_below_70pct=[p.paper_id for p in papers if p.row_coverage < 0.7],
+        schema_contradictions=schema_contradictions,
         composite_score=round(composite, 3),
     )
 
@@ -266,15 +447,44 @@ def format_report(eval_result: AggregateEval) -> str:
     lines.append(f"Total rows: {eval_result.total_extracted_rows} extracted / {eval_result.total_gold_rows} gold ({eval_result.overall_row_coverage:.0%})")
     lines.append(f"Mean row coverage: {eval_result.mean_row_coverage:.0%}")
     lines.append(f"Mean variant coverage: {eval_result.mean_variant_coverage:.0%}")
-    lines.append(f"Composite score: {eval_result.composite_score:.3f}")
+    lines.append(f"Finding accuracy: NOT EVALUATED (requires eval agent detailed mode)")
+    lines.append(f"Aggregate composite: {eval_result.composite_score:.3f} (max 0.7 — excludes finding_accuracy)")
     lines.append("")
 
     if eval_result.papers_below_50pct:
-        lines.append(f"⚠️  CRITICAL — papers below 50% row coverage: {eval_result.papers_below_50pct}")
+        lines.append(f"CRITICAL — papers below 50% row coverage: {eval_result.papers_below_50pct}")
     if eval_result.papers_below_70pct:
         below_70_not_50 = [p for p in eval_result.papers_below_70pct if p not in eval_result.papers_below_50pct]
         if below_70_not_50:
-            lines.append(f"⚠️  WARNING — papers below 70% row coverage: {below_70_not_50}")
+            lines.append(f"WARNING — papers below 70% row coverage: {below_70_not_50}")
+
+    # Schema contradictions
+    if eval_result.schema_contradictions:
+        lines.append("## Schema Contradictions")
+        lines.append("Fields marked `required: true` in schema but with <100% fill rate across extractions:")
+        lines.append("(May indicate schema internal inconsistency — check if extraction_guidance permits null)")
+        lines.append("")
+        for c in eval_result.schema_contradictions[:15]:
+            lines.append(f"  {c['field']}: {c['fill_rate']:.0%} fill rate (required: true)")
+            if c.get("extraction_guidance_excerpt"):
+                lines.append(f"    guidance: {c['extraction_guidance_excerpt'][:150]}")
+        lines.append("")
+
+    # Normalization summary
+    norm_papers = [p for p in eval_result.papers if p.normalization.get("unnormalized_rate", 0) > 0.1]
+    if norm_papers:
+        lines.append("")
+        lines.append("## Normalization Gaps")
+        lines.append("Papers where >10% of rows have variant_raw but no variant_canonical or variant_rsid:")
+        lines.append("(This may indicate normalizer instruction gaps, schema contradictions, or intentionally un-normalizable rows)")
+        lines.append("")
+        for p in sorted(norm_papers, key=lambda x: x.normalization.get("unnormalized_rate", 0), reverse=True):
+            n = p.normalization
+            lines.append(
+                f"  {p.paper_id}: {n['raw_only_no_canonical_no_rsid']}/{n['total_rows']} rows "
+                f"({n['unnormalized_rate']:.0%}) unnormalized. "
+                f"Examples: {n['unnormalized_examples'][:5]}"
+            )
     lines.append("")
 
     lines.append("## Per-Paper Results")

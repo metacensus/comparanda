@@ -98,30 +98,52 @@ ls ~/.claude/projects/<project-slug>/<session-id>/subagents/*.meta.json
 
 ## Step 3: Evaluate Against Gold Standard
 
-### Aggregate metrics (fast, run first)
-Invoke @eval with the current extractions and gold standard. Produces:
+Evaluation has two layers. Both are necessary — aggregate catches completeness
+regressions fast, detailed mode assesses whether extracted values are actually correct.
+
+### Aggregate metrics (fast, every iteration)
+Invoke @eval in aggregate mode. Produces:
 - **Row count comparison** per paper (extracted vs gold)
 - **Variant coverage** — which gold standard variants appear in extraction
-- **Outcome coverage** — which gold standard outcomes appear in extraction
-- **Field fill rates** — what fraction of fields are non-null
+- **Field fill rates** — split by required vs optional fields
+- **Schema contradictions** — required fields with <100% fill (may indicate schema internal inconsistency)
+- **Normalization completeness** — which extraction rows have variant_canonical vs raw-only
 - **Identity dimension completeness** — are all ID dims populated
 
+Aggregate mode does NOT compute finding_accuracy — that requires detailed mode.
 
-### LLM judge (detailed, run after aggregate flags issues)
-Invoke @eval in detailed mode for papers with aggregate metric anomalies.
-Semantic comparison: "does this extraction capture the same findings as the
-gold standard, even if the schema is different?"
+### Detailed mode (accuracy evaluation, selective but required)
+Invoke @eval in detailed mode for:
+- Papers flagged by aggregate (CRITICAL, WARNING, normalization gaps)
+- A representative sample of papers not yet evaluated for accuracy
+
+The eval agent reads prepared comparison data (gold vs extraction rows paired
+side-by-side) and reasons about whether the extraction captured the same findings
+as the gold standard. It scores completeness and accuracy per finding with
+explanations the diagnostician can consume.
+
+**Accuracy is not optional.** It is 30% of the composite signal. Skipping it
+means you are optimizing blind. Every gold standard paper must be evaluated for
+accuracy at least once before convergence — but not all at once. Prioritize
+flagged papers, then fill in the rest over subsequent iterations.
+
+### Accuracy coverage tracking
+The eval agent maintains `iterations/accuracy_coverage.json` — a running log of
+which papers have been evaluated for accuracy, when (which iteration), and with
+what finding_accuracy score. After each detailed mode pass, the eval agent updates
+this file. Check it before convergence decisions.
 
 ### Composite score
 ```
 composite = (
-    0.4 * row_coverage          # extracted_rows / gold_rows per paper, averaged
-  + 0.3 * finding_accuracy      # LLM judge score for matched rows
+    0.4 * row_coverage          # extracted_rows / gold_rows per paper, averaged, capped at 1.0
+  + 0.3 * finding_accuracy      # eval agent detailed mode score (NOT a Python formula)
   + 0.2 * variant_coverage      # fraction of gold variants present
   + 0.1 * field_fill_rate       # non-null rate for key fields
 )
 ```
-Weights are initial — tune after first calibration runs.
+In aggregate-only mode, finding_accuracy is null and composite maxes at 0.7.
+The full composite requires detailed mode to have been run.
 
 ---
 
@@ -266,6 +288,8 @@ Append to `iterations/trajectory.json`.
 - Row coverage is below 70% for any gold standard paper
 - A known instruction-level fix hasn't been tried yet
 - The last change was reverted (try a different approach first)
+- **Any gold standard paper has not been evaluated for accuracy** (check `iterations/accuracy_coverage.json` — every paper needs at least one detailed mode pass)
+- **Finding accuracy is below 50%** on papers where it has been measured
 
 ---
 

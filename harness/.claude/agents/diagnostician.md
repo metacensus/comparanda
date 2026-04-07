@@ -37,9 +37,11 @@ Read the eval report. For each paper, note:
 - Which gold standard variants are missing from extraction.
 - Which gold standard outcomes are missing from extraction.
 - Field fill rate anomalies (fields that are consistently null).
-- LLM judge annotations if present (semantic mismatches, wrong values).
+- **Schema contradictions** — required fields with <100% fill. A field marked `required: true` with 0% fill may indicate the schema-proposer added a field the extractor can never populate, or the extraction_guidance contradicts the required status.
+- **Normalization gaps** — papers with high unnormalized rates. Trace through: is the normalizer's confidence threshold too conservative? Are the variants legitimately un-normalizable (haplotypes, wildtype, compound variants)? Does the schema contradict itself (required: true but guidance says null)?
+- **Detailed mode findings** — if the eval agent ran detailed mode, read its per-finding explanations. Look for patterns: are mismatches systematic (same cause across papers) or paper-specific?
 
-Sort findings by severity: largest row coverage gap first, then missing variants, then accuracy issues, then field fill gaps.
+Sort findings by severity: largest row coverage gap first, then accuracy issues from detailed mode, then missing variants, then normalization/schema contradictions, then field fill gaps.
 
 ## Step 3: Examine the extraction artifacts
 
@@ -50,6 +52,14 @@ For the worst-performing papers, read:
 - The current schema's identity dimensions and field list
 
 Look for patterns: Did the extractor produce rows but at the wrong granularity? Did it miss entire tables? Did it extract the right data under wrong field names? Did the schema force it to collapse distinct groups into one row?
+
+**If the eval report flags normalization gaps** (rows with variant_raw but no variant_canonical/rsid), also examine:
+- The normalization table (`../comparanda/projects/dpyd/normalization/variants.json`) — are the un-normalized variants present? What confidence scores do they have? Are their canonical_id fields deliberately null?
+- The normalizer observation log entries (category `normalization_note`) — were disputes logged?
+- The schema field definitions for variant_canonical and variant_rsid — does `required:` match the extraction_guidance? A field marked `required: true` whose guidance says "null for combined groups" is a schema internal contradiction that should be traced to the schema-proposer.
+- The normalizer agent instructions (`../comparanda/.claude/agents/normalizer.md`) — do the confidence thresholds or notation handling rules explain why these rows were left un-normalized?
+
+The root cause of normalization gaps could be in any of: the normalizer instructions (too conservative thresholds), the schema (contradictory requirements), or the extractor (producing variant_raw values the normalizer can't resolve). Trace through the pipeline rather than assuming the normalizer is at fault.
 
 ## Step 4: Classify each finding
 
@@ -78,6 +88,8 @@ Produce the structured output (see Output Format). Rank findings by expected imp
 | `schema_forced_compression` | Identity dims too coarse, distinct groups collapsed | Yes — schema-proposer guidance |
 | `schema_missing_dimension` | No schema field for a gold standard column | Yes — schema-proposer guidance |
 | `normalization_vocabulary_drift` | Same concept appears as different strings across papers | Yes — normalizer/schema guidance |
+| `normalization_incomplete` | variant_raw populated but variant_canonical/rsid null; normalizer didn't resolve | Yes — normalizer instructions (confidence thresholds, notation handling) |
+| `schema_internal_contradiction` | Field marked `required: true` but extraction_guidance permits null | Yes — schema-proposer should validate internal consistency |
 | `data_gap` | Gold value derived from supplement not available to agent | No — paper limitation |
 | `domain_quirk` | One paper uses unusual table format requiring special handling | No — domain reference, not instructions |
 
