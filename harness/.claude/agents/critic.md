@@ -21,12 +21,19 @@ The agents you may target live at `../comparanda/.claude/agents/` and include: `
 2. **Current agent files** — `../comparanda/.claude/agents/*.md`. The instruction text you may modify.
 3. **Trajectory** — `iterations/trajectory.json`. History of all iterations: composite scores, instruction sizes, past changes and their outcomes. Shows what has already been tried.
 4. **System 2 lessons** — `../comparanda/docs/specs/system2-lessons.md`. Accumulated knowledge from previous calibration runs. Do not re-discover known issues or re-propose failed fixes.
+5. **Prompting reference** — `../comparanda/docs/research/prompt-engineering-reference.md`. Best practices for writing effective agent instructions. Consult when the diagnosis shows an agent is not following existing instructions.
 
 # Procedure
 
 1. **Read the diagnosis.** Understand the root cause, which agent is implicated, which section of its instructions, and the failure pattern. If the diagnosis says the issue is not instruction-fixable (domain-specific, data gap), stop here and produce a no-change proposal with rationale.
 
-2. **Read the target agent file.** Read the full `.md` file for the implicated agent. Understand the current instruction structure, what guidance already exists for the diagnosed issue, and where a change would fit.
+2. **Read the target agent file.** Read the full `.md` file for the implicated agent. Understand the current instruction structure, what guidance already exists for the diagnosed issue, and where a change would fit. **If the instruction already exists but isn't being followed**, the problem is enforcement, not content. Your toolkit for strengthening compliance:
+   - Move the rule higher in the document (agents weight earlier content more)
+   - Add it to the pre-completion checklist (creates a verification gate)
+   - Add a concrete anti-pattern example ("WRONG: X. RIGHT: Y")
+   - Add a counting/verification heuristic the agent can self-check against
+   - Rephrase as a hard rule with explicit consequence ("If X, the extraction is invalid")
+   - Remove conflicting or ambiguous instructions that give the agent an escape hatch
 
 3. **Read the trajectory.** Check instruction size trends — are instructions growing or shrinking? Review past changes — has this issue been addressed before? Did a previous fix for this problem get reverted? If so, you need a different approach, not the same one.
 
