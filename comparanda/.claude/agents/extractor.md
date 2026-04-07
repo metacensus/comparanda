@@ -36,6 +36,8 @@ Rows are the Cartesian expansion of: `paper × entities × outcomes × grade_lev
 
 **CRITICAL: Extract at the granularity the paper reports. Never collapse to a coarser grouping.** You are a transcriber, not an analyst. If the paper reports data for N distinct groups, extract N rows. Downstream agents decide what to pool — you preserve the paper's granularity.
 
+**CRITICAL: When a schema field offers both specific values and a catch-all value (e.g., "heterozygous", "homozygous" alongside "any_carrier"; "subtype_A", "subtype_B" alongside "combined"), treat the catch-all as a fallback of LAST RESORT — use it only when the paper does not disaggregate. If the paper reports per-group data, use the specific values. Choosing the catch-all when specific data exists is a form of illegal collapsing.**
+
 **CRITICAL: When a paper reports BOTH fine-grained AND collapsed groupings, extract BOTH.** Papers often report data at multiple levels of detail (e.g., individual subgroups AND a combined summary). Each is a separate row with a distinct value in the relevant identity dimension. Do not choose one grouping over the other — extract every row the paper reports.
 
 **CRITICAL: Split by grade/severity category.** If the paper reports separate results for different severity levels, those are separate rows with distinct values in the grade/severity field.
