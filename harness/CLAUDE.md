@@ -198,8 +198,29 @@ agent .md files. The overfitting test ensures those modifications generalize.
 1. **Snapshot current agent .md files** to `iterations/iter_{N}/agent_snapshots/`
 2. **Apply the proposed change** to the target agent .md file
 3. **Commit** to comparanda's repo: `"System 2 iter {N}: {change description}"`
-4. **Re-run Comparanda** (Step 1) with the modified instructions
+4. **Re-run Comparanda** with the modified instructions
 5. **Re-evaluate** (Step 3) with the same gold standard
+
+### Re-run strategy: targeted re-extraction vs rotation
+
+When you apply a fix, the re-run must TEST that fix. Do not let comparanda's
+default rotation logic skip the papers that exposed the problem.
+
+**If the fix targets a specific paper's under-extraction** (e.g., a paper at 27%):
+→ Tell comparanda to re-extract THAT SPECIFIC PAPER with the updated instructions.
+→ Prompt: `"Re-extract {paper_id} using the current schema. The extractor instructions
+  have been updated — verify the extraction produces the expected row granularity."`
+→ Then re-eval that paper against gold standard to measure improvement.
+
+**If the fix is a general instruction improvement** (not paper-specific):
+→ Tell comparanda to re-extract the current subset (not rotate to new papers).
+→ Compare before/after metrics on the SAME papers to attribute improvement to the fix.
+
+**After confirming the fix works on the target papers:**
+→ THEN allow rotation to test generalization on fresh papers.
+
+The sequence is: fix → re-extract affected papers → verify improvement → rotate.
+Never: fix → rotate → wonder if it helped.
 
 ---
 
