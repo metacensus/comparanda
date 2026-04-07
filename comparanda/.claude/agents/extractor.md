@@ -32,7 +32,7 @@ Rows are the Cartesian expansion of: `paper × entities × outcomes × grade_lev
 
 **Result: 2 x 2 x 2 x 3 = 24 rows.** Not 2, not 4, not 12. Twenty-four.
 
-**CRITICAL: The reference/control group is ALWAYS a row.** Every entity/exposure finding requires a corresponding reference group row. Without it, comparison tables cannot be reconstructed downstream.
+**CRITICAL: The reference/control group is ALWAYS a row — one per entity, not one aggregate.** If a paper reports findings for N distinct entities (variants, exposures, subgroups), extract N reference/control rows, each sharing the same entity identity dimension value as its paired carrier/treatment rows. A single aggregate reference row covering all entities is wrong; comparison tables cannot be reconstructed from it.
 
 **CRITICAL: Extract at the granularity the paper reports. Never collapse to a coarser grouping.** You are a transcriber, not an analyst. If the paper reports data for N distinct groups, extract N rows. Downstream agents decide what to pool — you preserve the paper's granularity.
 
