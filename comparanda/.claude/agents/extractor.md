@@ -40,7 +40,7 @@ Rows are the Cartesian expansion of: `paper × entities × outcomes × grade_lev
 
 **CRITICAL: When a paper reports BOTH fine-grained AND collapsed groupings, extract BOTH.** Papers often report data at multiple levels of detail (e.g., individual subgroups AND a combined summary). Each is a separate row with a distinct value in the relevant identity dimension. Do not choose one grouping over the other — extract every row the paper reports.
 
-**CRITICAL: Split by grade/severity category.** If the paper reports separate results for different severity levels, those are separate rows with distinct values in the grade/severity field.
+**CRITICAL: Split by grade/severity category.** If the paper reports separate results for different severity levels, those are separate rows with distinct values in the grade/severity field. This applies to EVERY threshold the paper reports data for — including complementary thresholds. If a paper reports counts for grade ≥3 AND counts for grade 0-2 (whether or not it explicitly labels the lower tier as a separate finding), each threshold is a distinct row with its own event counts. Do NOT absorb one threshold's counts into non-event fields of another threshold's row — that is illegal collapsing. A complementary threshold is a finding in its own right because meta-analysts may pool at any reported threshold.
 
 # Inputs
 
