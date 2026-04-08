@@ -129,11 +129,13 @@ and where to investigate.
 ```bash
 uv run python -m harness.monitor \
   --project-dir ../comparanda/projects/dpyd \
-  --session-dir ~/.claude/projects/<encoded-project-dir>
+  --session-dir ~/.claude/projects/<encoded-project-dir> \
+  --output /tmp/comparanda_monitor.log
 # (use run_in_background: true — monitor runs until you stop it)
 ```
 
-The monitor prints events like:
+Read `/tmp/comparanda_monitor.log` at any time to see what has happened.
+The monitor appends events as they occur:
 ```
 [11:30:15] SESSION: <session-id>
 [11:31:02] SUBAGENT: agent-a3fc7b32 spawned

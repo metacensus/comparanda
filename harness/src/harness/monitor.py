@@ -91,13 +91,32 @@ def scan_schema(schema_dir: Path) -> list[str]:
     return sorted([f.name for f in schema_dir.glob("v*.yaml")])
 
 
+_output_file = None
+
+
+def set_output_file(path: str | None):
+    """Set output file for events. None means stdout."""
+    global _output_file
+    _output_file = path
+
+
 def emit(event_type: str, message: str, details: dict | None = None):
-    """Print a structured event line."""
+    """Write a structured event line to output file or stdout."""
     line = f"[{timestamp()}] {event_type}: {message}"
-    print(line, flush=True)
+    detail_lines = []
     if details:
         for k, v in details.items():
-            print(f"  {k}: {v}", flush=True)
+            detail_lines.append(f"  {k}: {v}")
+
+    if _output_file:
+        with open(_output_file, "a") as f:
+            f.write(line + "\n")
+            for dl in detail_lines:
+                f.write(dl + "\n")
+    else:
+        print(line, flush=True)
+        for dl in detail_lines:
+            print(dl, flush=True)
 
 
 def main():
@@ -105,11 +124,18 @@ def main():
     parser.add_argument("--project-dir", required=True, help="Path to comparanda project")
     parser.add_argument("--session-dir", required=True, help="Path to claude session storage")
     parser.add_argument("--interval", type=int, default=15, help="Poll interval in seconds")
+    parser.add_argument("--output", default=None, help="Write events to this file (default: stdout). System 2 reads this file to check progress.")
     args = parser.parse_args()
 
     project = Path(args.project_dir)
     session_dir = Path(args.session_dir).expanduser()
     interval = args.interval
+
+    if args.output:
+        set_output_file(args.output)
+        # Clear the file at start
+        with open(args.output, "w") as f:
+            pass
 
     extractions_dir = project / "extractions"
     norm_dir = project / "normalization"
