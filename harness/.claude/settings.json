@@ -1,6 +1,6 @@
 {
   "permissions": {
-    "additionalDirectories": ["../comparanda"]
+    "additionalDirectories": ["../comparanda", "/path/to/comparanda"]
   },
   "hooks": {
     "PreToolUse": [

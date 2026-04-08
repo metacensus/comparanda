@@ -1,6 +1,6 @@
 # Comparanda Calibration Harness
 
-You are the System 2 orchestrator for Comparanda. Your job is to improve Comparanda's
+You are you orchestrator for Comparanda. Your job is to improve Comparanda's
 agent instructions by running Comparanda, evaluating its output against a gold standard,
 diagnosing instruction-level problems, and applying fixes that generalize across domains.
 
@@ -40,49 +40,57 @@ comparanda-harness/           (you are here)
 
 ## Step 1: Run Comparanda
 
-**CRITICAL: You are running from the harness directory. Comparanda must run from
+**CRITICAL: You are running from you directory. Comparanda must run from
 `../comparanda/`. There is no `--cwd` flag — you MUST use `cd ../comparanda &&`
 before every `claude -p` invocation.**
 
-### Non-interactive (recommended for harness automation)
+### How to run Comparanda
+
+Always run full inner loop iterations. The prompt to Comparanda is:
 ```bash
-# CORRECT — cd first, then claude -p
+# CRITICAL: cd to comparanda first — Comparanda must run from its own directory
 cd ../comparanda && claude -p "Run N inner loop iterations on projects/dpyd" \
   --permission-mode bypassPermissions \
   2>&1 | tail -30
-
-# WRONG — missing cd, runs from harness dir, can't find papers/schema/agents
-claude -p "Run N inner loop iterations on projects/dpyd" \
-  --permission-mode bypassPermissions
 ```
 
-### Targeted re-extraction (after an instruction change)
+Do not tell Comparanda which papers to extract, which phases to run,
+or how to process papers. Comparanda's orchestrator (CLAUDE.md) and agents define
+the workflow. Your job is to evaluate the output and improve the instructions.
 
-**CRITICAL: The re-extraction prompt must be NEUTRAL.** The whole point of
-re-extraction is to test whether the instruction change alone drives improvement.
-If you describe the fix in the prompt, you are testing prompt compliance, not
-instruction quality — and the improvement is not attributable to the .md change.
+### Verification re-extraction (bounded, after instruction changes only)
+
+After applying an instruction change, you may re-extract ONE paper as a
+smoke test to verify the fix landed. This is subject to strict bounds:
+
+- The diagnostician must have recommended `fix_instruction` with a specific
+  verification paper and rationale for why that paper tests the fix
+- One paper, one re-extraction — never multiple papers
+- The prompt must be neutral — file paths only, no description of the fix
+- Output goes to `iterations/iter_{N}/verification/{paper_id}.jsonl`, NOT to
+  `../comparanda/projects/dpyd/extractions/`. It is a diagnostic artifact,
+  not Comparanda state
+- After verification, you must still run a full inner loop to test
+  generalization. The smoke test does not replace the loop
+- If verification shows the fix didn't land, the diagnostician reassesses.
+  Do not retry the same re-extraction
 
 ```bash
-# CORRECT — neutral prompt, lets the agent instructions do the work
+# Verification smoke test — output to harness iterations, not comparanda
 cd ../comparanda && claude -p \
-  "Re-extract {paper_id} using the current schema \
-  (latest v*.yaml in projects/dpyd/schema/). \
-  Write output to projects/dpyd/extractions/{paper_id}.jsonl." \
+  "Invoke @extractor to extract {paper_id}. \
+  Input file paths: Paper: projects/dpyd/data/{pdf_name}, \
+  Schema: projects/dpyd/schema/v{NNN}.yaml, \
+  Survey: projects/dpyd/surveys/{paper_id}.json, \
+  Domain ref: projects/dpyd/domain/extraction_ref.md, \
+  Observation log: projects/dpyd/observations/log.jsonl. \
+  Write output to /tmp/verification_{paper_id}.jsonl." \
   --permission-mode bypassPermissions \
   2>&1 | tail -30
 
-# WRONG — prompt contains the fix, contaminates the test
-cd ../comparanda && claude -p \
-  "Re-extract {paper_id}. The extractor instructions have been updated — \
-  when the paper reports BOTH per-genotype counts AND combined carrier \
-  group ORs, you must create BOTH..." \
-  --permission-mode bypassPermissions
+# Then copy to harness iterations for comparison
+cp /tmp/verification_{paper_id}.jsonl iterations/iter_{N}/verification/
 ```
-
-The prompt should say WHAT to extract and WHERE to write it. It must NEVER say
-HOW — that must come from the agent's .md instructions alone. If the neutral
-re-extraction doesn't show improvement, the instruction change didn't work.
 
 ### Interactive (for debugging)
 ```bash
@@ -114,24 +122,101 @@ git -C ../comparanda diff HEAD~1 -- .claude/agents/   # did instructions change?
 git -C ../comparanda diff HEAD~1 -- projects/dpyd/schema/  # did schema change?
 ```
 
-### Session monitoring
-```python
-from claude_agent_sdk import get_session_messages
-msgs = get_session_messages(session_id="<comparanda-session-id>")
+### Behavior alignment verification (required after every run)
+
+After each `claude -p` run, you must verify that Comparanda behaved correctly before
+evaluating results. This is not optional — previous iterations produced invalid results
+because the orchestrator bypassed delegation, embedded critique context in prompts, or
+skipped phases. Read the actual session and subagent logs to confirm alignment.
+
+**Step 1: Find and read the orchestrator session log.**
+```bash
+# Find the most recent Comparanda session
+ls -t ~/.claude/projects/<encoded-project-dir>/*.jsonl | head -1
+```
+Parse the session JSONL. For each assistant message, check:
+- What tool calls did it make? (Agent, Read, Write, Bash, etc.)
+- What text reasoning did it produce between tool calls?
+- Did it invoke Agent tool for extraction, normalization, and MA Critique?
+
+**Step 2: Verify delegation — no inline execution.**
+The orchestrator must use the Agent tool for extraction, normalization, and MA Critique.
+If you see the orchestrator directly writing to extraction JSONL files, running
+normalization logic via Bash/Python, or producing critique JSON without an Agent call,
+the run is invalid. The orchestrator should only read project files (for state awareness)
+and invoke agents (for work).
+
+**Step 3: Verify prompt neutrality.**
+Read the `prompt` field of each Agent tool call in the session log. Check that:
+- Prompts contain file paths, not interpreted content
+- No MA Critique findings, survey conclusions, or orchestrator analysis is embedded
+- The prompt says WHAT to do (extract paper X, normalize, run critique) not HOW
+
+If the orchestrator passed biased context (e.g., "RE-EXTRACTION with corrected guidance
+from iter_006"), the agents' behavior was driven by the prompt, not their instructions.
+That run does not test instruction quality.
+
+**Step 4: Verify phase completion.**
+Check subagent metadata to confirm all expected phases ran:
+```bash
+ls ~/.claude/projects/<encoded-project-dir>/{session_id}/subagents/*.meta.json
+```
+For a full inner loop iteration, expect:
+- `extractor` agents (one per paper in the subset, typically 3-4)
+- `normalizer` agent (one)
+- `ma-critique` agent (one)
+Missing agent types mean phases were skipped.
+
+**Step 5: Spot-check subagent behavior.**
+Read at least one extractor subagent's conversation log to verify it followed its
+procedure:
+```bash
+# Read a subagent's conversation
+cat ~/.claude/projects/<encoded-project-dir>/{session_id}/subagents/{agent_id}.jsonl
+```
+Check for:
+- Did the extractor execute Phase 2 (schema-to-paper mapping)?
+- Did it produce Phase 4 (Cartesian verification)?
+- Does the meta-commentary include `identity_dimension_values` and `cartesian_product_size`?
+- If there are schema vocabulary gaps, did it flag them in `schema_vocabulary_gaps`?
+- Did it write its output file, or did it run out of budget?
+
+**Step 6: Check for state corruption.**
+Verify that Comparanda didn't restore deleted files, create files outside its scope,
+or modify agent instruction files. Compare git status before and after:
+```bash
+git -C ../comparanda status --short
 ```
 
-### Subagent investigation
-Use the investigate-subagent-logs skill to examine what individual agents did:
-```bash
-# Find subagent logs
-ls ~/.claude/projects/<project-slug>/<session-id>/subagents/*.meta.json
-# Read specific agent's conversation
-# See skill for full methodology
-```
+If any verification step fails, do not proceed to evaluation. Investigate the failure,
+determine whether it's an instruction problem or a one-time issue, and re-run if needed.
+
+### Comparanda state awareness (required before every run)
+
+Before running Comparanda, read the current state to understand where it is:
+
+- **Latest critique** (`../comparanda/projects/dpyd/critiques/iter_*.json`) — what did
+  MA Critique last recommend? Is it "ready" or "not ready"? What action type?
+- **Schema version** (`../comparanda/projects/dpyd/schema/v*.yaml`) — has the schema
+  been updated since the latest critique? If not and the critique recommended schema
+  changes, Comparanda needs to start at Phase 4.
+- **Extractions** (`../comparanda/projects/dpyd/extractions/`) — which papers have been
+  extracted? If empty, Comparanda starts at Phase 3a with subset selection.
+- **Observation log tail** (`../comparanda/projects/dpyd/observations/log.jsonl`) — what
+  was the last phase and iteration? Any reset markers?
+
+This informs your prompt. If Comparanda is mid-loop (critique exists but Phase 4 hasn't
+run), prompt "Continue the inner loop from current state" not "Run N iterations."
 
 ---
 
 ## Step 3: Evaluate Against Gold Standard
+
+**Only evaluate after Comparanda has completed a full inner loop iteration through
+MA Critique.** Never evaluate after partial runs (extraction-only, normalization-only).
+If the loop didn't complete all phases, investigate why (Step 2 subagent verification)
+before evaluating. Evaluating partial state produces misleading metrics and leads to
+interventions that interfere with Comparanda's self-correction.
 
 Evaluation has two layers. Both are necessary — aggregate catches completeness
 regressions fast, detailed mode assesses whether extracted values are actually correct.
@@ -189,22 +274,35 @@ Invoke @diagnostician with eval results + comparanda's agent definitions + obser
 The diagnostician must determine:
 1. **What failed?** — which papers, which metrics, what's the pattern
 2. **Does the instruction already exist?** — read the target agent's .md file before proposing changes
-3. **Would System 1's inner loop catch this?** — check MA Critique output, survey data, schema-proposer capabilities. If System 1 would self-correct, recommend `run_inner_loop` instead of editing instructions.
+3. **Would Comparanda's inner loop catch this?** — check MA Critique output, survey data, schema-proposer capabilities. If Comparanda would self-correct, recommend `run_inner_loop` instead of editing instructions.
 4. **Is it an instruction problem?** — could a universal instruction change fix this?
 5. **Or is it domain-specific?** — a paper quirk, data gap, or domain reference issue
 6. **Which agent's instructions?** — schema-proposer, extractor, normalizer, ma-critique, survey
 7. **What specifically?** — which section of the agent .md, what's missing or wrong
 
-The diagnostician may recommend `run_inner_loop` — meaning the issue should be
-handled by letting System 1 run its full inner loop (extract → normalize → MA critique
-→ schema refinement) rather than editing instructions. When this happens, run Comparanda
-for 1-2 inner loop iterations and re-evaluate. This is appropriate when:
-- The instruction already exists but wasn't followed (re-extraction may fix it)
-- The issue is a schema design decision that MA Critique and schema-proposer should own
-- MA Critique's latest output already flagged the same problem
+The diagnostician recommends one of three actions:
+
+- **`run_inner_loop`** — this is a Comparanda problem (schema vocabulary, extraction
+  granularity, normalization mapping). Let Comparanda iterate. Run 1-2 full inner loop
+  iterations and re-evaluate. Appropriate when the instruction already exists but wasn't
+  followed, the issue is a schema design decision MA Critique and schema-proposer should
+  own, or MA Critique's latest output already flagged the same problem.
+
+- **`fix_instruction`** — this is a universal instruction problem. Proceed to Step 5
+  (propose fix via critic). The diagnostician may optionally specify a verification paper
+  for a bounded smoke test (see Step 1) — this is the ONLY path to targeted re-extraction,
+  and the output is a diagnostic artifact, not Comparanda state. After verification, a full
+  inner loop is still required.
+
+- **`investigate_further`** — need more information before deciding. Read subagent logs
+  to check whether agents followed their procedures. Run detailed eval on specific papers.
+  Check Comparanda's observation log for relevant entries. Then re-diagnose.
+
+The diagnostician never recommends "re-extract paper X" as a standalone action.
+Targeted re-extraction only happens as bounded verification after `fix_instruction`.
 
 ### Failure taxonomy
-| Category | Example | Fixable by System 2? |
+| Category | Example | Fixable by harness? |
 |----------|---------|---------------------|
 | Completeness: missing variants | Gold has variant X, extraction doesn't | Maybe — depends on cause |
 | Accuracy: wrong values | Effect size doesn't match gold | Yes — extraction guidance |
@@ -218,7 +316,7 @@ for 1-2 inner loop iterations and re-evaluate. This is appropriate when:
 
 ## Step 5: Propose Fix
 
-Invoke @critic with diagnosis + current agent instructions + System 2 lessons.
+Invoke @critic with diagnosis + current agent instructions + harness lessons.
 
 The critic proposes ONE change to ONE agent's universal instructions per iteration.
 Multiple simultaneous changes make attribution impossible.
@@ -251,11 +349,11 @@ Multiple simultaneous changes make attribution impossible.
 
 - If YES → apply to universal instructions in `../comparanda/.claude/agents/*.md`
 - If NO → reject the change. It's a domain-specific fix that would pollute universal instructions.
-  Log it as a finding but do not apply. System 1 may address it through domain reference
+  Log it as a finding but do not apply. Comparanda may address it through domain reference
   updates or schema refinement on its own.
 
-**This is a hard constraint, not a guideline.** The harness NEVER modifies domain reference
-files, schema files, or project data. It only modifies the universal instruction sections of
+**This is a hard constraint, not a guideline.** Never modify domain reference
+files, schema files, or project data. Only modify the universal instruction sections of
 agent .md files. The overfitting test ensures those modifications generalize.
 
 ---
@@ -264,30 +362,34 @@ agent .md files. The overfitting test ensures those modifications generalize.
 
 1. **Snapshot current agent .md files** to `iterations/iter_{N}/agent_snapshots/`
 2. **Apply the proposed change** to the target agent .md file
-3. **Commit** to comparanda's repo: `"System 2 iter {N}: {change description}"`
+3. **Commit** to comparanda's repo: `"Harness iter {N}: {change description}"`
 4. **Re-run Comparanda** with the modified instructions
 5. **Re-evaluate** (Step 3) with the same gold standard
 
-### Re-run strategy: targeted re-extraction vs rotation
+### Re-run strategy
 
-When you apply a fix, the re-run must TEST that fix. Do not let comparanda's
-default rotation logic skip the papers that exposed the problem.
+After applying a fix:
 
-**If the fix targets a specific paper's under-extraction** (e.g., a paper at 27%):
-→ Tell comparanda to re-extract THAT SPECIFIC PAPER with the updated instructions.
-→ Prompt: `"Re-extract {paper_id} using the current schema. The extractor instructions
-  have been updated — verify the extraction produces the expected row granularity."`
-→ Then re-eval that paper against gold standard to measure improvement.
+1. **Optional: verification smoke test.** If the diagnostician specified a verification
+   paper with `fix_instruction`, re-extract that ONE paper with a neutral prompt. Output
+   goes to `iterations/iter_{N}/verification/` (not Comparanda state). Compare against the
+   previous extraction to confirm the instruction change produced different output. This
+   is a quick check — not an evaluation, not a replacement for the inner loop.
 
-**If the fix is a general instruction improvement** (not paper-specific):
-→ Tell comparanda to re-extract the current subset (not rotate to new papers).
-→ Compare before/after metrics on the SAME papers to attribute improvement to the fix.
+2. **Required: full inner loop.** Run Comparanda for 1 full inner loop iteration:
+   ```bash
+   cd ../comparanda && claude -p "Run 1 inner loop iteration on projects/dpyd" \
+     --permission-mode bypassPermissions
+   ```
+   Comparanda's own loop logic (subset selection, Phase 4 schema refinement, MA Critique)
+   decides what to extract and how. This tests whether the fix generalizes across papers
+   the diagnostician didn't specifically examine.
 
-**After confirming the fix works on the target papers:**
-→ THEN allow rotation to test generalization on fresh papers.
+3. **Evaluate** (Step 3) on the output of the full inner loop.
 
-The sequence is: fix → re-extract affected papers → verify improvement → rotate.
-Never: fix → rotate → wonder if it helped.
+The sequence is: fix → optional smoke test → full inner loop → evaluate → keep or revert.
+
+Never: fix → re-extract problem paper → re-extract more papers → skip normalization/critique.
 
 ---
 
@@ -373,7 +475,7 @@ When proposing changes, the critic should classify as:
 
 ---
 
-## System 2 Lessons (accumulated knowledge)
+## Harness Lessons (accumulated knowledge)
 
 Read `../comparanda/docs/specs/system2-lessons.md` before each diagnostician/critic run.
 These are previously discovered patterns. Do not re-discover known issues.
@@ -397,6 +499,6 @@ See `.claude/agents/` for definitions.
 ## References
 
 - Comparanda v2 spec: `../comparanda/docs/specs/comparanda-v2-spec.md`
-- System 2 lessons: `../comparanda/docs/specs/system2-lessons.md`
+- Harness lessons: `../comparanda/docs/specs/system2-lessons.md`
 - Gold standard: `benchmark/gold_standard/`
 - Eval config: `benchmark/eval_config/`
