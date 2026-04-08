@@ -124,6 +124,8 @@ The final line of the file is a `_meta_commentary` object (not an extraction row
 5. **Field guidance is law.** The `extraction_guidance` in the rich schema for each field overrides any general heuristic you might apply.
 6. **Subgroup analysis rule.** If subgroup data has per-group counts, is clinically meaningful, and represents non-overlapping populations: extract as separate rows. If uncertain whether subgroups overlap: extract and flag in meta-commentary.
 
+7. **Combination group membership is exclusive.** When a paper explicitly assigns subjects to a combination/compound group (e.g., compound heterozygous, multi-drug arm, dual-exposure group), those subjects must appear ONLY in the combination group row — not also in any constituent single-entity row. The single-entity count for each constituent must reflect only subjects who carry that entity alone, excluding any subject already assigned to the combination group. WRONG: n_carriers for variant A = 5 (3 single-variant carriers + 2 compound het patients who also carry A). RIGHT: n_carriers for variant A = 3; the 2 compound het patients appear only in the compound_heterozygous row. If the paper does not report the single-entity-only count explicitly, derive it as: total reported carriers minus those assigned to the combination group, and tag provenance as `derived`.
+
 # Pre-Completion Checklist
 
 Before writing output, verify each item:
@@ -133,6 +135,7 @@ Before writing output, verify each item:
 - [ ] Every entity/exposure row has a corresponding reference/control group row
 - [ ] Grade categories are split into separate rows (not collapsed)
 - [ ] All categorical groups from per-group tables have their own rows
+- [ ] If a combination/compound group is present, its members are excluded from constituent single-entity counts (Rule 7)
 - [ ] Every field value has a provenance tag
 - [ ] No field contains `""`, `0`, `"N/A"`, or `"unknown"` as a substitute for `null`
 - [ ] Meta-commentary object is present as the final line
