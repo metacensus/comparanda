@@ -182,6 +182,23 @@ Repeat Phases 2-4 until MA Critique says "ready" or 5 iterations reached.
 
 2. **Commit:** `"Phase 3a: Extract {N} papers ({total_rows} rows)"`
 
+### Phase 3a.1 — Extraction QC
+
+1. For each newly extracted paper, invoke @extraction-qc:
+   - Reads: extraction JSONL, survey JSON, current schema, source paper (targeted reads)
+   - Checks: coverage against survey inventory, schema compliance, internal consistency
+   - Writes: QC report to `projects/dpyd/extractions/{paper_id}_qc.json`
+   - Logs summary to observation log
+
+2. **If QC flags major gaps** (missing variant×toxicity combinations, missing combined carrier rows, instruction violations):
+   - Re-extract the flagged paper. The QC report tells the extractor exactly what was missed.
+   - Re-run QC on the re-extraction to verify gaps are closed.
+   - Do not proceed to normalization with known coverage gaps.
+
+3. **If QC passes** (no major gaps, only minor consistency notes): proceed to normalization.
+
+4. **Commit:** `"Phase 3a.1: QC {N} papers ({gaps_found} gaps, {re_extracted} re-extracted)"`
+
 ### Phase 3b — Normalization
 
 1. Invoke @normalizer:
