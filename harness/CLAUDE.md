@@ -40,14 +40,49 @@ comparanda-harness/           (you are here)
 
 ## Step 1: Run Comparanda
 
+**CRITICAL: You are running from the harness directory. Comparanda must run from
+`../comparanda/`. There is no `--cwd` flag — you MUST use `cd ../comparanda &&`
+before every `claude -p` invocation.**
+
 ### Non-interactive (recommended for harness automation)
 ```bash
-claude -p "Run N inner loop iterations on projects/dpyd" \
-  --cwd ../comparanda \
+# CORRECT — cd first, then claude -p
+cd ../comparanda && claude -p "Run N inner loop iterations on projects/dpyd" \
   --permission-mode bypassPermissions \
-  --output-format stream-json \
-  --session-id <generate-uuid>
+  2>&1 | tail -30
+
+# WRONG — missing cd, runs from harness dir, can't find papers/schema/agents
+claude -p "Run N inner loop iterations on projects/dpyd" \
+  --permission-mode bypassPermissions
 ```
+
+### Targeted re-extraction (after an instruction change)
+
+**CRITICAL: The re-extraction prompt must be NEUTRAL.** The whole point of
+re-extraction is to test whether the instruction change alone drives improvement.
+If you describe the fix in the prompt, you are testing prompt compliance, not
+instruction quality — and the improvement is not attributable to the .md change.
+
+```bash
+# CORRECT — neutral prompt, lets the agent instructions do the work
+cd ../comparanda && claude -p \
+  "Re-extract {paper_id} using the current schema \
+  (latest v*.yaml in projects/dpyd/schema/). \
+  Write output to projects/dpyd/extractions/{paper_id}.jsonl." \
+  --permission-mode bypassPermissions \
+  2>&1 | tail -30
+
+# WRONG — prompt contains the fix, contaminates the test
+cd ../comparanda && claude -p \
+  "Re-extract {paper_id}. The extractor instructions have been updated — \
+  when the paper reports BOTH per-genotype counts AND combined carrier \
+  group ORs, you must create BOTH..." \
+  --permission-mode bypassPermissions
+```
+
+The prompt should say WHAT to extract and WHERE to write it. It must NEVER say
+HOW — that must come from the agent's .md instructions alone. If the neutral
+re-extraction doesn't show improvement, the instruction change didn't work.
 
 ### Interactive (for debugging)
 ```bash
@@ -153,10 +188,20 @@ Invoke @diagnostician with eval results + comparanda's agent definitions + obser
 
 The diagnostician must determine:
 1. **What failed?** — which papers, which metrics, what's the pattern
-2. **Is it an instruction problem?** — could a universal instruction change fix this?
-3. **Or is it domain-specific?** — a paper quirk, data gap, or domain reference issue
-4. **Which agent's instructions?** — schema-proposer, extractor, normalizer, ma-critique, survey
-5. **What specifically?** — which section of the agent .md, what's missing or wrong
+2. **Does the instruction already exist?** — read the target agent's .md file before proposing changes
+3. **Would System 1's inner loop catch this?** — check MA Critique output, survey data, schema-proposer capabilities. If System 1 would self-correct, recommend `run_inner_loop` instead of editing instructions.
+4. **Is it an instruction problem?** — could a universal instruction change fix this?
+5. **Or is it domain-specific?** — a paper quirk, data gap, or domain reference issue
+6. **Which agent's instructions?** — schema-proposer, extractor, normalizer, ma-critique, survey
+7. **What specifically?** — which section of the agent .md, what's missing or wrong
+
+The diagnostician may recommend `run_inner_loop` — meaning the issue should be
+handled by letting System 1 run its full inner loop (extract → normalize → MA critique
+→ schema refinement) rather than editing instructions. When this happens, run Comparanda
+for 1-2 inner loop iterations and re-evaluate. This is appropriate when:
+- The instruction already exists but wasn't followed (re-extraction may fix it)
+- The issue is a schema design decision that MA Critique and schema-proposer should own
+- MA Critique's latest output already flagged the same problem
 
 ### Failure taxonomy
 | Category | Example | Fixable by System 2? |
