@@ -145,6 +145,7 @@ Before writing output, verify each item:
 - [ ] All five inputs were read (paper, schema, survey, domain reference, observation log)
 - [ ] Phase 2 mapping completed — every source in the paper accounted for with role (direct, cross-derivation, not applicable with reason)
 - [ ] Evidence quotes recorded for key data points before extraction
+- [ ] Phase 2 enumeration cross-checked against survey: for each identity dimension, compare your enumerated values against any equivalent list in the survey output (e.g., survey fields that enumerate reported categories, subtypes, or groups). If the survey lists more values than you extracted, either (a) confirm those values are absent from the paper and explain why, or (b) return to Phase 2 and extract the missing rows. A survey enumeration you cannot account for is a gap, not a discrepancy to ignore.
 - [ ] Phase 4 verification completed — identity dimension values enumerated, Cartesian product computed, gaps explained
 - [ ] Every entity/exposure row has a corresponding reference/control group row
 - [ ] Grade categories are split into separate rows including complementary thresholds where derivable
