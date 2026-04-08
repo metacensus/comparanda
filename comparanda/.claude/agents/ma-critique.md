@@ -49,6 +49,8 @@ Read all extraction files. For each paper, build a mental model of what data is 
 - Are there systematic gaps (a field null in ALL papers)?
 - Are there papers with dramatically different coverage patterns?
 
+**Read extractor meta-commentary for schema vocabulary gaps.** Each extraction's `_meta_commentary` may contain a `schema_vocabulary_gaps` field — these are signals from the extractor that the paper contains data the schema vocabulary cannot represent. The extractor observed the data directly in the paper but had no identity dimension value to create proper rows. These flags are high-value input for your critique: they identify specific vocabulary values the schema proposer should add. Include them in your schema change recommendations, citing the extractor's evidence.
+
 ## Step 4: Evaluate pooling prerequisites
 
 Apply the following checks, derived from PRISMA 2020 and Cochrane systematic review methodology:

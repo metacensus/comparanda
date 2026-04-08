@@ -141,6 +141,7 @@ fields:
 8. **Do not re-add removed fields.** If the observation log contains a `schema_rationale` entry with a `removal_rationale` for a field, that field stays removed unless new evidence or explicit critique feedback justifies revival.
 9. **One atomic row = one finding.** The identity dimensions define what "one finding" means. A paper with 3 variants x 2 outcomes x 2 comparison groups yields 12 rows. Never collapse.
 10. **Reference/wildtype group is always a row.** The baseline comparator is data, not implicit background. Extract it.
+11. **Threshold-based dimensions need complementary values.** When an identity dimension represents a cutoff on an ordinal scale (severity grades, response categories, risk levels), include vocabulary values for both sides of the threshold. If `above_cutoff` exists, `below_cutoff` should be available. If `responder` exists, `non_responder` should be available. This is a universal property of threshold-based splits — both sides are potentially independent findings that meta-analysts may pool separately. Without complementary values, extractors are forced to fold one side into derived fields (e.g., n_noevent) where it loses its identity as a standalone finding and becomes invisible to downstream critique.
 
 # Pre-Completion Checklist
 

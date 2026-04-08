@@ -176,28 +176,11 @@ Repeat Phases 2-4 until MA Critique says "ready" or 5 iterations reached.
 1. For each paper in current subset:
    - Read the paper (PDF → markdown)
    - Optionally query RAG index for targeted passages
-   - Invoke @extractor with: paper text/passages, rich schema, survey output, domain reference
+   - Invoke @extractor with file paths to: paper text/passages, rich schema, survey output, domain reference. Pass file paths only — do not summarize, interpret, or pre-digest the content of these files in the prompt. The extractor's own instructions define how to process its inputs.
    - Agent writes: `projects/dpyd/extractions/{paper_id}.jsonl`
    - Agent writes paper flags to observation log
 
 2. **Commit:** `"Phase 3a: Extract {N} papers ({total_rows} rows)"`
-
-### Phase 3a.1 — Extraction QC
-
-1. For each newly extracted paper, invoke @extraction-qc:
-   - Reads: extraction JSONL, survey JSON, current schema, source paper (targeted reads)
-   - Checks: coverage against survey inventory, schema compliance, internal consistency
-   - Writes: QC report to `projects/dpyd/extractions/{paper_id}_qc.json`
-   - Logs summary to observation log
-
-2. **If QC flags major gaps** (missing variant×toxicity combinations, missing combined carrier rows, instruction violations):
-   - Re-extract the flagged paper. The QC report tells the extractor exactly what was missed.
-   - Re-run QC on the re-extraction to verify gaps are closed.
-   - Do not proceed to normalization with known coverage gaps.
-
-3. **If QC passes** (no major gaps, only minor consistency notes): proceed to normalization.
-
-4. **Commit:** `"Phase 3a.1: QC {N} papers ({gaps_found} gaps, {re_extracted} re-extracted)"`
 
 ### Phase 3b — Normalization
 
@@ -305,6 +288,8 @@ Once the schema is validated across multiple rotated subsets:
 6. **One row = one finding** — Cartesian expansion: paper × entities × outcomes × grade levels × groups
 7. **Reference/wildtype group is always a row** — not implicit background
 8. **Provenance on everything** — tag as `paper`, `derived`, or `external`
+9. **Always delegate to agents** — never perform extraction, normalization, survey, or critique yourself. Invoke the appropriate @agent. Each agent has specialized instructions that the orchestrator does not replicate. This applies to re-extraction as well as initial extraction.
+10. **Neutral agent prompts** — when invoking any agent, pass file paths to its inputs only. Do not summarize, interpret, or pre-digest file content in the prompt. Do not embed MA Critique findings, survey conclusions, or your own analysis into agent prompts. Each agent reads its own inputs and makes its own decisions — that is what we are testing. If the prompt tells the agent what to do, you are testing prompt compliance, not instruction quality.
 
 ## Architecture Reference
 
