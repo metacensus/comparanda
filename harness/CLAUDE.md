@@ -120,12 +120,44 @@ cd ../comparanda && claude
 
 ## Step 2: Monitor Comparanda
 
-### File-based monitoring (primary)
-Read these from `../comparanda/projects/dpyd/`:
-- `observations/log.jsonl` — live progress, agent observations
+### Live monitoring (run alongside Comparanda)
+
+Launch the monitor alongside the Comparanda run. It watches for phase transitions
+and reports session IDs, subagent IDs, and file creation events so you know when
+and where to investigate.
+
+```bash
+uv run python -m harness.monitor \
+  --project-dir ../comparanda/projects/dpyd \
+  --session-dir ~/.claude/projects/<encoded-project-dir>
+# (use run_in_background: true — monitor runs until you stop it)
+```
+
+The monitor prints events like:
+```
+[11:30:15] SESSION: <session-id>
+[11:31:02] SUBAGENT: agent-a3fc7b32 spawned
+  type: extractor
+  description: Extract Teh 2013
+  log: ~/.claude/projects/.../{session_id}/subagents/agent-a3fc7b32.jsonl
+[11:32:05] EXTRACTION: teh_2013_23942539.jsonl created (57 lines)
+[11:35:44] NORMALIZATION: variants.json created/updated
+[11:36:01] SUBAGENT: agent-a01d636c spawned
+  type: ma-critique
+  description: Phase 3.5 MA Critique
+[11:38:01] CRITIQUE: iter_011.json created
+```
+
+When you see these events, use the session and subagent log paths to investigate
+behavior. You know what correct behavior looks like — read the logs and verify.
+
+### File-based monitoring (manual)
+If the monitor is not running, check these directly from `../comparanda/projects/dpyd/`:
 - `extractions/*.jsonl` — extraction output (row counts, field coverage)
+- `normalization/*.json` — normalization tables
+- `critiques/iter_*.json` — MA Critique assessments
 - `schema/v*.yaml` — schema evolution
-- `critiques/iter_*.json` — MA Critique assessments (convergence status, blockers)
+- `observations/log.jsonl` — agent observations and phase transitions
 
 ### Git-based monitoring
 ```bash
