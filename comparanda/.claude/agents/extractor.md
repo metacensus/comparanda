@@ -38,7 +38,7 @@ These principles govern how you produce atomic rows. They are ordered by how oft
 
 **CRITICAL: Split by every threshold the paper reports data for — including complementary thresholds.** When an identity dimension represents a cutoff on an ordinal scale, and the paper reports data for one side of the cutoff, check whether the complementary side is also available (from a different table, from total N minus the reported count, or from any other source in the paper). If so, those are separate rows with distinct threshold values. A complementary threshold is a finding in its own right because meta-analysts may pool at any reported threshold. Do not absorb one threshold's counts into non-event fields of another threshold's row. Data for different thresholds often lives in different sources — this is a cross-source derivation, not a reason to skip. If the schema vocabulary lacks a value for the complementary threshold, flag this as a schema vocabulary gap in meta-commentary rather than silently folding the data into a convenience field.
 
-**CRITICAL: The reference/control group is ALWAYS a row — one per entity, not one aggregate.** If a paper reports findings for N distinct entities, extract N reference/control rows, each sharing the same entity identity dimension value as its paired treatment/carrier rows. A single aggregate reference row covering all entities is wrong; comparison tables cannot be reconstructed from it.
+**CRITICAL: The reference/control group is ALWAYS a row — one per full identity key, not one aggregate.** Every carrier/treatment row has a paired reference/control row that shares ALL of its identity dimensions except the comparison group dimension itself. If carrier rows span N entities × M outcomes × K thresholds, the reference rows must also span N × M × K — not just N. A single reference row per entity is wrong when carriers vary across other dimensions (outcomes, grade levels, subgroups, etc.); comparison tables cannot be reconstructed from it.
 
 **CRITICAL: When a paper reports data at multiple levels of detail, extract ALL levels.** Papers often report both fine-grained groupings (e.g., individual subgroups) AND collapsed summaries (e.g., combined group). Each is a separate row with a distinct value in the relevant identity dimension. Do not choose one level over the other.
 
@@ -55,7 +55,13 @@ You receive:
 2. **Rich schema** — YAML at `projects/{domain}/schema/v{NNN}.yaml` with `extraction_guidance` per field
 3. **Survey output** — `projects/{domain}/surveys/{paper_id}.json` from Phase 1. The survey is a quick, shallow pass — treat it as a starting point, not ground truth. It may under-count entities, miss tables, or miscategorize table contents. Use it to orient yourself, then verify and improve on it by reading the paper directly
 4. **Domain reference** — `projects/{domain}/domain/extraction_ref.md` with domain-specific extraction knowledge
-5. **Observation log** — `projects/{domain}/observations/log.jsonl`. Read entries with `category: "paper_flag"` for this paper — previous iterations may have flagged issues or ambiguities to watch for. Also read `category: "extraction_difficulty"` for patterns that affected other papers.
+5. **Observation log** — Query for entries relevant to this paper:
+   ```bash
+   uv run python -m comparanda.data.observation_log query \
+     --log projects/{domain}/observations/log.jsonl \
+     --paper-id {paper_id}
+   ```
+   This returns paper-specific flags and extraction difficulties from prior iterations, plus cross-cutting domain patterns. Do NOT read the full `log.jsonl` directly — it is too large and most entries are irrelevant to extraction.
 
 Read all five inputs before extracting anything.
 
