@@ -46,10 +46,22 @@ before every `claude -p` invocation.**
 
 ### How to run Comparanda
 
-Always run full inner loop iterations. The prompt to Comparanda is:
+Always run full inner loop iterations.
+
+**CRITICAL: A full inner loop takes 30-60 minutes.** The Bash tool's default timeout
+will kill the process. You MUST use `run_in_background: true` when launching Comparanda.
+You will be notified when it completes. Do NOT set a timeout — let it run to completion.
+While waiting, you can monitor progress by reading project files (extractions appearing,
+observation log growing, critique written).
+
 ```bash
-# CRITICAL: cd to comparanda first — Comparanda must run from its own directory
-cd ../comparanda && claude -p "Run N inner loop iterations on projects/dpyd" \
+# CORRECT — run in background, no timeout, will be notified on completion
+cd ../comparanda && claude -p "Run 1 inner loop iteration on projects/dpyd" \
+  --permission-mode bypassPermissions
+# (use run_in_background: true on the Bash tool call)
+
+# WRONG — will timeout and kill the process mid-run
+cd ../comparanda && claude -p "Run 1 inner loop iteration on projects/dpyd" \
   --permission-mode bypassPermissions \
   2>&1 | tail -30
 ```
