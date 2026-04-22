@@ -24,7 +24,7 @@ class PaperEval:
     """Evaluation results for a single paper."""
 
     paper_id: str
-    pmid: int
+    pmid: int | str
     gold_rows: int
     extracted_rows: int
     row_coverage: float  # extracted / gold
@@ -277,7 +277,7 @@ def evaluate_paper(
     paper_id: str,
     extraction_path: Path,
     gold_df: pd.DataFrame,
-    pmid: int,
+    pmid: int | str,
     identity_dimensions: list[str] | None = None,
 ) -> PaperEval:
     """Evaluate a single paper's extraction against gold standard."""

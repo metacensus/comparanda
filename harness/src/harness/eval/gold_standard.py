@@ -24,24 +24,26 @@ def load_gold_standard(
     return df
 
 
-def load_pmid_map(pmid_map_path: Path) -> dict[str, int]:
+def load_pmid_map(pmid_map_path: Path) -> dict[str, int | str]:
     """Load paper_id → PMID mapping.
 
-    Returns dict mapping paper filename stems to PMID integers.
+    Returns dict mapping paper filename stems to PMID integers (or strings
+    for DOI-only papers without a numeric PMID).
     """
     raw = json.loads(pmid_map_path.read_text())
-    result = {}
+    result: dict[str, int | str] = {}
     for key, val in raw.items():
-        if isinstance(val, dict):
-            result[key] = int(val["pmid"])
-        else:
-            result[key] = int(val)
+        pmid = val["pmid"] if isinstance(val, dict) else val
+        try:
+            result[key] = int(pmid)
+        except (ValueError, TypeError):
+            result[key] = str(pmid)
     return result
 
 
 def filter_by_pmids(
     gold_df: pd.DataFrame,
-    pmids: list[int],
+    pmids: list[int | str],
     pmid_column: str = "PMID",
 ) -> pd.DataFrame:
     """Filter gold standard to specific PMIDs."""
@@ -50,7 +52,7 @@ def filter_by_pmids(
 
 def gold_variants_for_paper(
     gold_df: pd.DataFrame,
-    pmid: int,
+    pmid: int | str,
     pmid_column: str = "PMID",
     variant_column: str = "Variant",
 ) -> set[str]:
@@ -61,7 +63,7 @@ def gold_variants_for_paper(
 
 def gold_row_count(
     gold_df: pd.DataFrame,
-    pmid: int,
+    pmid: int | str,
     pmid_column: str = "PMID",
 ) -> int:
     """Get the number of gold standard rows for a paper."""
