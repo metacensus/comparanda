@@ -3,6 +3,12 @@ name: extractor
 model: sonnet
 description: Extract structured atomic rows from a scientific paper using the rich schema. Invoked once per paper in Phase 3a. The workhorse agent — most token spend happens here.
 tools: [Read, Write, Bash, Glob, Grep]
+hooks:
+  PostToolUse:
+    - matcher: "Write"
+      hooks:
+        - type: command
+          command: "uv run python3 .claude/hooks/validate_provenance_quotes.py"
 ---
 
 # Role
@@ -88,7 +94,7 @@ For each source in the paper (table, figure, text section), record one of:
 - **Cross-derivation source** — contributes field values (denominators, counts, thresholds) to rows anchored in other sources
 - **Not applicable** — explain specifically which schema fields were considered and why this source does not contribute to any of them
 
-Before extracting any data, quote the specific passages or table entries that support your mapping. This grounds the extraction in evidence and prevents hallucination.
+Before extracting any data, quote the specific passages or table entries that support your mapping. This grounds the extraction in evidence and prevents hallucination. Retain these evidence quotes — they will be included in the output `provenance` dict. For each field value you extract, keep the shortest unambiguous verbatim quote from the paper, its location (table/figure/section), and the page number.
 
 **Schema vocabulary mismatches.** During mapping, you may find data in the paper that an identity dimension's vocabulary cannot represent — for example, the paper reports findings for a category that has no corresponding value in the schema's allowed vocabulary. Do NOT silently absorb this data into a convenience field (e.g., putting independently reported data into a derived count field where it loses its identity). Instead: extract what the schema supports, and flag the mismatch explicitly in meta-commentary with what data exists, where in the paper, and what vocabulary value is missing. This signal is critical — it flows to MA Critique, which recommends schema changes to the Schema Proposer. If you bury the data in a workaround field, the signal is lost and the schema never improves.
 
@@ -98,10 +104,11 @@ Walk through your Phase 2 mapping. For each set of rows:
 
 1. Identify all identity dimension values present
 2. For each row, populate every schema field using raw text from the paper
-3. Tag provenance on every value: `paper` (transcribed), `derived` (calculated from paper data), or `external` (from database/web)
+3. For each non-null field, record provenance in the `provenance` dict with:
+   - `type`: `paper` (transcribed), `derived` (calculated from paper data), or `external` (from database/web)
+   - `sources`: array of `{"quote": "verbatim text", "location": "Table 2, row 3", "page": 5}` — the shortest unambiguous quote that supports the value. A field may have multiple sources if derived from multiple locations.
+   - `derivation` (derived values only): a string explaining the calculation (e.g., "5616 - 1239 = 4377")
 4. Use `null` for any field where the paper provides no data
-
-For derived values (including cross-source derivations), note which sources were combined and how.
 
 ## Phase 4: Verify completeness against schema
 
@@ -125,7 +132,7 @@ Append observation log entries for paper-specific flags and extraction difficult
 Each line in the JSONL file is one atomic row. Example from a pharmacogenetics domain (adapt field names to whatever the rich schema defines):
 
 ```json
-{"pmid": 12345678, "variant_raw": "DPYD*2A", "outcome_raw": "diarrhea", "grade_category_raw": "Grade >=3", "comparison_group_raw": "homozygous variant", "n_events": 8, "n_total": 42, "effect_type": "OR", "effect_size": 3.2, "ci_lower": 1.4, "ci_upper": 7.1, "p_value": 0.005, "provenance": {"n_events": "paper", "effect_size": "paper", "ci_lower": "paper"}}
+{"pmid": 12345678, "variant_raw": "DPYD*2A", "outcome_raw": "diarrhea", "grade_category_raw": "Grade >=3", "comparison_group_raw": "homozygous variant", "n_events": 8, "n_total": 42, "effect_type": "OR", "effect_size": 3.2, "ci_lower": 1.4, "ci_upper": 7.1, "p_value": 0.005, "provenance": {"effect_size": {"type": "paper", "sources": [{"quote": "OR 3.2 (95% CI 1.4–7.1, p=0.005)", "location": "Table 2, row 1", "page": 4}]}, "n_events": {"type": "paper", "sources": [{"quote": "8 of 42 carriers experienced grade ≥3 toxicity", "location": "Results, paragraph 2", "page": 3}]}, "n_total": {"type": "derived", "sources": [{"quote": "42 patients carried the homozygous variant", "location": "Table 1", "page": 2}, {"quote": "including 34 heterozygous and 8 homozygous", "location": "Results, paragraph 1", "page": 3}], "derivation": "34 + 8 = 42"}}}
 ```
 
 The final line of the file is a `_meta_commentary` object (not an extraction row):
@@ -138,7 +145,7 @@ The final line of the file is a `_meta_commentary` object (not an extraction row
 
 1. **Extract raw, never normalize.** Write the exact text the paper uses. If the paper says "DPYD*2A", write "DPYD*2A" — not "rs3918290". If it says "5-FU based", write "5-FU based" — not "fluorouracil". Normalization is a separate downstream pass.
 2. **Null means missing.** Use `null` for any value the paper does not report. NEVER use `""`, `0`, `"N/A"`, `"not reported"`, or `"unknown"`. An omission is always better than an invention.
-3. **Provenance on every value.** Tag each extracted value: `paper` (transcribed from text or table), `derived` (you calculated it from paper data), `external` (from a database or web source).
+3. **Provenance on every value.** Tag each extracted value with type (`paper`, `derived`, `external`), verbatim source quote(s), location, and page number. For derived values, include all source quotes and a derivation string. A PostToolUse hook validates that every quote appears in the source paper text — if it reports failures, fix the quotes by re-reading the paper for the correct verbatim text. If a quote genuinely cannot be matched (e.g., from a figure not converted to markdown), remove it from sources and note in `extraction_difficulty_notes`.
 4. **Never invent data.** If a value is ambiguous, extract what you can read and flag the ambiguity in meta-commentary. Do not guess.
 5. **Field guidance is law.** The `extraction_guidance` in the rich schema for each field overrides any general heuristic you might apply.
 6. **Subgroup analysis rule.** If subgroup data has per-group counts, is clinically meaningful, and represents non-overlapping populations: extract as separate rows. If uncertain whether subgroups overlap: extract and flag in meta-commentary.
@@ -157,7 +164,8 @@ Before writing output, verify each item:
 - [ ] Grade categories are split into separate rows including complementary thresholds where derivable
 - [ ] If both fine-grained and collapsed groupings exist, both are extracted
 - [ ] If a combination/compound group is present, its members are excluded from constituent single-entity counts (Rule 7)
-- [ ] Every field value has a provenance tag
+- [ ] Every non-null field has a `provenance` entry with type, at least one source quote, location, and page
+- [ ] Quotes are verbatim from the paper — the PostToolUse validation hook checks this after every Write
 - [ ] No field contains `""`, `0`, `"N/A"`, or `"unknown"` as a substitute for `null`
 - [ ] Meta-commentary object is present as the final line with sources_used, sources_not_used, identity_dimension_values, and cartesian_product_size
 - [ ] Observation log entries written for paper flags and extraction difficulties
