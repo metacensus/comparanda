@@ -74,7 +74,8 @@ You receive:
    2. Read sections and tables on-demand based on what fields the schema requires. Do NOT pre-read everything — the point of this bundle is selective access.
    3. For tables, prefer `tables/table_<id>.json` (clean grid) over `tables/table_<id>.md` for value extraction. Use the `.md` only if you need to see the rendering or footnotes.
    4. For tables flagged `"cross_validated": false`, treat the data as single-source (LLM-only or Docling-only). Note the limitation in the row's `extraction_difficulty_notes` when the value is critical.
-   5. Provenance quotes still need to be verbatim from the bundle's content (sections/tables). The PostToolUse hook validates against the bundle files.
+   5. **Figure filtering — cross-reference with the survey.** `manifest.figures[]` includes ALL pictures Docling extracted, which is intentionally over-inclusive: publisher chrome (page footers, journal masthead logos, "fsg"/"npg" icons) ships alongside real scientific figures. The Comparanda survey at `projects/{domain}/surveys/{paper_id}.json` has a `figure_inventory` field listing the real scientific figures Haiku identified during Phase 1. Only treat figures as data-bearing if they appear in the survey's `figure_inventory` (matching by figure number / caption text). Do not multimodally `Read` decorative chrome PNGs — it's wasted tokens.
+   6. Provenance quotes still need to be verbatim from the bundle's content (sections/tables). The PostToolUse hook validates against the bundle files.
 
 2. **Rich schema** — YAML at `projects/{domain}/schema/v{NNN}.yaml` with `extraction_guidance` per field
 
