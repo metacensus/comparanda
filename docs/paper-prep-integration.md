@@ -28,7 +28,7 @@ cd /path/to/paper-prep
 uv run python -m paper_prep.prep <paper_id> \
     --run-dir experiments/phase3_run/<paper_id> \
     --pdf "/path/to/<paper_id>.pdf" \
-    --output-root /path/to/comparanda-paperprep/projects/dpyd/data/processed/
+    --output-root <workspace>/comparanda-<domain>/comparanda/projects/<domain>/data/processed/
 ```
 
 The bundle lands at:

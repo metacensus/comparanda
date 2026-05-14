@@ -31,7 +31,7 @@ v2 addresses all of the above through architectural redesign.
 
 **Comparanda** is a standalone extraction system. Given a domain and a corpus of papers, it discovers a schema, extracts structured data, and iterates until the extraction is meta-analysis ready. It runs independently — no gold standard required.
 
-**The calibration harness** (`comparanda-harness/`) is a development tool that wraps comparanda. It evaluates comparanda's output against a gold standard benchmark, diagnoses instruction-level problems, and modifies comparanda's agent instructions to improve quality. The harness exists only during calibration — in production, comparanda runs alone.
+**The calibration harness** (`harness/`) is a development tool that wraps comparanda. It evaluates comparanda's output against a gold standard benchmark, diagnoses instruction-level problems, and modifies comparanda's agent instructions to improve quality. The harness exists only during calibration — in production, comparanda runs alone.
 
 The dependency is one-way: harness → comparanda, never the reverse. Comparanda has no knowledge of the harness.
 
@@ -93,7 +93,7 @@ HARNESS — Outer Loop (improves how the work is done)
 | Extraction data | Comparanda (extractor, normalizer) | `projects/{domain}/extractions/`, `normalization/` |
 | Cross-iteration observations | Comparanda (all agents) | `projects/{domain}/observations/` |
 | Universal agent behavior | Harness (critic) | `comparanda/.claude/agents/*.md` |
-| Benchmark evaluation | Harness (eval) | `comparanda-harness/iterations/` |
+| Benchmark evaluation | Harness (eval) | `harness/iterations/` |
 
 ### 2.7 Commit-on-modify principle
 
@@ -172,7 +172,7 @@ comparanda/
 ### 3.2 Calibration Harness
 
 ```
-comparanda-harness/
+harness/
 ├── .claude/
 │   ├── agents/
 │   │   └── critic.md                    # Definition + instructions, all in one
@@ -789,7 +789,7 @@ Applied to v1 code during migration, independent of architectural changes.
 - [ ] Create `comparanda/` directory with new layout
 - [ ] Merge agent .md definitions + instruction .md files into single agent .md files
 - [ ] Move project data into `projects/dpyd/` workspace
-- [ ] Create `comparanda-harness/` directory
+- [ ] Create `harness/` directory
 - [ ] Move eval + loop code into harness
 - [ ] Remove Python agent wrappers (agents defined by .md files, invoked by orchestrator via SDK)
 - [ ] Split monolith orchestrator into comparanda orchestrator + harness orchestrator
