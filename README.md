@@ -37,6 +37,7 @@ Other inner-loop components:
 - **Hook:** `comparanda/.claude/hooks/validate_provenance_quotes.py` — PostToolUse validator. Verifies every provenance quote in an extraction JSONL appears verbatim in the paper-prep bundle (sections + tables). Fires on both `Write` and `Bash` paths.
 - **Skill:** `comparanda/.claude/skills/comparanda/SKILL.md` — pipeline-knowledge skill surfaced to agents that need cross-phase context.
 - **Script:** `comparanda/scripts/observation_log.py` — stdlib CLI invoked by the extractor to query the observation log for entries relevant to a specific paper.
+- **Paper-prep preprocessor:** `comparanda/scripts/paper_prep/` — PDF → bundle pipeline (Docling extraction + per-table Sonnet first-pass + Stage-2 LLM arbiter + bundle assembly). Self-contained `uv` workspace. Run **before** the inner loop: `cd comparanda/scripts/paper_prep && uv sync && uv run python -m paper_prep <paper_id> --pdf <path> --output-root <projects/<domain>/data/processed/>`. Batch form: `uv run python -m paper_prep.batch ...`. See [`docs/paper-prep-integration.md`](./docs/paper-prep-integration.md) and Bootstrap Step 4 in [`CLAUDE.md`](./CLAUDE.md).
 - **Settings:** `comparanda/.claude/settings.json` — agent-level configuration.
 
 ### System 2 — outer loop (`harness/`)
@@ -81,7 +82,9 @@ comparanda/          # System 1 — the inner loop
   .claude/agents/    # Agent prompts (extractor, survey, ma-critique, ...)
   .claude/hooks/     # Validation hooks (provenance quotes)
   .claude/skills/    # Skill definitions
-  scripts/           # Stdlib utilities invoked by agents (observation_log)
+  scripts/
+    observation_log.py   # Stdlib CLI invoked by the extractor
+    paper_prep/          # PDF → bundle preprocessor (uv workspace, run before inner loop)
 harness/             # System 2 — the outer loop (calibration)
   CLAUDE.md          # Improvement loop walkthrough
   .claude/agents/    # Agent prompts (monitor, eval, diagnostician, critic)
