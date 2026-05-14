@@ -11,23 +11,49 @@ The bottleneck is the first step: turning a collection of papers into structured
 
 ## How it works
 
-Two-system architecture:
+Two-system architecture.
 
-**System 1 (Inner Loop)** — does the work:
-- Survey all papers with cheap/fast models (one agent per paper)
-- Synthesize surveys into a proposed schema
-- Extract a test subset, refine the schema iteratively
-- Expand to full extraction once the schema stabilizes
-- Validate: can you run the meta-analysis from this data?
+### System 1 — inner loop (this repo)
 
-**System 2 (Outer Loop)** — improves how the work is done:
-- Observes System 1 outputs, metrics, and agent reflections
-- Diagnoses failure patterns, proposes instruction changes
-- Modifies behavior through versioned instruction files, not code
+Phase-by-phase pipeline that turns paper-prep bundles into extracted atomic rows.
+Orchestration lives in [`comparanda/CLAUDE.md`](./comparanda/CLAUDE.md); each
+phase delegates to a named agent in
+[`comparanda/.claude/agents/`](./comparanda/.claude/agents/).
 
-The system is implemented as an agentic flow: orchestration lives in markdown
-(`comparanda/CLAUDE.md`), agents are markdown prompt files (`comparanda/.claude/agents/`),
-and the only Python is a small helper for log queries.
+| Phase | Agent | File | Role |
+|---|---|---|---|
+| 0 | (manual / agent reference-generation mode) | `comparanda/.claude/agents/*` | One-time domain onboarding: generate per-agent domain reference files. |
+| 0.5 | `schema-proposer` | `comparanda/.claude/agents/schema-proposer.md` | Generates the **survey schema** (what to catalog in each paper). |
+| 1 | `survey` | `comparanda/.claude/agents/survey.md` | Breadth pass over each paper — first agent to touch each paper. |
+| 1.5 | `subset-selector` | `comparanda/.claude/agents/subset-selector.md` | Picks 3–4 diverse papers for each inner-loop iteration. Rotates subsets across iterations. |
+| 2 | `schema-proposer` | `comparanda/.claude/agents/schema-proposer.md` | Synthesizes surveys + domain knowledge into a rich YAML extraction schema. The schema IS the product. |
+| 3a | `extractor` | `comparanda/.claude/agents/extractor.md` | Workhorse — extracts atomic rows from a paper-prep bundle into JSONL. |
+| 3a-qc | `extraction-qc` | `comparanda/.claude/agents/extraction-qc.md` | Checks extractions for completeness vs survey, schema compliance, and internal consistency. |
+| 3b | `normalizer` | `comparanda/.claude/agents/normalizer.md` | Two-stage (deterministic + LLM) normalization of raw values to canonical IDs. |
+| 3.5 | `ma-critique` | `comparanda/.claude/agents/ma-critique.md` | Decides whether the extracted data is sufficient for meta-analysis; proposes the minimum schema changes to reach convergence. |
+| 4 | `schema-proposer` | `comparanda/.claude/agents/schema-proposer.md` | Refines the rich schema based on MA-critique findings. |
+
+Other inner-loop components:
+- **Hook:** `comparanda/.claude/hooks/validate_provenance_quotes.py` — PostToolUse validator. Verifies every provenance quote in an extraction JSONL appears verbatim in the paper-prep bundle (sections + tables). Fires on both `Write` and `Bash` paths.
+- **Skill:** `comparanda/.claude/skills/comparanda/SKILL.md` — pipeline-knowledge skill surfaced to agents that need cross-phase context.
+- **Script:** `comparanda/scripts/observation_log.py` — stdlib CLI invoked by the extractor to query the observation log for entries relevant to a specific paper.
+- **Settings:** `comparanda/.claude/settings.json` — agent-level configuration.
+
+### System 2 — outer loop (separate repo: `comparanda-harness`)
+
+Calibration harness that watches inner-loop runs, evaluates outputs against the
+gold standard, traces failures to instruction-level root causes, and proposes
+generalizable fixes to the agents in this repo. Four agents:
+
+| Agent | Role |
+|---|---|
+| `monitor` | Reads inner-loop state (observation log, phase artifacts) and produces a structured status summary. |
+| `eval` | Compares Comparanda extractions against the gold standard. Aggregate-mode (completeness) and detailed-mode (semantic accuracy). |
+| `diagnostician` | Traces eval findings to instruction root causes. Classifies failures as instruction-fixable or domain-specific; identifies which agent file needs changes. |
+| `critic` | Proposes one specific, domain-independent instruction change per iteration based on the diagnosis. The only agent that modifies the System-1 agent files. |
+
+The outer-loop agents modify the inner-loop agent prompts in
+`comparanda/.claude/agents/`. They do **not** modify Python or hook code.
 
 ## Companion repos
 

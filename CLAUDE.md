@@ -22,6 +22,41 @@ This file covers two things:
 `comparanda/` is a self-contained subproject (its own `CLAUDE.md`, `.claude/agents/`,
 `scripts/`). `cd` into it before invoking agents.
 
+## System components
+
+### Inner-loop agents (this repo, `comparanda/.claude/agents/`)
+
+| File | Phase | Role |
+|---|---|---|
+| `survey.md` | 1 | Breadth pass over each paper — catalogs what extractable data exists. First agent to touch each paper. |
+| `subset-selector.md` | 1.5 | Picks 3–4 diverse papers for each inner-loop iteration; rotates subsets across iterations to detect overfitting. |
+| `schema-proposer.md` | 0.5, 2, 4 | Generates the survey schema (0.5) and the rich extraction schema (2). Refines the rich schema based on MA-critique findings (4). |
+| `extractor.md` | 3a | Workhorse. Reads a paper-prep bundle and emits atomic-row JSONL. Most token spend happens here. |
+| `extraction-qc.md` | 3a (post) | Reviews extractions for completeness vs survey, schema compliance, internal consistency. Runs after extraction and before normalization. |
+| `normalizer.md` | 3b | Two-stage (deterministic + LLM) normalization of raw values to canonical IDs. |
+| `ma-critique.md` | 3.5 | Decides whether the extracted data is sufficient for meta-analysis; proposes the minimum schema changes to reach convergence. |
+
+### Other inner-loop components
+
+| Path | Role |
+|---|---|
+| `comparanda/CLAUDE.md` | Orchestrator — phase-by-phase instructions for the inner loop. The orchestrator delegates to agents; it does not extract directly. |
+| `comparanda/.claude/hooks/validate_provenance_quotes.py` | PostToolUse hook. Validates every provenance quote in an extraction JSONL appears verbatim in the paper-prep bundle. Fires on both `Write` and `Bash` paths. |
+| `comparanda/.claude/skills/comparanda/SKILL.md` | Cross-phase pipeline-knowledge skill surfaced to agents that need it. |
+| `comparanda/.claude/settings.json` | Agent-level configuration. |
+| `comparanda/scripts/observation_log.py` | Stdlib CLI used by the extractor to query the observation log for entries relevant to a specific paper. |
+
+### Outer-loop agents (separate repo: `comparanda-harness`, `.claude/agents/`)
+
+| File | Role |
+|---|---|
+| `monitor.md` | Reads inner-loop state (observation log, phase artifacts) and produces a structured status summary. |
+| `eval.md` | Compares Comparanda extractions against the gold standard. Aggregate-mode (completeness) and detailed-mode (semantic accuracy). |
+| `diagnostician.md` | Traces eval findings to instruction root causes. Identifies which agent file needs changes. |
+| `critic.md` | Proposes one specific, domain-independent instruction change per iteration. The only agent that modifies inner-loop agent files. |
+
+The outer loop modifies inner-loop agent prompts in `comparanda/.claude/agents/`. It does **not** modify Python or hook code.
+
 ## Application data is not in this repo
 
 Per-domain application state (schemas, observation logs, extraction outputs,
