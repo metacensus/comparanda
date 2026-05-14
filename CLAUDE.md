@@ -224,8 +224,9 @@ walks through Phase 0 → 0.5 → 1 → 2 → 3a/3b/3.5 → 4 → 5 → 6.
 
 ```bash
 cd <workspace>/comparanda-<domain>/harness
-# Set strict commit-routing for the 2-branch model (see docs/specs/harness-commit-wrapper.md).
-export HARNESS_COMMIT_MODE=strict
+# Optional: pin commit-routing mode (strict is the default — see
+# docs/specs/harness-commit-wrapper.md for lenient/off escape hatches).
+# export HARNESS_COMMIT_MODE=strict
 claude
 ```
 
