@@ -150,7 +150,7 @@ Repeat Phases 2-4 until MA Critique says "ready" or 5 iterations reached.
 ### Phase 3a — Extraction
 
 1. For each paper in current subset:
-   - Invoke @extractor with file paths to: bundle (`projects/<domain>/data/processed/{paper_id}/`), rich schema, survey output, domain reference. Pass file paths only — do not summarize, interpret, or pre-digest content. The extractor reads `manifest.json` and processes bundle assets per its own instructions.
+   - Invoke @extractor with file paths to: bundle (`projects/<domain>/data/processed/{paper_id}/`), rich schema, domain reference. Pass file paths only — do not summarize, interpret, or pre-digest content. The extractor reads `manifest.json` and processes bundle assets per its own instructions.
    - Agent writes: `projects/<domain>/extractions/{paper_id}.jsonl`
    - Agent writes paper flags to observation log
 
@@ -241,8 +241,6 @@ Once the schema is validated across multiple rotated subsets:
 3. **Normalize** the full corpus.
 
 4. **Validate extractions.** For each paper, cross-check:
-   - Extracted row count vs survey's estimated_atomic_rows
-   - All variants mentioned in survey appear in extraction
    - All identity dimensions are populated
    - Flag papers with large row count discrepancies for human review
 
