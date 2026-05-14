@@ -108,6 +108,8 @@ If a schema diff document was provided (input 6), read it now alongside the sche
 
 ## Phase 2: Map schema fields to the paper
 
+**Scope discovery from the bundle.** The bundle is the sole authority for what rows must exist. Before mapping schema fields, enumerate what the paper actually reports: read every data-bearing source — table column headers, row labels, figure legends, footnotes, section prose — and record every distinct value for every identity dimension (outcomes, threshold levels, entities, subgroups, comparison groups, and any other axis the schema treats as identity). Do not start from a pre-formed expectation of what to extract; start from the bundle's structure and let it define the scope. A data-bearing column, grouping, or category present in the bundle is in scope regardless of whether the schema's extraction_guidance explicitly anticipated it. If the schema has no vocabulary for a value you find, flag it as a schema_vocabulary_gap rather than omitting it.
+
 This is the most important analytical step. Reason schema-out, not paper-in.
 
 For each identity dimension in the schema, ask: *what distinct values does this paper report, and where?* Scan the bundle — tables, inline text in sections, methods, results, figure legends, captions, footnotes, and supplementary material references in the section files. Data for a single schema field may be scattered across multiple locations.
