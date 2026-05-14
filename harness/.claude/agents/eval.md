@@ -116,7 +116,48 @@ This produces a structured JSON with gold rows paired against extraction candida
 
    **Compositional/combination-group rows:** When extraction encodes a paper's combined-variant analysis as a single row with `variant_raw` containing pipe-delimited components (e.g., `"*2A|D949V|I560S (3 consensual SNPs)"`), the eval pipeline (`prepare_comparison.py`) expands these so each component can pair with the corresponding per-variant gold row. Treat each pairing on its merits and explain the representation in your reasoning rather than penalizing the row as a structural mismatch.
 
-6. **Update accuracy coverage.** After evaluating papers, update `iterations/accuracy_coverage.json`:
+6. **Audit aggregate heuristics; emit metric adjustments.** Read the aggregate output at `iterations/iter_{N}/aggregate_eval.json` (or the equivalent path for this iteration). The aggregate's per-paper metrics (`row_coverage`, `variant_coverage`, `unnormalized_rate`) are deterministic string-and-count heuristics. They are correct as raw measurements but can be **misled by structural artifacts** — e.g., gold-standard decomposition of one finding into multiple per-entity rows, protein↔HGVS notation differences, combination-group representations, schema-design constraints. Your job here is to audit each raw heuristic and emit an adjusted value with a rationale where (and only where) the heuristic is misleading. The raw values stay in the output untouched; adjustments are additive.
+
+   For each paper, emit a `metric_adjustments` object alongside the per-finding scoring:
+
+   ```json
+   {
+     "paper_id": "Milano_2016_27454530",
+     "raw": {
+       "row_coverage": 2.33,
+       "variant_coverage": 0.0,
+       "unnormalized_rate": 1.0
+     },
+     "agent_adjusted": {
+       "row_coverage_effective": 1.0,
+       "row_coverage_rationale": "Gold splits the OR=15 D949V+*2A finding into 2 per-variant rows and the wildtype reference into 2 per-variant rows, totaling 6 gold rows where the paper has 3 analytical units. Extraction has 1 row per unit. Coverage is 4/4 = 1.0 at the analytical-unit level; 2 absent gold rows are n=1 text-mention rare carriers with no OR.",
+       "variant_coverage_effective": 0.67,
+       "variant_coverage_rationale": "0/6 string-match result is a heuristic artifact: gold uses HGVS (c.2846A>T), extraction uses protein/star-allele (D949V, *2A). Per `comparanda/projects/dpyd/normalization/variants.json`, D949V=c.2846A>T and *2A=IVS14+1G>A. 4 of 6 gold variants are biologically present in the extraction.",
+       "unnormalized_rate_effective": 0.0,
+       "unnormalized_rate_rationale": "100% unnormalized is forced by schema design: variant_canonical is scalar but every Milano row is a combination group. Not a normalizer failure."
+     }
+   }
+   ```
+
+   Rules for adjustments:
+   - **Every adjustment must cite specific evidence** — a normalization-table entry, an observation log ID, a schema-guidance line, or a precise gold-vs-extraction row pairing. "It looks fine" is not a rationale.
+   - **Adjustments can move metrics down as well as up.** If the raw row_coverage is 100% but you find half the rows have wrong effect-size signs, the row_coverage is faithful but the finding_accuracy is what captures that — do not adjust row_coverage.
+   - **Cap row_coverage at 1.0 per paper** when emitting `row_coverage_effective` (over-extraction does not inflate score; document it via your rationale).
+
+   **Diff-aware pass-through (subsequent iterations).** Read the prior detailed eval at `iterations/iter_{N-1}/detailed_eval.json` if present. For each paper, compare the prior `raw` aggregate metrics against the current iteration's `raw`. If a paper's raw metrics are unchanged within tolerance (extraction file unmodified, or differences ≤ 1 row per metric) AND the prior eval has a populated `metric_adjustments` block, pass through the prior rationale verbatim — only re-audit metrics whose raw value materially changed. Document carried-forward rationales with `"passed_through_from": "iter_{N-1}"` so the diagnostician can distinguish fresh judgments from inherited ones. New papers (no prior eval) and papers with materially-changed raw metrics get a full audit. This mirrors the extractor's prior-extraction pass-through optimization — avoid re-doing identical reasoning when the underlying data hasn't changed.
+
+7. **Compute composite** using agent-adjusted metrics where present, raw heuristics otherwise:
+
+   ```
+   composite = 0.4 * row_coverage_effective_or_raw   (capped at 1.0 per paper, then averaged)
+             + 0.3 * finding_accuracy
+             + 0.2 * variant_coverage_effective_or_raw
+             + 0.1 * field_fill_rate
+   ```
+
+   In aggregate-only mode (no detailed eval performed for this iteration), all four components come from raw heuristics, finding_accuracy is null, and the composite caps at 0.7. In detailed mode, the composite is the headline trajectory score for this iteration.
+
+8. **Update accuracy coverage.** After evaluating papers, update `iterations/accuracy_coverage.json`:
 ```json
 {
   "papers": {
@@ -134,7 +175,7 @@ This produces a structured JSON with gold rows paired against extraction candida
 }
 ```
 
-7. **Recompute the full composite** with real finding_accuracy values for papers that have been evaluated in detailed mode.
+9. **Recompute the full composite** across all papers evaluated to date (this iteration plus prior iterations whose detailed-mode evaluations are still valid). Use `finding_accuracy` from detailed mode for papers that have been evaluated, and report which papers have not yet been evaluated for accuracy.
 
 # Output Format
 
@@ -146,14 +187,28 @@ Write the evaluation report to `iterations/iter_{N}/eval_report.json`:
   "iteration": 1,
   "timestamp": "2026-04-07T...",
   "composite_score": 0.588,
-  "composite_note": "finding_accuracy not yet evaluated — max 0.7",
+  "composite_note": "headline score uses agent_adjusted metrics where present, raw heuristics otherwise; finding_accuracy null in aggregate-only mode caps at 0.7",
   "component_scores": {
     "row_coverage": 0.97,
     "finding_accuracy": null,
     "variant_coverage": 0.64,
     "field_fill_rate": 0.73
   },
-  "papers": [...],
+  "papers": [
+    {
+      "paper_id": "Milano_2016_27454530",
+      "raw": {"row_coverage": 2.33, "variant_coverage": 0.0, "unnormalized_rate": 1.0},
+      "agent_adjusted": {
+        "row_coverage_effective": 1.0,
+        "row_coverage_rationale": "Gold decomposes one finding into multiple per-variant rows; analytical-unit coverage is 4/4.",
+        "variant_coverage_effective": 0.67,
+        "variant_coverage_rationale": "0/6 string match is heuristic artifact; biologically 4/6 match via normalization table.",
+        "passed_through_from": null
+      },
+      "finding_accuracy": 0.5,
+      "per_finding_scores": [...]
+    }
+  ],
   "schema_contradictions": [...],
   "normalization_gaps": [...],
   "flags": [...],
