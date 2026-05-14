@@ -74,11 +74,29 @@ def _load_extraction(extraction_path: Path) -> list[dict]:
     return rows
 
 
+def _expand_pipe_delimited(variant: str) -> list[str]:
+    """Split combination-group variant strings (pipe-delimited) into components.
+
+    Some papers (e.g., Milano 2016) only report effect sizes for combined
+    multi-variant carrier groups, not per individual variant. Extraction
+    encodes this as `variant_raw="*2A|D949V|I560S (3 consensual SNPs)"`. For
+    matching against per-variant gold rows, each component must participate
+    independently. A group-level trailing parenthetical annotation is stripped
+    before splitting so it doesn't pollute the last component.
+    """
+    import re
+    if "|" not in variant:
+        return [variant]
+    base = re.sub(r"\s*\([^()]*\)\s*$", "", variant).strip()
+    return [c.strip() for c in base.split("|") if c.strip()]
+
+
 def _extract_variants(rows: list[dict]) -> set[str]:
     """Extract unique variant identifiers from extraction rows.
 
     Uses all available variant fields (canonical, rsid, raw) so that
     matching against gold standard works regardless of naming convention.
+    Pipe-delimited combination groups are expanded into components.
     """
     variants = set()
     for row in rows:
@@ -86,7 +104,8 @@ def _extract_variants(rows: list[dict]) -> set[str]:
         for field in ("variant_canonical", "variant_rsid", "variant_raw", "variant"):
             v = row.get(field)
             if v:
-                variants.add(str(v))
+                for component in _expand_pipe_delimited(str(v)):
+                    variants.add(component)
     return variants
 
 

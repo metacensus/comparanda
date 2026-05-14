@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from harness.eval.aggregate import _load_extraction, _normalize_variant_name
+from harness.eval.aggregate import _expand_pipe_delimited, _load_extraction, _normalize_variant_name
 from harness.eval.gold_standard import load_gold_standard, load_pmid_map
 
 
@@ -93,14 +93,17 @@ def prepare_comparison(
     if len(paper_gold) == 0:
         return {"error": f"No gold standard rows for PMID {pmid}"}
 
-    # Build extraction lookup by normalized variant
+    # Build extraction lookup by normalized variant. Pipe-delimited
+    # combination-group variant_raw strings are expanded into components so each
+    # one can pair with per-variant gold rows independently.
     ext_by_variant: dict[str, list[tuple[int, dict]]] = {}
     for i, row in enumerate(extraction_rows):
         variants = set()
         for vfield in ("variant_canonical", "variant_rsid", "variant_raw", "variant"):
             v = row.get(vfield)
             if v:
-                variants.add(_normalize_variant_name(str(v)))
+                for component in _expand_pipe_delimited(str(v)):
+                    variants.add(_normalize_variant_name(component))
         for nv in variants:
             ext_by_variant.setdefault(nv, []).append((i, row))
 

@@ -112,6 +112,10 @@ This produces a structured JSON with gold rows paired against extraction candida
 
 5. **Compute finding_accuracy** for the paper as the mean of (completeness × accuracy) across all gold standard findings. Unmatched gold rows (no extraction counterpart) get completeness=0.
 
+   **Denominator rule (mandatory for trajectory comparability):** Every gold row counts in the denominator regardless of what it reports — effect-size rows, count-only rows (patient counts, event counts without an OR/RR), wildtype/reference rows, and grade-stratified rows are all included. Do not down-weight or exclude rows because "there's no effect size to evaluate." Down-weighting silently shifts the denominator and produces spurious regression signals across iterations: a paper whose extraction is byte-for-byte identical can appear to "regress" simply because a later eval pass applied a stricter denominator. If you believe a particular gold row is unevaluable (e.g., gold itself is malformed), score it 0 explicitly and explain why — do not drop it from the denominator.
+
+   **Compositional/combination-group rows:** When extraction encodes a paper's combined-variant analysis as a single row with `variant_raw` containing pipe-delimited components (e.g., `"*2A|D949V|I560S (3 consensual SNPs)"`), the eval pipeline (`prepare_comparison.py`) expands these so each component can pair with the corresponding per-variant gold row. Treat each pairing on its merits and explain the representation in your reasoning rather than penalizing the row as a structural mismatch.
+
 6. **Update accuracy coverage.** After evaluating papers, update `iterations/accuracy_coverage.json`:
 ```json
 {
