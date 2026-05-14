@@ -2,37 +2,33 @@
 
 Scientific paper schema extraction system. Given a domain and a corpus of papers, Comparanda discovers a structured schema and extracts data into atomic rows suitable for meta-analysis.
 
-## Active Project
-
-Project: `projects/dpyd/` (DPYD pharmacogenetics)
-
 ## How This Works
 
-You are the orchestrator. Follow the phases below. Agents are in `.claude/agents/`. Invoke them with @agent-name. All project state is in `projects/dpyd/`.
+You are the orchestrator. Follow the phases below. Agents are in `.claude/agents/`. Invoke them with @agent-name. All project state for a given domain lives in `projects/<domain>/` (e.g. `projects/<domain>/`).
 
 ### Key Files
-- **Schema:** `projects/dpyd/schema/` — rich YAML, versioned (v001.yaml, v002.yaml, ...)
-- **Observations:** `projects/dpyd/observations/log.jsonl` — append-only structured log
-- **Domain refs:** `projects/dpyd/domain/` — per-agent domain knowledge
-- **Surveys:** `projects/dpyd/surveys/{paper_id}.json`
-- **Extractions:** `projects/dpyd/extractions/{paper_id}.jsonl`
-- **Normalization:** `projects/dpyd/normalization/{table}.json`
-- **Critiques:** `projects/dpyd/critiques/iter_{NNN}.json`
-- **PDFs:** `projects/dpyd/data/` (symlink to corpus)
+- **Schema:** `projects/<domain>/schema/` — rich YAML, versioned (v001.yaml, v002.yaml, ...)
+- **Observations:** `projects/<domain>/observations/log.jsonl` — append-only structured log
+- **Domain refs:** `projects/<domain>/domain/` — per-agent domain knowledge
+- **Surveys:** `projects/<domain>/surveys/{paper_id}.json`
+- **Extractions:** `projects/<domain>/extractions/{paper_id}.jsonl`
+- **Normalization:** `projects/<domain>/normalization/{table}.json`
+- **Critiques:** `projects/<domain>/critiques/iter_{NNN}.json`
+- **PDFs:** `projects/<domain>/data/` (symlink to corpus)
 - **Phase 0 papers:** `data/raw/pdfs/phase0-references/`
 
 ### Observation Log Format
-Append one JSON object per line to `projects/dpyd/observations/log.jsonl`:
+Append one JSON object per line to `projects/<domain>/observations/log.jsonl`:
 ```json
 {"id": "OBS-001", "iteration": 1, "phase": "3.5_ma_critique", "agent": "ma_critique", "category": "schema_rationale", "content": "...", "related_fields": [], "timestamp": "2026-04-03T14:00:00Z"}
 ```
 Categories: `schema_rationale`, `domain_pattern`, `paper_flag`, `normalization_note`, `extraction_difficulty`
 
 ### Rich Schema Format
-Schema files are YAML at `projects/dpyd/schema/v{NNN}.yaml`:
+Schema files are YAML at `projects/<domain>/schema/v{NNN}.yaml`:
 ```yaml
 schema_version: "v001"
-domain: "dpyd_pharmacogenetics"
+domain: "<domain>"
 created_iteration: 1
 last_modified_iteration: 1
 
@@ -71,10 +67,10 @@ The PaperQA2 RAG index over the corpus papers is used by the Extraction Agent in
 ```python
 # Build via Python:
 from comparanda.data.rag import create_paper_index
-index = await create_paper_index(pdf_dir="projects/dpyd/data", cache_dir=".rag_cache")
+index = await create_paper_index(pdf_dir="projects/<domain>/data", cache_dir=".rag_cache")
 ```
 
-Or run in background: `uv run python -c "import asyncio; from comparanda.data.rag import create_paper_index; asyncio.run(create_paper_index(pdf_dir='projects/dpyd/data', cache_dir='.rag_cache'))" &`
+Or run in background: `uv run python -c "import asyncio; from comparanda.data.rag import create_paper_index; asyncio.run(create_paper_index(pdf_dir='projects/<domain>/data', cache_dir='.rag_cache'))" &`
 
 The cache persists at `.rag_cache/` — do NOT delete it. It is NOT gitignored because it costs money to rebuild.
 
@@ -84,12 +80,12 @@ If the cache already exists, this step is instant (loads from disk).
 
 ## Phase 0 — Domain Onboarding
 
-> Run once per new domain. For DPYD, deep research and seed knowledge already exist.
+> Run once per new domain.
 
 ### Prerequisites
 Check that these exist:
-- `projects/dpyd/domain/deep_research.md` — deep research report
-- `projects/dpyd/domain/dpyd_seed_knowledge.md` — seed domain knowledge
+- `projects/<domain>/domain/deep_research.md` — deep research report
+- `projects/<domain>/domain/seed_knowledge.md` — seed domain knowledge
 - `data/raw/pdfs/phase0-references/` — methodology + prior MA papers
 
 ### Steps
@@ -101,11 +97,11 @@ Check that these exist:
    REFERENCE GENERATION MODE
 
    Read the following materials and extract what is relevant to your role:
-   - Deep research: projects/dpyd/domain/deep_research.md
-   - Seed knowledge: projects/dpyd/domain/dpyd_seed_knowledge.md
+   - Deep research: projects/<domain>/domain/deep_research.md
+   - Seed knowledge: projects/<domain>/domain/seed_knowledge.md
    - Phase 0 papers: [list relevant PDFs from data/raw/pdfs/phase0-references/]
 
-   Write your domain reference file to: projects/dpyd/domain/{agent}_ref.md
+   Write your domain reference file to: projects/<domain>/domain/{agent}_ref.md
 
    Include domain-specific knowledge that will help you perform your operational
    role: patterns, terminology, pitfalls, examples, normalization needs.
@@ -113,15 +109,15 @@ Check that these exist:
 
    Generate refs for: survey, schema-proposer, extractor, normalizer, ma-critique
 
-   **For MA Critique:** Focus on the DPYD-specific meta-analysis papers (Le Teuff, Meulendijks, Sharma, de Moraes, Kim, etc.) — what schemas they used, what statistical models, what worked/failed.
+   **For MA Critique:** Focus on prior meta-analysis papers in the domain — what schemas they used, what statistical models, what worked/failed.
 
-   **For Extractor:** Focus on what good atomic rows look like for DPYD, common extraction pitfalls.
+   **For Extractor:** Focus on what good atomic rows look like in the domain, common extraction pitfalls.
 
-   **For Normalizer:** Focus on variant naming aliases, drug regimen nomenclature, grading scale differences.
+   **For Normalizer:** Focus on terminology aliases, nomenclature variations across studies, scale/measurement differences.
 
 2. **Review** generated domain reference files for quality and completeness.
 
-3. **Commit:** `"Phase 0: Generate domain reference files for dpyd"`
+3. **Commit:** `"Phase 0: Generate domain reference files for <domain>"`
 
 ---
 
@@ -129,13 +125,13 @@ Check that these exist:
 
 1. Invoke @schema-proposer in survey schema mode:
    ```
-   Generate a survey schema (not extraction schema) for the DPYD pharmacogenetics domain.
-   Read: projects/dpyd/domain/deep_research.md
-   Write: projects/dpyd/schema/survey_schema.json
+   Generate a survey schema (not extraction schema) for the <domain>.
+   Read: projects/<domain>/domain/deep_research.md
+   Write: projects/<domain>/schema/survey_schema.json
 
    The survey schema defines what the survey agent catalogs in each paper.
    Layer 1: universal fields (study ID, design, sample size, tables).
-   Layer 2: domain-specific fields (variants, outcomes, regimens, grading).
+   Layer 2: domain-specific fields.
    ```
 
 2. **Commit:** `"Phase 0.5: Generate survey schema"`
@@ -144,10 +140,10 @@ Check that these exist:
 
 ## Phase 1 — Paper Survey
 
-1. **Survey all papers.** For each PDF in `projects/dpyd/data/`:
+1. **Survey all papers.** For each PDF in `projects/<domain>/data/`:
    - Read the PDF (use PyMuPDF4LLM or Read tool for PDF)
    - Invoke @survey with the paper text + survey schema
-   - Agent writes `projects/dpyd/surveys/{paper_id}.json`
+   - Agent writes `projects/<domain>/surveys/{paper_id}.json`
    - Can run multiple surveys in sequence (or note for parallelism)
 
 2. **Select subset.** Invoke @subset-selector:
@@ -167,7 +163,7 @@ Repeat Phases 2-4 until MA Critique says "ready" or 5 iterations reached.
 
 1. Invoke @schema-proposer:
    - Reads: all surveys, domain reference (`domain/schema_ref.md`), observation log
-   - Writes: `projects/dpyd/schema/v001.yaml` (rich schema with extraction guidance per field)
+   - Writes: `projects/<domain>/schema/v001.yaml` (rich schema with extraction guidance per field)
 
 2. **Commit:** `"Phase 2: Propose schema v001 — {N} fields"`
 
@@ -177,7 +173,7 @@ Repeat Phases 2-4 until MA Critique says "ready" or 5 iterations reached.
    - Read the paper (PDF → markdown)
    - Optionally query RAG index for targeted passages
    - Invoke @extractor with file paths to: paper text/passages, rich schema, survey output, domain reference. Pass file paths only — do not summarize, interpret, or pre-digest the content of these files in the prompt. The extractor's own instructions define how to process its inputs.
-   - Agent writes: `projects/dpyd/extractions/{paper_id}.jsonl`
+   - Agent writes: `projects/<domain>/extractions/{paper_id}.jsonl`
    - Agent writes paper flags to observation log
 
 2. **Commit:** `"Phase 3a: Extract {N} papers ({total_rows} rows)"`

@@ -27,17 +27,19 @@ Two-system architecture:
 
 ## Benchmark
 
+The system is validated against human-extracted reference datasets — a known schema and a corpus of papers, with the system's output measured against the human-built ground truth.
 
 ## Status
 
-Pre-planning. Researching open design questions before writing the implementation spec.
+In iteration on the inner-loop + outer-loop architecture.
 
 ## Repo structure
 
 ```
-CLAUDE.md                  # Project instructions and architecture overview
-docs/
-  context/                 # Reference documents (vision, schema, agents, tech stack, ...)
-  research/                # Deep research outputs (eval frameworks, PDF ingestion, ...)
-  presentation/            # Architecture diagrams for stakeholder walkthroughs
+.claude/agents/      # Agent definitions (extractor, normalizer, survey, ma-critique, ...)
+src/comparanda/      # Library: orchestrator, loop, agent loaders, data utilities
+tests/               # Test suite
+pyproject.toml       # Package config (uv)
 ```
+
+System-level docs (architecture, specs, research) live at the repo root in `../docs/`.
