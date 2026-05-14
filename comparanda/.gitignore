@@ -28,7 +28,9 @@ __pycache__/
 /iterations/versions/
 
 # Per-domain application data — populated only in domain forks (not canonical).
-# A fork un-ignores this on its `main` branch via a !/projects/<domain>/ override
-# committed alongside the domain data. The override never lands on `methodology`,
-# so methodology PRs to canonical never carry domain-specific gitignore drift.
-/projects/
+# Use /projects/* (not /projects/) so forks can re-include a specific domain via
+# !/projects/<domain>/ on their `main` branch. Git refuses to re-include children
+# of a fully-excluded directory, so the glob form is required for fork overrides.
+# The fork's !-override never lands on `methodology`, so methodology PRs to
+# canonical never carry domain-specific gitignore drift.
+/projects/*

@@ -4,6 +4,7 @@ __pycache__/
 .DS_Store
 
 # Per-domain harness runtime state — populated only in domain forks (not canonical).
-# A fork un-ignores this on its `main` branch via a !/iterations/ override committed
-# alongside the iteration archives. The override never lands on `methodology`.
-/iterations/
+# Use /iterations/* (not /iterations/) so forks can re-include via !/iterations/
+# on `main`. Git refuses to re-include children of a fully-excluded directory.
+# The fork's !-override never lands on `methodology`.
+/iterations/*
