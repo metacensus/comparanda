@@ -21,11 +21,16 @@ paper-prep bundles (vs raw-PDF text):
 Usage from CLI:
 
     uv run python -m harness.eval.bundle_metrics \\
-        --app-repo /path/to/comparanda-<domain> \\
+        --fork-root /path/to/comparanda-<domain> \\
         --domain dpyd \\
         --paper-ids bozina_2022_34780066,Cremolini_2018_29487697 \\
         --session-log-dir ~/.claude/projects/<encoded-cwd> \\
         --output iterations/iter_10_bundle_ab/bundle_metrics.json
+
+In the fork layout, --fork-root points at the per-domain fork checkout (which
+contains both system code in comparanda/ + harness/ and the domain data at
+comparanda/projects/<domain>/). --app-repo is accepted as a deprecated alias
+for one release.
 """
 
 from __future__ import annotations
@@ -374,14 +379,14 @@ def compute_token_cost(paper_id: str, log_path: Path | None) -> TokenCost:
 
 
 def collect_paper_metrics(
-    app_repo: Path,
+    fork_root: Path,
     domain: str,
     paper_id: str,
     session_log_dir: Path | None,
 ) -> PaperBundleMetrics:
-    bundle_dir = app_repo / "projects" / domain / "data" / "processed" / paper_id
-    extraction = app_repo / "projects" / domain / "extractions" / f"{paper_id}.jsonl"
-    survey = app_repo / "projects" / domain / "surveys" / f"{paper_id}.json"
+    bundle_dir = fork_root / "comparanda" / "projects" / domain / "data" / "processed" / paper_id
+    extraction = fork_root / "comparanda" / "projects" / domain / "extractions" / f"{paper_id}.jsonl"
+    survey = fork_root / "comparanda" / "projects" / domain / "surveys" / f"{paper_id}.json"
 
     util = None
     if bundle_dir.exists() and extraction.exists():
@@ -406,7 +411,20 @@ def collect_paper_metrics(
 
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    p.add_argument("--app-repo", type=Path, required=True, help="Path to per-domain app repo")
+    # --fork-root is the primary flag; --app-repo is a deprecated alias kept
+    # for one release. Both write to the same dest (fork_root).
+    p.add_argument(
+        "--fork-root",
+        type=Path,
+        dest="fork_root",
+        help="Path to per-domain fork checkout (contains comparanda/ and harness/)",
+    )
+    p.add_argument(
+        "--app-repo",
+        type=Path,
+        dest="fork_root",
+        help="DEPRECATED alias for --fork-root (will be removed in a future release)",
+    )
     p.add_argument("--domain", required=True, help="Domain name (e.g. dpyd)")
     p.add_argument("--paper-ids", required=True, help="Comma-separated paper IDs")
     p.add_argument(
@@ -418,9 +436,18 @@ def main() -> None:
     p.add_argument("--output", type=Path, default=None, help="Write JSON report here")
     args = p.parse_args()
 
+    if args.fork_root is None:
+        p.error("one of --fork-root or --app-repo is required")
+    # Detect --app-repo usage by inspecting sys.argv (since both flags share dest).
+    if any(a.startswith("--app-repo") for a in sys.argv):
+        print(
+            "warning: --app-repo is deprecated; use --fork-root instead.",
+            file=sys.stderr,
+        )
+
     paper_ids = [pid.strip() for pid in args.paper_ids.split(",") if pid.strip()]
     results = [
-        collect_paper_metrics(args.app_repo, args.domain, pid, args.session_log_dir)
+        collect_paper_metrics(args.fork_root, args.domain, pid, args.session_log_dir)
         for pid in paper_ids
     ]
 
