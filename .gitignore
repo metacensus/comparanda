@@ -1,5 +1,8 @@
-# Data files (large PDFs and spreadsheets)
-data/
+# Data files (large PDFs and spreadsheets) — anchored to root only.
+# Without the leading slash, this would match any "data/" dir at any depth,
+# including fork-only `comparanda/projects/<domain>/data/` (bundles, gold
+# standard, PDFs). Anchored so forks can populate per-domain data trees.
+/data/
 
 # Source data archive
 
