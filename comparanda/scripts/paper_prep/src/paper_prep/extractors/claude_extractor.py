@@ -20,7 +20,6 @@ don't yet have `sonnet_tables/<docling_idx>.md` written.
 
 from __future__ import annotations
 
-import argparse
 import json
 import os
 import subprocess
@@ -293,70 +292,3 @@ def _parse_cost(stdout: str) -> float | None:
     return None
 
 
-def main() -> None:
-    ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("paper_id", help="Paper identifier")
-    ap.add_argument("--pdf", required=True, type=Path, help="Path to source PDF")
-    ap.add_argument(
-        "--paper-runs-dir",
-        required=True,
-        type=Path,
-        help="paper_runs/<paper_id>/ directory (writes sonnet_tables/ here)",
-    )
-    ap.add_argument(
-        "--arbiter-inputs-dir",
-        required=True,
-        type=Path,
-        help="arbiter_inputs/<paper_id>/ directory (reads docling_tables.json here)",
-    )
-    ap.add_argument(
-        "--docling-idx",
-        required=True,
-        type=int,
-        help="Docling table index to extract",
-    )
-    ap.add_argument(
-        "--max-budget-usd",
-        type=float,
-        default=1.50,
-        help="Per-call budget ceiling for claude -p (default: 1.50)",
-    )
-    ap.add_argument(
-        "--timeout",
-        type=int,
-        default=900,
-        help="Subprocess timeout in seconds (default: 900)",
-    )
-    args = ap.parse_args()
-
-    result = extract_table(
-        pdf_path=args.pdf,
-        paper_runs_dir=args.paper_runs_dir,
-        arbiter_inputs_dir=args.arbiter_inputs_dir,
-        paper_id=args.paper_id,
-        docling_idx=args.docling_idx,
-        max_budget_usd=args.max_budget_usd,
-        timeout=args.timeout,
-    )
-
-    if result["stdout"]:
-        print("--- claude -p stdout ---")
-        print(result["stdout"][-2000:])
-        print("--- end stdout ---")
-    if result["returncode"] != 0 and result["stderr"]:
-        print(f"[error] stderr: {result['stderr'][-1000:]}")
-
-    if result["ok"]:
-        cost_str = (
-            f"${result['cost_usd']:.4f}"
-            if result["cost_usd"] is not None
-            else "unknown"
-        )
-        print(f"OK: docling_idx={result['docling_idx']} (cost: {cost_str})")
-    else:
-        print(f"FAIL: docling_idx={result['docling_idx']} returncode={result['returncode']}")
-        raise SystemExit(2)
-
-
-if __name__ == "__main__":
-    main()

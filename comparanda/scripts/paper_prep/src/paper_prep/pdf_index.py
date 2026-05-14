@@ -17,7 +17,6 @@ shell character classes and you will get the wrong file).
 from __future__ import annotations
 
 import re
-import sys
 from pathlib import Path
 
 _BRACKET_PMID = re.compile(r"\[(\d+)[^\]]*\]")
@@ -67,38 +66,3 @@ def build_pdf_index(pdf_dir: Path) -> dict[int, Path]:
     return index
 
 
-def resolve_pdf(pdf_dir: Path, pmid: int) -> Path:
-    """Resolve a single PMID to its PDF path. Raises KeyError if missing."""
-    index = build_pdf_index(pdf_dir)
-    if pmid not in index:
-        raise KeyError(f"No PDF found for PMID {pmid} in {pdf_dir}")
-    return index[pmid]
-
-
-def _main() -> int:
-    """CLI: `python -m paper_prep.pdf_index <pdf_dir> [pmid]`
-
-    With no PMID: print the full index as `<pmid>\\t<path>` lines.
-    With a PMID: print just the resolved path, exit 1 if not found.
-    """
-    if len(sys.argv) < 2:
-        print("usage: python -m paper_prep.pdf_index <pdf_dir> [pmid]", file=sys.stderr)
-        return 2
-
-    pdf_dir = Path(sys.argv[1])
-    if len(sys.argv) == 2:
-        for pmid, path in sorted(build_pdf_index(pdf_dir).items()):
-            print(f"{pmid}\t{path}")
-        return 0
-
-    pmid = int(sys.argv[2])
-    try:
-        print(resolve_pdf(pdf_dir, pmid))
-        return 0
-    except KeyError as e:
-        print(str(e), file=sys.stderr)
-        return 1
-
-
-if __name__ == "__main__":
-    raise SystemExit(_main())

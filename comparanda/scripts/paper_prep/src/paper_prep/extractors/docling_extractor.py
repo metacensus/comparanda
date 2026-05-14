@@ -77,15 +77,10 @@ def _table_to_dict(table_item: Any, index: int) -> dict[str, Any]:
         for row in grid:
             grid_view.append([getattr(c, "text", "") for c in row])
 
-    # Try to get markdown + html representations of just this table.
     try:
         md = table_item.export_to_markdown()
     except Exception:
         md = None
-    try:
-        html = table_item.export_to_html()
-    except Exception:
-        html = None
 
     caption = ""
     try:
@@ -131,7 +126,6 @@ def _table_to_dict(table_item: Any, index: int) -> dict[str, Any]:
         "cells": cells,
         "grid": grid_view,
         "markdown": md,
-        "html": html,
     }
 
 
@@ -181,88 +175,6 @@ def _picture_to_dict(picture_item: Any, doc: Any, index: int) -> dict[str, Any]:
     }
 
 
-def extract(pdf_path: Path | str, output_dir: Path | str) -> dict[str, Path]:
-    """Extract PDF to markdown + structured tables via Docling.
-
-    Writes:
-      - {output_dir}/docling.md
-      - {output_dir}/docling_tables.json
-    Returns dict of output paths.
-    """
-    pdf_path = Path(pdf_path)
-    output_dir = Path(output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
-
-    converter = _build_converter()
-
-    t0 = time.time()
-    result = converter.convert(str(pdf_path))
-    elapsed = time.time() - t0
-
-    doc = result.document
-
-    md_text = doc.export_to_markdown()
-    md_path = output_dir / "docling.md"
-    md_path.write_text(md_text)
-
-    tables_payload: list[dict[str, Any]] = []
-    for i, table in enumerate(doc.tables):
-        tables_payload.append(_table_to_dict(table, i))
-
-    tables_path = output_dir / "docling_tables.json"
-    tables_path.write_text(
-        json.dumps(
-            {
-                "source_pdf": str(pdf_path),
-                "num_tables": len(tables_payload),
-                "elapsed_seconds": round(elapsed, 2),
-                "tables": tables_payload,
-            },
-            indent=2,
-            ensure_ascii=False,
-        )
-    )
-
-    # Pictures — capture every PictureItem's metadata + raw image. Filtering
-    # of decoratives happens at the manifest-building stage, not here.
-    pictures_payload: list[dict[str, Any]] = []
-    pictures_dir = output_dir / "docling_pictures"
-    pictures = getattr(doc, "pictures", []) or []
-    if pictures:
-        pictures_dir.mkdir(parents=True, exist_ok=True)
-    for i, picture in enumerate(pictures):
-        meta = _picture_to_dict(picture, doc, i)
-        # Render the image to PNG.
-        try:
-            img = picture.get_image(doc)
-            if img is not None:
-                png_path = pictures_dir / f"picture_{i}.png"
-                img.save(png_path)
-        except Exception:
-            # If image rendering fails, still record the metadata so callers
-            # can see the picture existed.
-            pass
-        pictures_payload.append(meta)
-
-    pictures_path = output_dir / "docling_pictures.json"
-    pictures_path.write_text(
-        json.dumps(
-            {
-                "source_pdf": str(pdf_path),
-                "num_pictures": len(pictures_payload),
-                "pictures": pictures_payload,
-            },
-            indent=2,
-            ensure_ascii=False,
-        )
-    )
-
-    print(
-        f"Docling: {pdf_path.name} -> {md_path} "
-        f"({len(md_text):,} chars, {len(tables_payload)} tables, "
-        f"{len(pictures_payload)} pictures, {elapsed:.1f}s)"
-    )
-    return {"markdown": md_path, "tables": tables_path, "pictures": pictures_path}
 
 
 # ---------------------------------------------------------------------------
@@ -687,26 +599,3 @@ def extract_split(
     }
 
 
-if __name__ == "__main__":
-    import sys
-
-    if len(sys.argv) == 3:
-        extract(sys.argv[1], sys.argv[2])
-    elif len(sys.argv) == 4 and sys.argv[1] == "--split":
-        # Usage: python -m paper_prep.extractors.docling_extractor --split <pdf> <run-root>
-        # Writes paper_runs/<paper> and arbiter_inputs/<paper> under run-root,
-        # using the PDF stem as <paper>.
-        pdf = Path(sys.argv[2])
-        run_root = Path(sys.argv[3])
-        paper_id = pdf.stem
-        extract_split(
-            pdf,
-            run_root / "paper_runs" / paper_id,
-            run_root / "arbiter_inputs" / paper_id,
-        )
-    else:
-        print(
-            "Usage: python -m paper_prep.extractors.docling_extractor <pdf> <output_dir>\n"
-            "       python -m paper_prep.extractors.docling_extractor --split <pdf> <run-root>"
-        )
-        sys.exit(1)

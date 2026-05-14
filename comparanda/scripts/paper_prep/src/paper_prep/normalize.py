@@ -1,10 +1,7 @@
-"""Cell normalization for ground-truth construction and scoring.
+"""Strict cell normalization used by the deterministic merge.
 
-Two modes:
-- strict: preserves numeric precision ('0.05' != '0.050'), case, and meaningful structure
-- loose_numeric: collapses trailing zeros on decimals (reports side-by-side score)
-
-Both collapse unicode, whitespace, and common null-token variants to None.
+Preserves numeric precision ('0.05' != '0.050'), case, and meaningful structure.
+Collapses unicode, whitespace, and common null-token variants to None.
 """
 
 from __future__ import annotations
@@ -50,7 +47,6 @@ _MD_ITALIC_RE = re.compile(r"(?<!\w)_(.+?)_(?!\w)")
 #    don't bleed into bold).
 #  - Outside the closing `*`: not a word char and not another `*`.
 _MD_ITALIC_STAR_RE = re.compile(r"(?<![\w*])\*([A-Za-z][^*]*?)\*(?![\w*])")
-_TRAILING_ZERO_RE = re.compile(r"(\d+\.\d*?)0+\b")
 
 
 def _basic_normalize(value: str | None) -> str | None:
@@ -86,20 +82,3 @@ def _basic_normalize(value: str | None) -> str | None:
 def normalize_strict(value: str | None) -> str | None:
     """Normalize preserving numeric precision. Returns None for null-equivalent values."""
     return _basic_normalize(value)
-
-
-def normalize_loose_numeric(value: str | None) -> str | None:
-    """Normalize and additionally collapse trailing decimal zeros (0.050 -> 0.05)."""
-    s = _basic_normalize(value)
-    if s is None:
-        return None
-    s = _TRAILING_ZERO_RE.sub(lambda m: m.group(1).rstrip("0").rstrip("."), s)
-    # '5.' -> '5'
-    s = re.sub(r"(\d+)\.\B", r"\1", s)
-    return s or None
-
-
-def cells_equal(a: str | None, b: str | None, *, loose_numeric: bool = False) -> bool:
-    """Compare two raw cell strings under the chosen normalization."""
-    fn = normalize_loose_numeric if loose_numeric else normalize_strict
-    return fn(a) == fn(b)
