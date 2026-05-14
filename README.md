@@ -91,43 +91,43 @@ harness/             # System 2 — the outer loop (calibration)
 docs/                # Architecture, specs, research, paper-prep integration notes
 ```
 
-## Application data lives elsewhere
+## Application data in a fork
 
-Application instances — actual schemas, observation logs, extraction state, PDFs,
-domain references — live in a sibling per-domain repo so they can iterate
-independently of system development. Do not add a `projects/<domain>/` directory
-back into this repo.
-
-### Application repo layout
-
-The system expects this tree inside the per-domain application repo
-(`comparanda-<domain>/`):
+When you fork this repo to run a domain, the fork adds domain data **inside the
+existing system-code tree** — not as a sibling repo. There are no symlinks for
+system code; everything is in one checkout.
 
 ```
-projects/<domain>/
-├── data/
-│   ├── raw/
-│   │   ├── pdfs/                       # Source PDFs (gitignored — large)
-│   │   └── pdfs/phase0-references/     # Methodology + prior meta-analysis PDFs
-│   └── processed/                      # Paper-prep bundles land here
-│       └── <paper_id>/
-│           ├── manifest.json
-│           ├── sections/<name>.md
-│           ├── tables/table_<id>.{json,md}
-│           └── figures/figure_<n>.png
-├── domain/
-│   ├── deep_research.md                # SEED: deep domain research report
-│   ├── seed_knowledge.md               # SEED: domain primer for agents
-│   └── {agent}_ref.md                  # Generated in Phase 0
-├── schema/
-│   ├── survey_schema.json              # Generated in Phase 0.5
-│   └── v{NNN}.yaml                     # Rich schema versions; grows over iterations
-├── surveys/<paper_id>.json             # Phase 1
-├── extractions/<paper_id>.jsonl        # Phase 3a
-├── normalization/<table>.json          # Phase 3b
-├── critiques/iter_<NNN>.json           # Phase 3.5
-└── observations/log.jsonl              # Append-only structured log
+<fork-root>/                          # e.g., <workspace>/comparanda-<domain>/
+├── comparanda/                       # System 1 (canonical)
+│   └── projects/<domain>/            ← added in fork (gitignored at canonical)
+│       ├── data/raw/{pdfs,spreadsheets}/
+│       │   ├── pdfs/                       # Source PDFs (gitignored — large)
+│       │   └── pdfs/phase0-references/     # Methodology + prior meta-analysis PDFs
+│       ├── data/processed/<paper_id>/      # Paper-prep bundles
+│       │   ├── manifest.json
+│       │   ├── sections/<name>.md
+│       │   ├── tables/table_<id>.{json,md}
+│       │   └── figures/figure_<n>.png
+│       ├── schema/v{NNN}.yaml              # Rich schema versions
+│       ├── domain/{deep_research,seed_knowledge,*_ref}.md
+│       ├── surveys/<paper_id>.json         # Phase 1
+│       ├── extractions/<paper_id>.jsonl    # Phase 3a
+│       ├── normalization/<table>.json      # Phase 3b
+│       ├── critiques/iter_<NNN>.json       # Phase 3.5
+│       └── observations/log.jsonl          # Append-only structured log
+├── harness/                          # System 2 (canonical)
+│   ├── iterations/                   ← added in fork (gitignored at canonical)
+│   │   ├── trajectory.json
+│   │   ├── accuracy_coverage.json
+│   │   └── iter_*/
+│   └── benchmark/gold_standard → ../../comparanda/projects/<domain>/data/raw/spreadsheets/
+└── docs/                             # System 1+2 (canonical)
 ```
+
+The fork is created via GitHub's fork button. Domain data is committed to the
+fork's `main` branch. Only methodology changes — agent prompts, hooks, eval
+code — are PR'd back to canonical from the fork's `methodology` branch.
 
 Naming convention for `<paper_id>`: `Author_Year_PMID` (e.g., `Amstutz_2009_19530960`).
 

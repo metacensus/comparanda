@@ -87,13 +87,15 @@ per-domain application directory tree. The high-level flow:
 PDFs → paper-prep bundles → comparanda inner loop → extracted atomic rows
 ```
 
-### The three repos
+### The two repos
 
 | Repo | Purpose | URL |
 |---|---|---|
-| `comparanda` (this) | System code: agents, hooks, orchestration | `git@github.com:metacensus/comparanda.git` |
+| `comparanda` (canonical) | System code: agents, hooks, orchestration, eval | `git@github.com:metacensus/comparanda.git` |
 | `comparanda-paper-prep` | PDF → structured bundle preprocessor | `git@github.com:<owner>/comparanda-paper-prep.git` |
-| `comparanda-<domain>` | Per-domain application data (schemas, surveys, extractions, PDFs) | TBD per domain — see "Application repo layout" below |
+
+Per-domain data lives in a **fork** of canonical (e.g., `<owner>/comparanda-<domain>`).
+The fork adds domain data inside the existing system-code tree — no separate app repo.
 
 ### Prerequisites
 
@@ -101,52 +103,68 @@ PDFs → paper-prep bundles → comparanda inner loop → extracted atomic rows
 - Anthropic API key (for the agentic runs)
 - Source PDFs for your domain
 
-### Step 1 — clone the system repos as siblings
+### Step 1 — (optional) clone canonical for read-only reference
+
+Not required to run a domain. If you want canonical handy for diffing methodology against your fork:
 
 ```bash
 mkdir -p ~/metacensus && cd ~/metacensus
 git clone git@github.com:metacensus/comparanda.git
-git clone git@github.com:<owner>/comparanda-paper-prep.git paper-prep
-cd paper-prep && uv sync && cd ..
 ```
 
-### Step 2 — create or clone the per-domain application repo
+### Step 2 — fork canonical, clone the fork, set up two branches
 
 ```bash
+# Fork via GitHub web UI (github.com/metacensus/comparanda → Fork), or:
+gh repo fork metacensus/comparanda --fork-name comparanda-<domain> --clone=false --remote=false
+
+# Clone the fork.
 cd ~/metacensus
-# For a new domain:
-mkdir -p comparanda-<domain>/projects/<domain>
-# For DPYD specifically, the working dataset lives outside the public repo
+git clone git@github.com:<your-org>/comparanda-<domain>.git
+cd comparanda-<domain>
+
+# Add canonical as upstream so methodology PRs flow back cleanly.
+git remote add upstream git@github.com:metacensus/comparanda.git
+
+# Create methodology branch (tracks upstream/main; accumulates methodology
+# commits before they're PR'd back to canonical).
+git checkout -b methodology
+git branch --set-upstream-to=upstream/main methodology
+git push origin methodology
+
+# main is what the harness reads from: methodology + domain commits on top.
+git checkout main
+
+# Domain data ignores need un-ignoring on main (NOT on methodology).
+# See "Fork .gitignore overrides" in the migration plan.
 ```
 
-### Application repo layout
+### Application data layout in a fork
 
-The system expects this tree inside the per-domain repo:
+The fork has this tree (everything below the system-code paths is fork-only):
 
 ```
-projects/<domain>/
-├── data/
-│   ├── raw/
-│   │   ├── pdfs/                       # Source PDFs (gitignored — large)
-│   │   └── pdfs/phase0-references/     # Methodology + prior meta-analysis PDFs
-│   └── processed/                      # Paper-prep bundles land here
-│       └── <paper_id>/
-│           ├── manifest.json
-│           ├── sections/<name>.md
-│           ├── tables/table_<id>.{json,md}
-│           └── figures/figure_<n>.png
-├── domain/
-│   ├── deep_research.md                # SEED: deep domain research report
-│   ├── seed_knowledge.md               # SEED: domain primer for agents
-│   └── {agent}_ref.md                  # Generated in Phase 0
-├── schema/
-│   ├── survey_schema.json              # Generated in Phase 0.5
-│   └── v{NNN}.yaml                     # Rich schema versions; grows over iterations
-├── surveys/<paper_id>.json             # Phase 1
-├── extractions/<paper_id>.jsonl        # Phase 3a
-├── normalization/<table>.json          # Phase 3b
-├── critiques/iter_<NNN>.json           # Phase 3.5
-└── observations/log.jsonl              # Append-only structured log
+<workspace>/comparanda-<domain>/
+├── comparanda/                                  # system code (canonical)
+│   ├── CLAUDE.md, .claude/, scripts/            # canonical contents
+│   └── projects/<domain>/                       ← fork-only (gitignored at canonical)
+│       ├── data/
+│       │   ├── raw/{pdfs,spreadsheets}/
+│       │   └── processed/<paper_id>/            # paper-prep bundles
+│       ├── domain/{deep_research,seed_knowledge,...}.md
+│       ├── schema/v{NNN}.yaml
+│       ├── surveys/<paper_id>.json
+│       ├── extractions/<paper_id>.jsonl
+│       ├── normalization/<table>.json
+│       ├── critiques/iter_<NNN>.json
+│       └── observations/log.jsonl
+├── harness/                                     # system code (canonical)
+│   ├── CLAUDE.md, .claude/, src/, benchmark/    # canonical contents
+│   └── iterations/                              ← fork-only (gitignored at canonical)
+│       ├── trajectory.json
+│       ├── accuracy_coverage.json
+│       └── iter_*/
+└── docs/                                        # canonical
 ```
 
 Naming convention for `<paper_id>`: `Author_Year_PMID` (e.g., `Amstutz_2009_19530960`).
@@ -193,37 +211,28 @@ the bundle, and what happens if a bundle is missing.
 ### Step 5 — run the inner loop
 
 ```bash
-cd <workspace>/comparanda/comparanda
-# Read comparanda/CLAUDE.md and follow Phase 0 onward.
+cd <workspace>/comparanda-<domain>/comparanda
+# Read CLAUDE.md and follow Phase 0 onward.
+claude    # or: claude -p "..."
 ```
 
-`comparanda/CLAUDE.md` walks the orchestrator through Phase 0 (generate
-agent-specific domain reference files) → Phase 0.5 (survey schema) → Phase 1
-(survey all papers, pick a subset) → Phase 2 (initial schema) → Phase 3a/3b/3.5
-(extract / normalize / critique loop) → Phase 4 (schema refinement) → Phase 5
-(subset rotation) → Phase 6 (full-corpus extraction).
-
-The agents read from and write into `projects/<domain>/` paths. Run the
-orchestrator from a working directory that resolves those paths correctly
-relative to your per-domain repo (typically `cd comparanda-<domain>/` and invoke
-the orchestrator from there, with `comparanda/.claude/` and `comparanda/scripts/`
-reachable).
+No symlinks needed — system code is in the same checkout. `comparanda/projects/<domain>/...`
+resolves locally because cwd is `comparanda/`. The orchestrator at `comparanda/CLAUDE.md`
+walks through Phase 0 → 0.5 → 1 → 2 → 3a/3b/3.5 → 4 → 5 → 6.
 
 ### Step 6 — run the calibration harness (optional, after you have output)
 
-Once Comparanda has produced an extraction iteration, the outer loop can
-evaluate and propose instruction improvements:
-
 ```bash
-cd <workspace>/comparanda/harness
-# Read harness/CLAUDE.md for the improvement loop walkthrough.
+cd <workspace>/comparanda-<domain>/harness
+# Set strict commit-routing for the 2-branch model (see docs/specs/harness-commit-wrapper.md).
+export HARNESS_COMMIT_MODE=strict
+claude
 ```
 
-The harness expects:
-- The inner loop has produced extractions, surveys, observation log entries in
-  `projects/<domain>/`.
-- `harness/benchmark/gold_standard/` resolves to the gold standard data (today
-  it's a symlink — see "Known gaps" below).
+The harness reads `../comparanda/projects/<domain>/...` and writes to
+`./iterations/`. `harness/benchmark/gold_standard/` is a symlink to
+`../../comparanda/projects/<domain>/data/raw/spreadsheets/` (re-pointed during
+fork setup).
 
 ### Known gaps to close
 

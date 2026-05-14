@@ -14,8 +14,9 @@ You are the orchestrator. Follow the phases below. Agents are in `.claude/agents
 - **Extractions:** `projects/<domain>/extractions/{paper_id}.jsonl`
 - **Normalization:** `projects/<domain>/normalization/{table}.json`
 - **Critiques:** `projects/<domain>/critiques/iter_{NNN}.json`
-- **PDFs:** `projects/<domain>/data/` (symlink to corpus)
-- **Phase 0 papers:** `data/raw/pdfs/phase0-references/`
+- **Bundles:** `projects/<domain>/data/processed/<paper_id>/` (manifest.json + paper.md + tables/)
+- **Source PDFs (gitignored):** `projects/<domain>/data/raw/pdfs/`
+- **Phase 0 papers:** `projects/<domain>/data/raw/pdfs/phase0-references/`
 
 ### Observation Log Format
 Append one JSON object per line to `projects/<domain>/observations/log.jsonl`:
@@ -120,9 +121,8 @@ Check that these exist:
 
 ## Phase 1 — Paper Survey
 
-1. **Survey all papers.** For each PDF in `projects/<domain>/data/`:
-   - Read the PDF (use PyMuPDF4LLM or Read tool for PDF)
-   - Invoke @survey with the paper text + survey schema
+1. **Survey all papers.** For each bundle in `projects/<domain>/data/processed/<paper_id>/`:
+   - Invoke @survey with file paths only (bundle dir + survey schema). Do not pre-digest content; the agent reads `manifest.json` and processes assets per its own instructions.
    - Agent writes `projects/<domain>/surveys/{paper_id}.json`
    - Can run multiple surveys in sequence (or note for parallelism)
 
@@ -150,8 +150,7 @@ Repeat Phases 2-4 until MA Critique says "ready" or 5 iterations reached.
 ### Phase 3a — Extraction
 
 1. For each paper in current subset:
-   - Read the paper (PDF → markdown)
-   - Invoke @extractor with file paths to: paper text, rich schema, survey output, domain reference. Pass file paths only — do not summarize, interpret, or pre-digest the content of these files in the prompt. The extractor's own instructions define how to process its inputs.
+   - Invoke @extractor with file paths to: bundle (`projects/<domain>/data/processed/{paper_id}/`), rich schema, survey output, domain reference. Pass file paths only — do not summarize, interpret, or pre-digest content. The extractor reads `manifest.json` and processes bundle assets per its own instructions.
    - Agent writes: `projects/<domain>/extractions/{paper_id}.jsonl`
    - Agent writes paper flags to observation log
 

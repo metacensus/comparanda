@@ -2,4 +2,8 @@ __pycache__/
 *.pyc
 .venv/
 .DS_Store
-/iterations/iter_*/
+
+# Per-domain harness runtime state — populated only in domain forks (not canonical).
+# A fork un-ignores this on its `main` branch via a !/iterations/ override committed
+# alongside the iteration archives. The override never lands on `methodology`.
+/iterations/
