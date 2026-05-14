@@ -1,6 +1,6 @@
 {
   "permissions": {
-    "additionalDirectories": ["../comparanda", "/path/to/comparanda"]
+    "additionalDirectories": ["../comparanda"]
   },
   "hooks": {
     "PreToolUse": [
@@ -9,7 +9,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash /path/to/comparanda-harness/.claude/hooks/guard-comparanda.sh",
+            "command": "bash .claude/hooks/guard-comparanda.sh",
             "timeout": 5
           }
         ]

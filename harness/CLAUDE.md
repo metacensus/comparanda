@@ -6,20 +6,30 @@ diagnosing instruction-level problems, and applying fixes that generalize across
 
 ## Directory Layout
 
+This harness lives as a sibling of `comparanda/` inside the monorepo. From here,
+`../comparanda/` is the system you are calibrating.
+
 ```
-comparanda-harness/           (you are here)
+harness/                      (you are here)
 ├── .claude/agents/           monitor, eval, diagnostician, critic
 ├── benchmark/
-│   ├── gold_standard/        gold_standard.xlsx
+│   ├── gold_standard/        gold_standard.xlsx (symlink to local data)
 │   ├── eval_config/          paper_pmid_map.json
-│   └── prior_meta_analyses/  Phase 0 reference papers
-├── iterations/               trajectory, per-iteration archives
+│   └── MODIFICATIONS.md
+├── iterations/               trajectory, per-iteration archives (created at runtime; gitignored)
 └── src/harness/              eval scripts, utilities
 
 ../comparanda/                (the system under calibration)
 ├── .claude/agents/           agent definitions you modify
-├── projects/dpyd/            project data you read
-└── ...
+└── CLAUDE.md                 inner-loop orchestrator
+
+../docs/                      (cross-cutting system docs at the monorepo root)
+├── specs/system2-lessons.md  read before each diagnostician/critic run
+└── research/                 prompt-engineering reference, etc.
+
+projects/<domain>/            (per-domain application data — NOT in this monorepo;
+                              path used in agent prompts assumes a sibling app repo
+                              mounted at ../comparanda/projects/<domain>/ for now)
 ```
 
 ## The Improvement Loop
@@ -523,7 +533,7 @@ When proposing changes, the critic should classify as:
 
 ## Harness Lessons (accumulated knowledge)
 
-Read `../comparanda/docs/specs/system2-lessons.md` before each diagnostician/critic run.
+Read `../docs/specs/system2-lessons.md` before each diagnostician/critic run.
 These are previously discovered patterns. Do not re-discover known issues.
 
 After each iteration, append new lessons discovered. Lessons must be:
@@ -544,7 +554,7 @@ See `.claude/agents/` for definitions.
 
 ## References
 
-- Comparanda v2 spec: `../comparanda/docs/specs/comparanda-v2-spec.md`
-- Harness lessons: `../comparanda/docs/specs/system2-lessons.md`
+- Comparanda v2 spec: `../docs/specs/comparanda-v2-spec.md`
+- Harness lessons: `../docs/specs/system2-lessons.md`
 - Gold standard: `benchmark/gold_standard/`
 - Eval config: `benchmark/eval_config/`

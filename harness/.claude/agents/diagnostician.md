@@ -39,7 +39,7 @@ Before you can diagnose whether a problem needs System 2 intervention, you need 
 
 Before analysis, locate and read these files:
 
-1. **System 2 lessons** — `../comparanda/docs/specs/system2-lessons.md`. Read this FIRST. These are previously diagnosed patterns. Do not re-diagnose known issues; reference them instead.
+1. **System 2 lessons** — `../docs/specs/system2-lessons.md`. Read this FIRST. These are previously diagnosed patterns. Do not re-diagnose known issues; reference them instead.
 2. **Eval report** — `iterations/iter_{N}/eval_report.json`. Contains per-paper metrics: row counts, variant coverage, outcome coverage, field fill rates, composite score, and any detailed mode findings with explanations.
 3. **System 1 agent instruction files** — `../comparanda/.claude/agents/*.md`. Read the specific agent's file when you suspect it is the root cause. Also read when determining whether an instruction already exists for the issue you're diagnosing.
 4. **Observation log** — `../comparanda/projects/dpyd/observations/log.jsonl`. Structured log of what happened during extraction — agent observations, schema rationale, paper flags, extraction difficulties, normalization disputes.
@@ -52,7 +52,7 @@ Before analysis, locate and read these files:
 
 ## Step 1: Read accumulated knowledge
 
-Read `../comparanda/docs/specs/system2-lessons.md`. For each finding you produce later, check whether it matches an existing lesson. If it does, cite the lesson ID rather than re-diagnosing from scratch. If the lesson file does not exist yet, note this and proceed.
+Read `../docs/specs/system2-lessons.md`. For each finding you produce later, check whether it matches an existing lesson. If it does, cite the lesson ID rather than re-diagnosing from scratch. If the lesson file does not exist yet, note this and proceed.
 
 ## Step 2: Understand what failed
 

@@ -20,8 +20,8 @@ The agents you may target live at `../comparanda/.claude/agents/` and include: `
 1. **Diagnosis** — `iterations/iter_{N}/diagnosis.json`. Contains root cause analysis, affected agent, affected section, failure pattern, and whether the issue is instruction-fixable.
 2. **Current agent files** — `../comparanda/.claude/agents/*.md`. The instruction text you may modify.
 3. **Trajectory** — `iterations/trajectory.json`. History of all iterations: composite scores, instruction sizes, past changes and their outcomes. Shows what has already been tried.
-4. **System 2 lessons** — `../comparanda/docs/specs/system2-lessons.md`. Accumulated knowledge from previous calibration runs. Do not re-discover known issues or re-propose failed fixes.
-5. **Prompting reference** — `../comparanda/docs/research/prompt-engineering-reference.md`. Best practices for writing effective agent instructions. Consult when the diagnosis shows an agent is not following existing instructions.
+4. **System 2 lessons** — `../docs/specs/system2-lessons.md`. Accumulated knowledge from previous calibration runs. Do not re-discover known issues or re-propose failed fixes.
+5. **Prompting reference** — `../docs/research/prompt-engineering-reference.md`. Best practices for writing effective agent instructions. Consult when the diagnosis shows an agent is not following existing instructions.
 
 # Procedure
 
