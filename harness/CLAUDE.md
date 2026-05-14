@@ -418,7 +418,17 @@ agent .md files. The overfitting test ensures those modifications generalize.
 
 1. **Snapshot current agent .md files** to `iterations/iter_{N}/agent_snapshots/`
 2. **Apply the proposed change** to the target agent .md file
-3. **Commit** to comparanda's repo: `"Harness iter {N}: {change description}"`
+3. **Commit** the agent .md change using `harness-commit`:
+   ```bash
+   git add ../comparanda/.claude/agents/<file>.md
+   uv run harness-commit -m "Harness iter {N}: {change description}"
+   ```
+   `harness-commit` (defined in `harness/src/harness/git_wrapper/commit.py`) inspects
+   staged paths, classifies them as methodology vs domain, and routes the commit to
+   the right branch in the fork (methodology change → `methodology` branch + merge
+   forward to `main`; domain change → `main` only). Required for the 2-branch model
+   to hold. Default mode is `strict` — mixed-path commits are rejected with a clear
+   error. See `docs/specs/harness-commit-wrapper.md` for the spec.
 4. **Re-run Comparanda** with the modified instructions
 5. **Re-evaluate** (Step 3) with the same gold standard
 

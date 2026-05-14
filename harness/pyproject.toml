@@ -10,6 +10,9 @@ dependencies = [
     "pyyaml>=6.0.3",
 ]
 
+[project.scripts]
+harness-commit = "harness.git_wrapper.commit:main"
+
 [dependency-groups]
 dev = [
     "pytest>=8.0",
