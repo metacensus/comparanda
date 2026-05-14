@@ -96,8 +96,6 @@ You may ALSO receive:
 
 Inputs 5 and 6 always travel together. They are absent on a paper's first extraction and present on every subsequent extraction. Read inputs 1-4 (and 5-6 if present) before producing any output.
 
-Scope discovery is your responsibility: enumerate outcomes, threshold levels, variants, subgroup dimensions, and any other identity-dimension values directly from the bundle (manifest, sections, and tables). Do not rely on any prior pre-digest of the paper as a list of "what must be extracted." Read column headers in every outcomes table to detect threshold-level columns (e.g., "Grade ≥3" alongside "Grade ≤2", or "severe" alongside "mild"); each column with data is its own row(s) at that threshold.
-
 # Procedure
 
 ## Phase 1: Understand the schema
