@@ -31,11 +31,9 @@ and the only Python is a small helper for log queries.
 
 ## Companion repos
 
-Comparanda is one of three coordinated repos. To run a real extraction you need all three.
-
-- **This repo** — system code (agents, hooks, orchestration).
-- **[`comparanda-paper-prep`](https://github.com/<owner>/comparanda-paper-prep)** — turns each source PDF into a structured bundle (sections + tables + figures + manifest) that the extractor reads from. Comparanda does not parse PDFs itself anymore.
-- **Per-domain application repo** — holds the actual schemas, surveys, observation logs, extraction outputs, and domain reference files for a given domain (e.g., DPYD pharmacogenetics). Comparanda reads from and writes into this repo at runtime; it is intentionally separate so application state can iterate on a different cadence than system code.
+- **This repo** — System 1 (inner loop): system code (agents, hooks, orchestration) that turns paper-prep bundles into extracted atomic rows.
+- **`comparanda-harness`** — System 2 (outer loop): calibration harness that watches inner-loop runs, evaluates against gold standard, diagnoses instruction-level problems, and proposes generalizable fixes to the agents in this repo. (Local-only at time of writing; remote URL TBD.)
+- **Per-domain application repo** — holds the actual schemas, surveys, observation logs, extraction outputs, paper-prep bundles, and domain reference files for a given domain (e.g., DPYD pharmacogenetics). Comparanda reads from and writes into this repo at runtime; it is intentionally separate so application state can iterate on a different cadence than system code.
 
 ## Bootstrap
 
