@@ -11,7 +11,7 @@ Agentic system for scientific paper schema extraction. The schema IS the product
 
 - **System 1 (Inner Loop)**: Survey → Schema Proposal → Extraction → Normalization → Validation
 - **System 2 (Outer Loop)**: Evaluates System 1 outputs → modifies instruction files → kicks off next iteration
-- System 2 modifies instruction files in `src/comparanda/instructions/`, never agent code
+- System 2 modifies the agent instruction files in `.claude/agents/`, never agent code
 
 ## Pipeline Phases
 
@@ -29,10 +29,10 @@ Agentic system for scientific paper schema extraction. The schema IS the product
 
 ## Key Files
 
-- **Eval harness**: `src/comparanda/eval/` — matchers, alignment, scoring, LLM judge, regression detection
-- **System 2 loop**: `src/comparanda/loop/` — lessons, trajectory, playbook, runner
-- **Instruction files**: `src/comparanda/instructions/` — System 2 modification targets
-- **Gold standard**: `data/raw/spreadsheets/gold_standard.xlsx` (gitignored)
+- **Agents**: `.claude/agents/` — System 1 agent prompts (survey, schema-proposer, extractor, normalizer, ma-critique, subset-selector, extraction-qc). System 2 modifies these.
+- **Orchestration**: `CLAUDE.md` — phase-by-phase orchestrator instructions for the inner loop.
+- **Hooks**: `.claude/hooks/` — validation hooks (e.g. provenance quotes).
+- **Scripts**: `scripts/observation_log.py` — observation log query CLI used by the extractor.
 
 ## Constraints
 
@@ -41,9 +41,3 @@ Agentic system for scientific paper schema extraction. The schema IS the product
 - C13: No data pollution — the domain expert's schema/tables are evaluation-only, System 1 is blind to them
 - C14: System 1 agents record reflections (meta-commentary) for System 2
 - C15: Gold standard is assumed imperfect — disputed values log
-
-## Running Tests
-
-```bash
-uv run pytest tests/
-```

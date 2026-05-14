@@ -36,10 +36,12 @@ In iteration on the inner-loop + outer-loop architecture.
 ## Repo structure
 
 ```
-.claude/agents/      # Agent definitions (extractor, normalizer, survey, ma-critique, ...)
-src/comparanda/      # Library: orchestrator, loop, agent loaders, data utilities
-tests/               # Test suite
-pyproject.toml       # Package config (uv)
+CLAUDE.md            # Orchestrator instructions (phase-by-phase inner loop)
+.claude/
+  agents/            # Agent prompts (extractor, normalizer, survey, ma-critique, ...)
+  hooks/             # Validation hooks (e.g. provenance quote checks)
+  skills/            # Skill definitions invoked during orchestration
+scripts/             # Utilities invoked by agents (observation log query, ...)
 ```
 
 System-level docs (architecture, specs, research) live at the repo root in `../docs/`.

@@ -58,26 +58,6 @@ Commit after each phase completes. Message format: `"Phase {N}: {what changed}"`
 
 ---
 
-## RAG Index Build
-
-**Start this immediately on first run — it runs in the background while other phases proceed.**
-
-The PaperQA2 RAG index over the corpus papers is used by the Extraction Agent in Phase 3 for targeted passage retrieval instead of full-paper reads. Building it takes time and costs money (OpenAI API for chunk summarization).
-
-```python
-# Build via Python:
-from comparanda.data.rag import create_paper_index
-index = await create_paper_index(pdf_dir="projects/<domain>/data", cache_dir=".rag_cache")
-```
-
-Or run in background: `uv run python -c "import asyncio; from comparanda.data.rag import create_paper_index; asyncio.run(create_paper_index(pdf_dir='projects/<domain>/data', cache_dir='.rag_cache'))" &`
-
-The cache persists at `.rag_cache/` — do NOT delete it. It is NOT gitignored because it costs money to rebuild.
-
-If the cache already exists, this step is instant (loads from disk).
-
----
-
 ## Phase 0 — Domain Onboarding
 
 > Run once per new domain.
@@ -171,8 +151,7 @@ Repeat Phases 2-4 until MA Critique says "ready" or 5 iterations reached.
 
 1. For each paper in current subset:
    - Read the paper (PDF → markdown)
-   - Optionally query RAG index for targeted passages
-   - Invoke @extractor with file paths to: paper text/passages, rich schema, survey output, domain reference. Pass file paths only — do not summarize, interpret, or pre-digest the content of these files in the prompt. The extractor's own instructions define how to process its inputs.
+   - Invoke @extractor with file paths to: paper text, rich schema, survey output, domain reference. Pass file paths only — do not summarize, interpret, or pre-digest the content of these files in the prompt. The extractor's own instructions define how to process its inputs.
    - Agent writes: `projects/<domain>/extractions/{paper_id}.jsonl`
    - Agent writes paper flags to observation log
 

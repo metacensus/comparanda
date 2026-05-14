@@ -8,7 +8,7 @@ hooks:
     - matcher: "Write"
       hooks:
         - type: command
-          command: "uv run python3 .claude/hooks/validate_provenance_quotes.py"
+          command: "python3 .claude/hooks/validate_provenance_quotes.py"
 ---
 
 # Role
@@ -63,7 +63,7 @@ You receive:
 4. **Domain reference** — `projects/{domain}/domain/extraction_ref.md` with domain-specific extraction knowledge
 5. **Observation log** — Query for entries relevant to this paper:
    ```bash
-   uv run python -m comparanda.data.observation_log query \
+   python3 scripts/observation_log.py query \
      --log projects/{domain}/observations/log.jsonl \
      --paper-id {paper_id}
    ```
