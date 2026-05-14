@@ -19,8 +19,13 @@ This file covers two things:
   and `docs/presentation/system-architecture-v1/`.
 
 - **"How do bundles work" / "what's paper-prep"** → read
-  `docs/paper-prep-integration.md` and the
-  [`comparanda-paper-prep`](https://github.com/<owner>/comparanda-paper-prep) repo.
+  `docs/paper-prep-integration.md`. The preprocessor itself lives in-tree at
+  `comparanda/scripts/paper_prep/` (Docling + per-table Sonnet + Stage-2
+  arbiter + bundle assembly).
+
+- **"Run paper-prep on a PDF"** → `cd comparanda/scripts/paper_prep/ && uv sync`,
+  then `uv run python -m paper_prep <paper_id> --pdf <path> --output-root <path>`
+  (or `python -m paper_prep.batch ...` for a corpus). See Bootstrap Step 4.
 
 `comparanda/` (inner loop) and `harness/` (outer loop) are self-contained
 subprojects. `cd` into the one you're working in before invoking agents.
@@ -48,6 +53,7 @@ subprojects. `cd` into the one you're working in before invoking agents.
 | `comparanda/.claude/skills/comparanda/SKILL.md` | Cross-phase pipeline-knowledge skill surfaced to agents that need it. |
 | `comparanda/.claude/settings.json` | Agent-level configuration. |
 | `comparanda/scripts/observation_log.py` | Stdlib CLI used by the extractor to query the observation log for entries relevant to a specific paper. |
+| `comparanda/scripts/paper_prep/` | PDF → bundle preprocessor (Docling + per-table Sonnet + Stage-2 arbiter + bundle assembly). Self-contained uv workspace; run via `python -m paper_prep` or `python -m paper_prep.batch`. Bootstrap Step 4. |
 
 ### Outer-loop agents (`harness/.claude/agents/`)
 
@@ -80,19 +86,25 @@ per-domain repo. This repo ships system code only.
 
 ## Bootstrap: from zero to a running extraction
 
-To run Comparanda on a domain (DPYD or new), you coordinate three repos and one
+To run Comparanda on a domain (DPYD or new), you coordinate one repo and one
 per-domain application directory tree. The high-level flow:
 
 ```
 PDFs → paper-prep bundles → comparanda inner loop → extracted atomic rows
 ```
 
-### The two repos
+### The repo
 
 | Repo | Purpose | URL |
 |---|---|---|
-| `comparanda` (canonical) | System code: agents, hooks, orchestration, eval | `git@github.com:metacensus/comparanda.git` |
-| `comparanda-paper-prep` | PDF → structured bundle preprocessor | `git@github.com:<owner>/comparanda-paper-prep.git` |
+| `comparanda` (canonical) | System code: agents, hooks, orchestration, eval, **paper-prep preprocessor** | `git@github.com:metacensus/comparanda.git` |
+
+The paper-prep preprocessor (Docling extraction + per-table Sonnet first-pass
++ Stage-2 LLM arbiter + bundle assembly) lives in-tree at
+`comparanda/scripts/paper_prep/`. The original research repo
+`<owner>/comparanda-paper-prep` still exists for ad-hoc debug tooling
+(interactive viewer, alternative extractor experiments) but is not required
+to run the pipeline.
 
 Per-domain data lives in a **fork** of canonical (e.g., `<owner>/comparanda-<domain>`).
 The fork adds domain data inside the existing system-code tree — no separate app repo.
@@ -188,22 +200,45 @@ Drop methodology + prior meta-analysis PDFs into
 
 ### Step 4 — build paper-prep bundles
 
-For each source PDF, build a bundle:
+The bundle preprocessor ships in-tree at `comparanda/scripts/paper_prep/`.
+**Run it from a regular terminal** — not from inside a Claude Code session
+(nested `claude -p` subprocesses don't work).
+
+First time setup:
 
 ```bash
-cd <workspace>/paper-prep
-uv run python -m paper_prep.prep <paper_id> \
-    --run-dir experiments/phase3_run/<paper_id> \
-    --pdf "/path/to/<paper_id>.pdf" \
-    --output-root <workspace>/comparanda-<domain>/projects/<domain>/data/processed/
+cd <workspace>/comparanda-<domain>/comparanda/scripts/paper_prep
+uv sync   # installs docling + pydantic
 ```
 
-> **Gap:** `--run-dir` points at a paper-prep "Phase 3 production output dir",
-> which is built by paper-prep's own pipeline (Sonnet first-pass + Docling +
-> cross-validated merge). See paper-prep's README and `scripts/run_paper.py` /
-> `scripts/run_dpyd_batch.py` for how that's produced. A turn-key one-command
-> bundle build is not yet wired up; for now, build the run-dir with paper-prep
-> first, then invoke `prep` to materialize the bundle.
+Build one paper:
+
+```bash
+uv run python -m paper_prep <paper_id> \
+    --pdf "/path/to/<paper_id>.pdf" \
+    --output-root <workspace>/comparanda-<domain>/comparanda/projects/<domain>/data/processed/
+```
+
+Build a corpus (uses a subset JSON to map PMID → paper_id):
+
+```bash
+uv run python -m paper_prep.batch \
+    --subset examples/dpyd_batch_subset.json \
+    --pdfs-dir <workspace>/comparanda-<domain>/comparanda/projects/<domain>/data/raw/pdfs/ \
+    --bundle-out <workspace>/comparanda-<domain>/comparanda/projects/<domain>/data/processed/
+```
+
+Pipeline steps per paper (both `python -m paper_prep` and `python -m paper_prep.batch`):
+1. **Layer 1** — Docling section/table/figure extraction + per-table Sonnet first-pass
+   (parallel batch of 4 by default, ~$1.50/table budget cap).
+2. **Layer 2** — Per-table Stage-1 deterministic merge (NW row alignment +
+   cell classification) + optional Stage-2 LLM arbiter (`claude -p` Sonnet
+   with PDF + diff guide) + bundle assembly (manifest.json + sections/ +
+   tables/ + figures/ + _provenance/).
+
+Use `--no-arbitrate` for a free dry-run that skips Stage-2 (still gives
+dual-extractor deterministic merge; conflicts go unresolved, the bundle
+drops any two-sided table with unresolved conflicts).
 
 See `docs/paper-prep-integration.md` for what the agents and hook expect from
 the bundle, and what happens if a bundle is missing.
@@ -240,4 +275,3 @@ These would make the bootstrap turn-key but don't exist yet:
 
 - A scaffolding script that creates the `projects/<domain>/` tree.
 - A documented process (or generator) for `deep_research.md` and `seed_knowledge.md`.
-- A single-command path from PDF → bundle (folding paper-prep's run-dir build into the bundle materialization).
