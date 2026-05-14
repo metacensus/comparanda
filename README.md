@@ -39,27 +39,33 @@ Other inner-loop components:
 - **Script:** `comparanda/scripts/observation_log.py` — stdlib CLI invoked by the extractor to query the observation log for entries relevant to a specific paper.
 - **Settings:** `comparanda/.claude/settings.json` — agent-level configuration.
 
-### System 2 — outer loop (separate repo: `comparanda-harness`)
+### System 2 — outer loop (`harness/`)
 
 Calibration harness that watches inner-loop runs, evaluates outputs against the
 gold standard, traces failures to instruction-level root causes, and proposes
-generalizable fixes to the agents in this repo. Four agents:
+generalizable fixes to the agents in `comparanda/`. Lives in
+[`harness/`](./harness/) and is invoked from there.
 
-| Agent | Role |
-|---|---|
-| `monitor` | Reads inner-loop state (observation log, phase artifacts) and produces a structured status summary. |
-| `eval` | Compares Comparanda extractions against the gold standard. Aggregate-mode (completeness) and detailed-mode (semantic accuracy). |
-| `diagnostician` | Traces eval findings to instruction root causes. Classifies failures as instruction-fixable or domain-specific; identifies which agent file needs changes. |
-| `critic` | Proposes one specific, domain-independent instruction change per iteration based on the diagnosis. The only agent that modifies the System-1 agent files. |
+| Agent | File | Role |
+|---|---|---|
+| `monitor` | `harness/.claude/agents/monitor.md` | Reads inner-loop state (observation log, phase artifacts) and produces a structured status summary. |
+| `eval` | `harness/.claude/agents/eval.md` | Compares Comparanda extractions against the gold standard. Aggregate-mode (completeness) and detailed-mode (semantic accuracy). |
+| `diagnostician` | `harness/.claude/agents/diagnostician.md` | Traces eval findings to instruction root causes. Classifies failures as instruction-fixable or domain-specific; identifies which agent file needs changes. |
+| `critic` | `harness/.claude/agents/critic.md` | Proposes one specific, domain-independent instruction change per iteration based on the diagnosis. The only agent that modifies the System-1 agent files. |
+
+Other harness components:
+- **Orchestrator:** `harness/CLAUDE.md` — improvement loop walkthrough (run Comparanda → monitor → evaluate → diagnose → propose → apply → keep or revert).
+- **Guard hook:** `harness/.claude/hooks/guard-comparanda.sh` — PreToolUse hook that prevents the harness from modifying anything in `comparanda/` except the universal instruction sections of `comparanda/.claude/agents/*.md`.
+- **Eval scripts:** `harness/src/harness/{monitor.py, eval/aggregate.py, eval/prepare_comparison.py, eval/gold_standard.py}` — invoked by `monitor` and `eval` agents.
+- **Benchmark:** `harness/benchmark/` — DPYD gold standard spreadsheet (symlink to local data; not committed), `eval_config/paper_pmid_map.json`, `MODIFICATIONS.md`.
 
 The outer-loop agents modify the inner-loop agent prompts in
 `comparanda/.claude/agents/`. They do **not** modify Python or hook code.
 
 ## Companion repos
 
-- **This repo** — System 1 (inner loop): system code (agents, hooks, orchestration) that turns paper-prep bundles into extracted atomic rows.
-- **`comparanda-harness`** — System 2 (outer loop): calibration harness that watches inner-loop runs, evaluates against gold standard, diagnoses instruction-level problems, and proposes generalizable fixes to the agents in this repo. (Local-only at time of writing; remote URL TBD.)
-- **Per-domain application repo** — holds the actual schemas, surveys, observation logs, extraction outputs, paper-prep bundles, and domain reference files for a given domain (e.g., DPYD pharmacogenetics). Comparanda reads from and writes into this repo at runtime; it is intentionally separate so application state can iterate on a different cadence than system code.
+- **This repo** — System 1 (`comparanda/`, inner loop) and System 2 (`harness/`, outer loop) live here as sibling subdirectories.
+- **Per-domain application repo** — holds the actual schemas, surveys, observation logs, extraction outputs, paper-prep bundles, and domain reference files for a given domain (e.g., DPYD pharmacogenetics). Both System 1 and System 2 read from and write into this repo at runtime; it is intentionally separate so application state can iterate on a different cadence than system code.
 
 ## Bootstrap
 
@@ -70,12 +76,18 @@ See [`CLAUDE.md`](./CLAUDE.md) for the from-scratch setup walkthrough.
 ```
 CLAUDE.md            # Bootstrap + setup guide; top-level routing
 README.md            # This file
-comparanda/          # The system
-  CLAUDE.md          # Phase-by-phase orchestration (inner loop)
+comparanda/          # System 1 — the inner loop
+  CLAUDE.md          # Phase-by-phase orchestration
   .claude/agents/    # Agent prompts (extractor, survey, ma-critique, ...)
   .claude/hooks/     # Validation hooks (provenance quotes)
   .claude/skills/    # Skill definitions
   scripts/           # Stdlib utilities invoked by agents (observation_log)
+harness/             # System 2 — the outer loop (calibration)
+  CLAUDE.md          # Improvement loop walkthrough
+  .claude/agents/    # Agent prompts (monitor, eval, diagnostician, critic)
+  .claude/hooks/     # Guard hook protecting comparanda/ from over-broad edits
+  src/harness/       # Eval scripts invoked by the harness agents
+  benchmark/         # Gold standard + eval config for DPYD
 docs/                # Architecture, specs, research, paper-prep integration notes
 ```
 

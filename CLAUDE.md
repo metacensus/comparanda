@@ -12,6 +12,9 @@ This file covers two things:
 - **"Run the system" / "extract from these papers" / "iterate the schema"** →
   `cd comparanda/` and follow `comparanda/CLAUDE.md` (phase-by-phase orchestrator).
 
+- **"Improve the agents" / "calibrate against gold standard" / "diagnose what failed"** →
+  `cd harness/` and follow `harness/CLAUDE.md` (improvement loop).
+
 - **"How is the system put together" / "what's the spec"** → read `docs/specs/`
   and `docs/presentation/system-architecture-v1/`.
 
@@ -19,8 +22,8 @@ This file covers two things:
   `docs/paper-prep-integration.md` and the
   [`comparanda-paper-prep`](https://github.com/<owner>/comparanda-paper-prep) repo.
 
-`comparanda/` is a self-contained subproject (its own `CLAUDE.md`, `.claude/agents/`,
-`scripts/`). `cd` into it before invoking agents.
+`comparanda/` (inner loop) and `harness/` (outer loop) are self-contained
+subprojects. `cd` into the one you're working in before invoking agents.
 
 ## System components
 
@@ -46,14 +49,24 @@ This file covers two things:
 | `comparanda/.claude/settings.json` | Agent-level configuration. |
 | `comparanda/scripts/observation_log.py` | Stdlib CLI used by the extractor to query the observation log for entries relevant to a specific paper. |
 
-### Outer-loop agents (separate repo: `comparanda-harness`, `.claude/agents/`)
+### Outer-loop agents (`harness/.claude/agents/`)
 
 | File | Role |
 |---|---|
-| `monitor.md` | Reads inner-loop state (observation log, phase artifacts) and produces a structured status summary. |
-| `eval.md` | Compares Comparanda extractions against the gold standard. Aggregate-mode (completeness) and detailed-mode (semantic accuracy). |
-| `diagnostician.md` | Traces eval findings to instruction root causes. Identifies which agent file needs changes. |
-| `critic.md` | Proposes one specific, domain-independent instruction change per iteration. The only agent that modifies inner-loop agent files. |
+| `harness/.claude/agents/monitor.md` | Reads inner-loop state (observation log, phase artifacts) and produces a structured status summary. |
+| `harness/.claude/agents/eval.md` | Compares Comparanda extractions against the gold standard. Aggregate-mode (completeness) and detailed-mode (semantic accuracy). |
+| `harness/.claude/agents/diagnostician.md` | Traces eval findings to instruction root causes. Identifies which agent file needs changes. |
+| `harness/.claude/agents/critic.md` | Proposes one specific, domain-independent instruction change per iteration. The only agent that modifies inner-loop agent files. |
+
+### Other outer-loop components
+
+| Path | Role |
+|---|---|
+| `harness/CLAUDE.md` | Outer-loop orchestrator — improvement loop walkthrough. |
+| `harness/.claude/hooks/guard-comparanda.sh` | PreToolUse hook. Prevents the harness from modifying anything in `comparanda/` except the universal instruction sections of `comparanda/.claude/agents/*.md`. |
+| `harness/src/harness/monitor.py` | Phase-transition monitor used by the `monitor` agent. |
+| `harness/src/harness/eval/{aggregate,prepare_comparison,gold_standard}.py` | Eval pipeline invoked by the `eval` agent. |
+| `harness/benchmark/` | Gold standard (symlink to local DPYD spreadsheet — not committed), `eval_config/paper_pmid_map.json`, `MODIFICATIONS.md`. |
 
 The outer loop modifies inner-loop agent prompts in `comparanda/.claude/agents/`. It does **not** modify Python or hook code.
 
@@ -196,6 +209,22 @@ relative to your per-domain repo (typically `cd comparanda-<domain>/` and invoke
 the orchestrator from there, with `comparanda/.claude/` and `comparanda/scripts/`
 reachable).
 
+### Step 6 — run the calibration harness (optional, after you have output)
+
+Once Comparanda has produced an extraction iteration, the outer loop can
+evaluate and propose instruction improvements:
+
+```bash
+cd <workspace>/comparanda/harness
+# Read harness/CLAUDE.md for the improvement loop walkthrough.
+```
+
+The harness expects:
+- The inner loop has produced extractions, surveys, observation log entries in
+  `projects/<domain>/`.
+- `harness/benchmark/gold_standard/` resolves to the gold standard data (today
+  it's a symlink — see "Known gaps" below).
+
 ### Known gaps to close
 
 These would make the bootstrap turn-key but don't exist yet:
@@ -203,4 +232,3 @@ These would make the bootstrap turn-key but don't exist yet:
 - A scaffolding script that creates the `projects/<domain>/` tree.
 - A documented process (or generator) for `deep_research.md` and `seed_knowledge.md`.
 - A single-command path from PDF → bundle (folding paper-prep's run-dir build into the bundle materialization).
-- A bootstrap doc for the outer-loop calibration harness (currently lives separately as `comparanda-harness`, not yet pushed).
