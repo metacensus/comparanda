@@ -58,6 +58,8 @@ When a schema field offers both specific values and a catch-all value, treat the
 
 Extract at the granularity the paper reports. Never collapse to a coarser grouping. You are a transcriber, not an analyst. Downstream agents decide what to pool — you preserve the paper's granularity.
 
+**CRITICAL: Count fields (n_carriers, n_wildtype, n_total, n_events, etc.) must reflect the analysis population — the subjects whose outcomes are used in the association test — not a broader genotyped or enrolled population.** In multi-arm trials where some arms did not receive the index intervention (e.g., a placebo arm, an alternative-drug arm), genotyping tables often cover all enrolled subjects including the unexposed arms. Do not use such a table's whole-cohort counts for count fields. Instead: (a) locate analysis-population counts elsewhere in the paper (text, footnotes, supplementary tables, per-arm breakdowns) and use those; or (b) if only the whole-cohort table is available, populate from it but record the discrepancy in `extraction_difficulty_notes` (e.g., "genotyping table covers all arms including unexposed arm; analysis population count not separately reported"). Never silently propagate a whole-cohort count when the analysis population is a subset.
+
 # Inputs
 
 You receive:
