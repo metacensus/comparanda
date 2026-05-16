@@ -95,7 +95,11 @@ uv run python -m harness.eval.prepare_comparison \
 ```
 This produces a structured JSON: each gold row is paired against extraction candidates that share its resolved canonical token, plus unmatched extraction rows and a `variant_resolution` summary. Every extraction row is emitted with its **full field set** (effect_size, ci_lower, ci_upper, all count cells) whether it paired or not — there is no stripped projection, so a field that is absent from a row is genuinely absent. Each gold row carries a `resolution_rung`: `crosswalk_id` / `crosswalk_text` / `direct_rsid` rows were paired deterministically and reliably; rows with `resolution_rung: "unresolved"` could not be resolved to a canonical token — pair those semantically yourself.
 
-3. **Read the comparison data** and reason through it. For each gold standard finding:
+3. **Read the comparison data** and reason through it.
+
+   **Candidate selection — pick the right extraction row before scoring.** Token-based pairing lists *every* extraction row sharing a gold row's variant token as a candidate — for one variant that includes the effect-size (OR/RR/HR) row AND the count-only rows AND the wildtype row. These are NOT interchangeable. Before scoring a gold finding, select the candidate that matches it on the dimensions that define the finding: when the gold row reports an effect size, pair it to the candidate whose `effect_size` / `toxicity_type` / `toxicity_grade_threshold` correspond, and read `ci_lower` / `ci_upper` / counts from **that** candidate. Never score a field (CI, effect size, counts) as absent off a candidate that was never the right match — a count-only row legitimately has no CI; that is not a CI gap. If you believe a value is genuinely missing, confirm it against the effect-size-bearing candidate first and cite that candidate's `extraction_index` in your reasoning.
+
+   For each gold standard finding:
    a. Is the finding present in the extraction at all? (Even if organized differently, named differently, or at a different granularity)
    b. If present, are the reported values correct? (Effect sizes, confidence intervals, patient counts)
    c. Score each finding on two dimensions:
