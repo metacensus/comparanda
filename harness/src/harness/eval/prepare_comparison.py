@@ -72,19 +72,30 @@ def _candidate_view(index: int, row: dict, token: str | None, used: bool) -> dic
     return view
 
 
+def _embedded_pmid(paper_id: str) -> int | None:
+    """The PMID embedded in a paper_id filename stem, if any."""
+    for part in paper_id.split("_"):
+        if part.isdigit() and len(part) >= 7:
+            return int(part)
+    return None
+
+
 def _resolve_pmid(paper_id: str, pmid_map: dict) -> int | str | None:
-    """Resolve a paper_id to a PMID, with the stem-prefix fallback."""
+    """Resolve a paper_id to a PMID.
+
+    Tries, in order: exact map key; the PMID embedded in the filename stem
+    (matched against map values — robust to hyphen/underscore and casing
+    differences in the author portion); then a stem-prefix fallback.
+    """
     pmid = pmid_map.get(paper_id)
     if pmid is not None:
         return pmid
+    embedded = _embedded_pmid(paper_id)
+    if embedded is not None and embedded in set(pmid_map.values()):
+        return embedded
     for map_key, map_pmid in pmid_map.items():
         if paper_id.lower().startswith(map_key.lower().split()[0].lower()):
-            embedded_pmid = None
-            for part in paper_id.split("_"):
-                if part.isdigit() and len(part) >= 7:
-                    embedded_pmid = int(part)
-                    break
-            if embedded_pmid is not None and embedded_pmid != map_pmid:
+            if embedded is not None and embedded != map_pmid:
                 continue
             return map_pmid
     return None

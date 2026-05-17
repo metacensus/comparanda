@@ -407,23 +407,26 @@ def evaluate_all(
     crosswalk_config = load_crosswalk_config(pmid_map_path.parent)
     resolver = VariantResolver.build(gold_standard_path, crosswalk_config)
 
+    pmid_values = set(pmid_map.values())
     papers = []
     for extraction_file in sorted(extractions_dir.glob("*.jsonl")):
         paper_id = extraction_file.stem
         pmid = pmid_map.get(paper_id)
         if pmid is None:
-            # Try matching by stem patterns, but verify PMID if embedded in filename
+            # The PMID embedded in the filename stem is the most robust key —
+            # it survives hyphen/underscore and casing differences in the
+            # author portion of the paper_id.
+            embedded_pmid = None
+            for part in paper_id.split("_"):
+                if part.isdigit() and len(part) >= 7:
+                    embedded_pmid = int(part)
+                    break
+            if embedded_pmid is not None and embedded_pmid in pmid_values:
+                pmid = embedded_pmid
+        if pmid is None:
+            # Stem-prefix fallback for paper_ids with no embedded PMID.
             for map_key, map_pmid in pmid_map.items():
                 if paper_id.lower().startswith(map_key.lower().split()[0].lower()):
-                    # If filename contains a PMID, it must match the map entry
-                    parts = paper_id.split("_")
-                    embedded_pmid = None
-                    for part in parts:
-                        if part.isdigit() and len(part) >= 7:
-                            embedded_pmid = int(part)
-                            break
-                    if embedded_pmid is not None and embedded_pmid != map_pmid:
-                        continue  # PMID mismatch — skip this mapping
                     pmid = map_pmid
                     break
         if pmid is None:
