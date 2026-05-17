@@ -122,6 +122,8 @@ When a prior extraction (input 5) is available, you do NOT re-do this mapping fo
 
 **Cross-source derivation.** A single row often requires data assembled from multiple locations in the paper. A table that contains no complete extractable rows on its own may still contribute field values (denominators, group sizes, thresholds) to rows anchored in other tables or text. When one source provides data that combines with another source's data to populate schema fields, both sources contribute to the extraction. Before deciding any table, figure, or text section is irrelevant, check whether it provides data for ANY schema field — even as a denominator or group size that completes rows anchored elsewhere.
 
+**Categorical text statements are valid derivation sources.** When a paper states in prose that all (or none) of a group experienced an outcome — e.g., "all N patients had the outcome", "no control subjects responded", "every patient in group X developed toxicity" — that statement establishes a 100% (or 0%) event rate for that group. Event counts follow directly: n_events = n_total_for_group × rate. Derive the count, set counts_reconstructable=True, and record the text statement as provenance. The absence of a contingency table does not make counts non-derivable when a categorical claim unambiguously fixes the rate.
+
 For each source in the paper (table, figure, text section), record one of:
 - **Direct extraction source** — contains complete rows or key fields for extraction
 - **Cross-derivation source** — contributes field values (denominators, counts, thresholds) to rows anchored in other sources
