@@ -112,7 +112,7 @@ If a schema diff document was provided (input 6), read it now alongside the sche
 
 **Scope discovery from the bundle.** The bundle is the sole authority for what rows must exist. Before mapping schema fields, enumerate what the paper actually reports: read every data-bearing source — table column headers, row labels, figure legends, footnotes, section prose — and record every distinct value for every identity dimension (outcomes, threshold levels, entities, subgroups, comparison groups, and any other axis the schema treats as identity). Do not start from a pre-formed expectation of what to extract; start from the bundle's structure and let it define the scope. A data-bearing column, grouping, or category present in the bundle is in scope regardless of whether the schema's extraction_guidance explicitly anticipated it. If the schema has no vocabulary for a value you find, flag it as a schema_vocabulary_gap rather than omitting it.
 
-Before committing to an extraction scope, explicitly ask: does this paper report multiple distinct analyses on different entity sets, patient subgroups, or methodological frameworks — each with its own section headers or table sets? If yes, all of them are in scope; enumerate each one before proceeding. Never apply domain-plausibility or relevance judgment to exclude a row that physically appears in a table: if the paper reports it, extract it and flag any vocabulary mismatch as a schema_vocabulary_gap.
+Before committing to an extraction scope, explicitly ask: does this paper report multiple distinct analyses on different entity sets, patient subgroups, or methodological frameworks — each with its own section headers or table sets? If yes, all of them are in scope; enumerate each one before proceeding.
 
 This is the most important analytical step. Reason schema-out, not paper-in.
 
@@ -329,7 +329,7 @@ Before invoking the heredoc that writes the JSONL, verify each item:
 - [ ] All four baseline inputs were read (bundle manifest+selectively the sections/tables, schema, domain reference, observation log)
 - [ ] If a prior extraction and schema diff were provided, both were read; pass-through fields were identified
 - [ ] Phase 2 mapping completed for all fields that need fresh values — every source consulted is accounted for with role (direct, cross-derivation, not applicable with reason)
-- [ ] All distinct analyses in the paper were enumerated before scope was committed — no parallel analysis section was silently excluded; no table row was dropped on domain-plausibility or relevance grounds
+- [ ] All distinct analyses in the paper were enumerated before scope was committed — no parallel analysis section was silently excluded
 - [ ] Evidence quotes recorded for key data points before extraction
 - [ ] Phase 4 verification completed — identity dimension values enumerated, Cartesian product computed, gaps explained (only re-check identity dimensions touched by the diff when working from a prior extraction)
 - [ ] Every entity/exposure row has a corresponding reference/control group row
