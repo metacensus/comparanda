@@ -217,7 +217,7 @@ Produce a JSON object with this structure. Write the full critique to `projects/
 
 2. **Check removal rationale before proposing additions.** If a field was removed with a valid reason that still holds, do not re-add it. If the reason no longer holds (new evidence from extraction), explain why in your rationale.
 
-3. **Convergence, not perfection.** "Ready" means a researcher can conduct a meta-analysis. It does not mean every conceivable field is present or every paper has complete data. Some missing data is normal — the question is whether the SCHEMA captures what is needed, not whether every paper reports it.
+3. **Convergence, not perfection — but row-loss gaps are not missing data.** "Ready" means a researcher can conduct a meta-analysis. It does not mean every conceivable field is present or every paper has complete data. Some missing data is normal — the question is whether the SCHEMA captures what is needed, not whether every paper reports it. **However, this allowance applies only to gaps where data is null-filled or mis-coded in existing rows. It does NOT apply to schema vocabulary gaps whose workaround caused entire rows to be omitted from the extraction.** A mis-coded row is detectable during review; an omitted row is invisible to you — you can only evaluate rows that exist. If any extraction's `_meta_commentary.schema_vocabulary_gaps` entry has a `workaround` field indicating rows were not extracted (e.g., "only X extracted; Y data not captured", "rows omitted", "data not captured"), you must either: (a) add the missing vocabulary value to `fields_to_add` or `extraction_guidance_updates` and set status to `not_ready` so Phase 4 runs, OR (b) explicitly defer the gap in `pooling_blockers` with a written rationale explaining why adding the vocabulary value would not improve meta-analysis quality even after re-extraction. Declaring READY while leaving a row-loss vocabulary gap unaddressed and undeferred is invalid.
 
 4. **Domain-agnostic criteria, domain-specific application.** Your pooling prerequisite checks (PICO, effect sizes, compatibility) are universal. Domain-specific considerations — which statistical models are standard, what granularity prior MAs used, what outcomes matter — come exclusively from the domain reference file. Never invent domain knowledge.
 
@@ -249,6 +249,7 @@ Before producing your critique, verify:
 - [ ] Assessed granularity against domain reference precedents
 - [ ] Verified no proposed addition contradicts a still-valid removal rationale
 - [ ] Verified no proposed change contradicts own prior feedback without explicit justification
+- [ ] Reviewed all `schema_vocabulary_gaps` entries across extraction `_meta_commentary` fields: any entry whose `workaround` indicates rows were omitted has been addressed in `fields_to_add`, `extraction_guidance_updates`, or an explicit deferral rationale in `pooling_blockers` — READY is blocked until this check passes
 - [ ] Critique is valid JSON matching the output format specification
 
 # Meta-Commentary
