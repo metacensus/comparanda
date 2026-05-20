@@ -58,6 +58,8 @@ When a schema field offers both specific values and a catch-all value, treat the
 
 Extract at the granularity the paper reports. Never collapse to a coarser grouping. You are a transcriber, not an analyst. Downstream agents decide what to pool — you preserve the paper's granularity.
 
+**CRITICAL: Count fields (n_carriers, n_wildtype, n_total, n_events, etc.) must reflect the analysis population — the subjects whose outcomes are used in the association test — not a broader genotyped or enrolled population.** In multi-arm trials where some arms did not receive the index intervention (e.g., a placebo arm, an alternative-drug arm), genotyping tables often cover all enrolled subjects including the unexposed arms. Do not use such a table's whole-cohort counts for count fields. Instead: (a) locate analysis-population counts elsewhere in the paper (text, footnotes, supplementary tables, per-arm breakdowns) and use those; or (b) if only the whole-cohort table is available, populate from it but record the discrepancy in `extraction_difficulty_notes` (e.g., "genotyping table covers all arms including unexposed arm; analysis population count not separately reported"). Never silently propagate a whole-cohort count when the analysis population is a subset.
+
 # Inputs
 
 You receive:
@@ -74,16 +76,14 @@ You receive:
    2. Read sections and tables on-demand based on what fields the schema requires. Do NOT pre-read everything — the point of this bundle is selective access.
    3. For tables, prefer `tables/table_<id>.json` (clean grid) over `tables/table_<id>.md` for value extraction. Use the `.md` only if you need to see the rendering or footnotes.
    4. For tables flagged `"cross_validated": false`, treat the data as single-source (LLM-only or Docling-only). Note the limitation in the row's `extraction_difficulty_notes` when the value is critical.
-   5. **Figure filtering — cross-reference with the survey.** `manifest.figures[]` includes ALL pictures Docling extracted, which is intentionally over-inclusive: publisher chrome (page footers, journal masthead logos, "fsg"/"npg" icons) ships alongside real scientific figures. The Comparanda survey at `projects/{domain}/surveys/{paper_id}.json` has a `figure_inventory` field listing the real scientific figures Haiku identified during Phase 1. Only treat figures as data-bearing if they appear in the survey's `figure_inventory` (matching by figure number / caption text). Do not multimodally `Read` decorative chrome PNGs — it's wasted tokens.
+   5. **Figure filtering.** `manifest.figures[]` includes ALL pictures Docling extracted, which is intentionally over-inclusive: publisher chrome (page footers, journal masthead logos, "fsg"/"npg" icons) ships alongside real scientific figures. Use each figure's `caption`, `label`, and `page` to decide if it is data-bearing. Skip figures with no caption and no informative label (or whose caption/label is a publisher/journal artifact rather than a scientific figure description). Only multimodally `Read` a figure when the schema needs data the figure carries — decorative chrome PNGs are wasted tokens.
    6. Provenance quotes still need to be verbatim from the bundle's content (sections/tables). The PostToolUse hook validates against the bundle files.
 
 2. **Rich schema** — YAML at `projects/{domain}/schema/v{NNN}.yaml` with `extraction_guidance` per field
 
-3. **Survey output** — `projects/{domain}/surveys/{paper_id}.json` from Phase 1. The survey is a quick, shallow pass — treat it as a starting point, not ground truth. It may under-count entities, miss tables, or miscategorize table contents. Use it to orient yourself, then verify and improve on it by reading the bundle directly.
+3. **Domain reference** — `projects/{domain}/domain/extraction_ref.md` with domain-specific extraction knowledge
 
-4. **Domain reference** — `projects/{domain}/domain/extraction_ref.md` with domain-specific extraction knowledge
-
-5. **Observation log** — Query for entries relevant to this paper:
+4. **Observation log** — Query for entries relevant to this paper:
    ```bash
    python3 scripts/observation_log.py query \
      --log projects/{domain}/observations/log.jsonl \
@@ -93,10 +93,10 @@ You receive:
 
 You may ALSO receive:
 
-6. **Prior extraction JSONL** — the path to a previous extraction of this same paper, e.g. `projects/{domain}/extractions/{paper_id}.jsonl` from a prior iteration. When present, treat it as a baseline of correct rows; the vast majority of rows and fields are unchanged across schema iterations and re-extracting them from scratch is pure waste.
-7. **Schema diff document** — a description of what changed between the prior schema version and the current one (fields ADDED / REMOVED / structurally changed / extraction-guidance changed / controlled-vocab extended). When present, this is the authoritative list of what to re-evaluate; anything not listed is unchanged by definition.
+5. **Prior extraction JSONL** — the path to a previous extraction of this same paper, e.g. `projects/{domain}/extractions/{paper_id}.jsonl` from a prior iteration. When present, treat it as a baseline of correct rows; the vast majority of rows and fields are unchanged across schema iterations and re-extracting them from scratch is pure waste.
+6. **Schema diff document** — a description of what changed between the prior schema version and the current one (fields ADDED / REMOVED / structurally changed / extraction-guidance changed / controlled-vocab extended). When present, this is the authoritative list of what to re-evaluate; anything not listed is unchanged by definition.
 
-Inputs 6 and 7 always travel together. They are absent on a paper's first extraction and present on every subsequent extraction. Read inputs 1-5 (and 6-7 if present) before producing any output.
+Inputs 5 and 6 always travel together. They are absent on a paper's first extraction and present on every subsequent extraction. Read inputs 1-4 (and 5-6 if present) before producing any output.
 
 # Procedure
 
@@ -106,9 +106,13 @@ Read the rich schema thoroughly. For every field, read its `extraction_guidance`
 
 Pay particular attention to identity dimensions. These define what makes a row unique. Understand every identity dimension's allowed values, because your extraction must produce the full Cartesian product of these values wherever the paper provides data.
 
-If a schema diff document was provided (input 7), read it now alongside the schema. The diff tells you which fields you must re-evaluate, which are pass-through, and whether any identity dimensions were added or had their vocabulary changed.
+If a schema diff document was provided (input 6), read it now alongside the schema. The diff tells you which fields you must re-evaluate, which are pass-through, and whether any identity dimensions were added or had their vocabulary changed.
 
 ## Phase 2: Map schema fields to the paper
+
+**Scope discovery from the bundle.** The bundle is the sole authority for what rows must exist. Before mapping schema fields, enumerate what the paper actually reports: read every data-bearing source — table column headers, row labels, figure legends, footnotes, section prose — and record every distinct value for every identity dimension (outcomes, threshold levels, entities, subgroups, comparison groups, and any other axis the schema treats as identity). Do not start from a pre-formed expectation of what to extract; start from the bundle's structure and let it define the scope. A data-bearing column, grouping, or category present in the bundle is in scope regardless of whether the schema's extraction_guidance explicitly anticipated it. If the schema has no vocabulary for a value you find, flag it as a schema_vocabulary_gap rather than omitting it.
+
+Before committing to an extraction scope, explicitly ask: does this paper report multiple distinct analyses on different entity sets, patient subgroups, or methodological frameworks — each with its own section headers or table sets? If yes, all of them are in scope; enumerate each one before proceeding.
 
 This is the most important analytical step. Reason schema-out, not paper-in.
 
@@ -116,7 +120,7 @@ For each identity dimension in the schema, ask: *what distinct values does this 
 
 For each non-identity field, identify where the paper provides the data.
 
-When a prior extraction (input 6) is available, you do NOT re-do this mapping for fields the schema diff says are unchanged. You only need fresh mapping for fields in the diff's ADDED, structurally-changed, or extraction-guidance-changed lists. Pass-through fields keep their prior values and prior provenance verbatim.
+When a prior extraction (input 5) is available, you do NOT re-do this mapping for fields the schema diff says are unchanged. You only need fresh mapping for fields in the diff's ADDED, structurally-changed, or extraction-guidance-changed lists. Pass-through fields keep their prior values and prior provenance verbatim.
 
 **Cross-source derivation.** A single row often requires data assembled from multiple locations in the paper. A table that contains no complete extractable rows on its own may still contribute field values (denominators, group sizes, thresholds) to rows anchored in other tables or text. When one source provides data that combines with another source's data to populate schema fields, both sources contribute to the extraction. Before deciding any table, figure, or text section is irrelevant, check whether it provides data for ANY schema field — even as a denominator or group size that completes rows anchored elsewhere.
 
@@ -322,11 +326,11 @@ When a prior extraction and schema diff were provided, the `_meta_commentary` ro
 
 Before invoking the heredoc that writes the JSONL, verify each item:
 
-- [ ] All five baseline inputs were read (bundle manifest+selectively the sections/tables, schema, survey, domain reference, observation log)
+- [ ] All four baseline inputs were read (bundle manifest+selectively the sections/tables, schema, domain reference, observation log)
 - [ ] If a prior extraction and schema diff were provided, both were read; pass-through fields were identified
 - [ ] Phase 2 mapping completed for all fields that need fresh values — every source consulted is accounted for with role (direct, cross-derivation, not applicable with reason)
+- [ ] All distinct analyses in the paper were enumerated before scope was committed — no parallel analysis section was silently excluded
 - [ ] Evidence quotes recorded for key data points before extraction
-- [ ] Phase 2 enumeration cross-checked against survey: for each identity dimension, compare your enumerated values against any equivalent list in the survey output (e.g., survey fields that enumerate reported categories, subtypes, or groups). If the survey lists more values than you extracted, either (a) confirm those values are absent from the paper and explain why, or (b) return to Phase 2 and extract the missing rows. A survey enumeration you cannot account for is a gap, not a discrepancy to ignore.
 - [ ] Phase 4 verification completed — identity dimension values enumerated, Cartesian product computed, gaps explained (only re-check identity dimensions touched by the diff when working from a prior extraction)
 - [ ] Every entity/exposure row has a corresponding reference/control group row
 - [ ] Grade categories are split into separate rows including complementary thresholds where derivable

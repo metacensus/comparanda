@@ -17,6 +17,7 @@ from harness.eval.gold_standard import (
     load_gold_standard,
     load_pmid_map,
 )
+from harness.eval.identity import VariantResolver, load_crosswalk_config
 
 
 @dataclass
@@ -74,11 +75,29 @@ def _load_extraction(extraction_path: Path) -> list[dict]:
     return rows
 
 
+def _expand_pipe_delimited(variant: str) -> list[str]:
+    """Split combination-group variant strings (pipe-delimited) into components.
+
+    Some papers (e.g., Milano 2016) only report effect sizes for combined
+    multi-variant carrier groups, not per individual variant. Extraction
+    encodes this as `variant_raw="*2A|D949V|I560S (3 consensual SNPs)"`. For
+    matching against per-variant gold rows, each component must participate
+    independently. A group-level trailing parenthetical annotation is stripped
+    before splitting so it doesn't pollute the last component.
+    """
+    import re
+    if "|" not in variant:
+        return [variant]
+    base = re.sub(r"\s*\([^()]*\)\s*$", "", variant).strip()
+    return [c.strip() for c in base.split("|") if c.strip()]
+
+
 def _extract_variants(rows: list[dict]) -> set[str]:
     """Extract unique variant identifiers from extraction rows.
 
     Uses all available variant fields (canonical, rsid, raw) so that
     matching against gold standard works regardless of naming convention.
+    Pipe-delimited combination groups are expanded into components.
     """
     variants = set()
     for row in rows:
@@ -86,7 +105,8 @@ def _extract_variants(rows: list[dict]) -> set[str]:
         for field in ("variant_canonical", "variant_rsid", "variant_raw", "variant"):
             v = row.get(field)
             if v:
-                variants.add(str(v))
+                for component in _expand_pipe_delimited(str(v)):
+                    variants.add(component)
     return variants
 
 
@@ -278,24 +298,48 @@ def evaluate_paper(
     extraction_path: Path,
     gold_df: pd.DataFrame,
     pmid: int | str,
+    resolver: VariantResolver,
     identity_dimensions: list[str] | None = None,
 ) -> PaperEval:
-    """Evaluate a single paper's extraction against gold standard."""
+    """Evaluate a single paper's extraction against gold standard.
+
+    Variant matching uses the identity-resolution chain: gold rows and
+    extraction rows are each resolved to a canonical token (rs-number via the
+    domain crosswalk, or an inline identifier), and coverage is measured on
+    those tokens rather than on raw-string heuristics.
+    """
     rows = _load_extraction(extraction_path)
     gold_n = gold_row_count(gold_df, pmid)
-    gold_vars = gold_variants_for_paper(gold_df, pmid)
-    ext_vars = _extract_variants(rows)
+    paper_gold = gold_df[gold_df["PMID"] == pmid]
 
-    # Normalize for matching
-    gold_vars_norm = {_normalize_variant_name(v): v for v in gold_vars}
-    ext_vars_norm = {_normalize_variant_name(v): v for v in ext_vars}
+    # Resolve gold rows to canonical tokens; keep a representative name per token.
+    gold_token_to_name: dict[str, str] = {}
+    gold_unresolved = 0
+    for _, grow in paper_gold.iterrows():
+        tok, _rung = resolver.resolve_gold(grow)
+        if tok:
+            gold_token_to_name.setdefault(tok, str(grow.get("Variant", "")).strip())
+        else:
+            gold_unresolved += 1
 
-    matched_keys = set(gold_vars_norm.keys()) & set(ext_vars_norm.keys())
-    missing_keys = set(gold_vars_norm.keys()) - set(ext_vars_norm.keys())
-    extra_keys = set(ext_vars_norm.keys()) - set(gold_vars_norm.keys())
+    # Resolve extraction rows to canonical tokens (combination-group rows
+    # contribute every component they represent).
+    ext_tokens: set[str] = set()
+    for r in rows:
+        ext_tokens.update(resolver.resolve_extraction_all(r))
+
+    gold_tokens = set(gold_token_to_name)
+    matched_keys = gold_tokens & ext_tokens
+    missing_keys = gold_tokens - ext_tokens
+    extra_keys = ext_tokens - gold_tokens
 
     row_coverage = len(rows) / gold_n if gold_n > 0 else 0.0
-    variant_coverage = len(matched_keys) / len(gold_vars_norm) if gold_vars_norm else 0.0
+    variant_coverage = len(matched_keys) / len(gold_tokens) if gold_tokens else 0.0
+
+    gold_vars = set(gold_token_to_name.values())
+    gold_vars_norm = gold_token_to_name
+    ext_vars_norm = {t: t for t in ext_tokens}
+    ext_vars = ext_tokens
 
     fill_rates = _compute_fill_rates(rows)
     id_completeness = (
@@ -314,6 +358,12 @@ def evaluate_paper(
         flags.append(f"WARNING: over-extraction {row_coverage:.0%} > 150%")
     if missing_keys:
         flags.append(f"Missing {len(missing_keys)} gold variants: {sorted(missing_keys)[:5]}")
+    if gold_unresolved:
+        flags.append(
+            f"VARIANT RESOLUTION: {gold_unresolved} gold row(s) could not be resolved "
+            f"to a canonical token (no crosswalk hit, no inline identifier) — "
+            f"excluded from variant_coverage denominator."
+        )
     if norm_status.get("unnormalized_rate", 0) > 0.2:
         flags.append(
             f"NORMALIZATION: {norm_status['raw_only_no_canonical_no_rsid']}/{norm_status['total_rows']} rows "
@@ -352,23 +402,31 @@ def evaluate_all(
     pmid_map = load_pmid_map(pmid_map_path)
     schema_meta = _load_schema_field_metadata(schema_dir)
 
+    # Build the variant identity resolver once. The crosswalk config (if the
+    # domain ships one) lives alongside the pmid map in eval_config/.
+    crosswalk_config = load_crosswalk_config(pmid_map_path.parent)
+    resolver = VariantResolver.build(gold_standard_path, crosswalk_config)
+
+    pmid_values = set(pmid_map.values())
     papers = []
     for extraction_file in sorted(extractions_dir.glob("*.jsonl")):
         paper_id = extraction_file.stem
         pmid = pmid_map.get(paper_id)
         if pmid is None:
-            # Try matching by stem patterns, but verify PMID if embedded in filename
+            # The PMID embedded in the filename stem is the most robust key —
+            # it survives hyphen/underscore and casing differences in the
+            # author portion of the paper_id.
+            embedded_pmid = None
+            for part in paper_id.split("_"):
+                if part.isdigit() and len(part) >= 7:
+                    embedded_pmid = int(part)
+                    break
+            if embedded_pmid is not None and embedded_pmid in pmid_values:
+                pmid = embedded_pmid
+        if pmid is None:
+            # Stem-prefix fallback for paper_ids with no embedded PMID.
             for map_key, map_pmid in pmid_map.items():
                 if paper_id.lower().startswith(map_key.lower().split()[0].lower()):
-                    # If filename contains a PMID, it must match the map entry
-                    parts = paper_id.split("_")
-                    embedded_pmid = None
-                    for part in parts:
-                        if part.isdigit() and len(part) >= 7:
-                            embedded_pmid = int(part)
-                            break
-                    if embedded_pmid is not None and embedded_pmid != map_pmid:
-                        continue  # PMID mismatch — skip this mapping
                     pmid = map_pmid
                     break
         if pmid is None:
@@ -383,6 +441,7 @@ def evaluate_all(
             extraction_path=extraction_file,
             gold_df=gold_df,
             pmid=pmid,
+            resolver=resolver,
             identity_dimensions=identity_dimensions,
         )
         papers.append(paper_eval)

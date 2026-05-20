@@ -150,11 +150,22 @@ Repeat Phases 2-4 until MA Critique says "ready" or 5 iterations reached.
 ### Phase 3a — Extraction
 
 1. For each paper in current subset:
-   - Invoke @extractor with file paths to: bundle (`projects/<domain>/data/processed/{paper_id}/`), rich schema, survey output, domain reference. Pass file paths only — do not summarize, interpret, or pre-digest content. The extractor reads `manifest.json` and processes bundle assets per its own instructions.
+   - Invoke @extractor with file paths to: bundle (`projects/<domain>/data/processed/{paper_id}/`), rich schema, domain reference. Pass file paths only — do not summarize, interpret, or pre-digest content. The extractor reads `manifest.json` and processes bundle assets per its own instructions.
    - Agent writes: `projects/<domain>/extractions/{paper_id}.jsonl`
    - Agent writes paper flags to observation log
 
 2. **Commit:** `"Phase 3a: Extract {N} papers ({total_rows} rows)"`
+
+### Phase 3a-QC — Extraction QC
+
+1. For each paper in current subset:
+   - Invoke @extraction-qc with file paths to: extraction (`projects/<domain>/extractions/{paper_id}.jsonl`), survey (`projects/<domain>/surveys/{paper_id}.json`), schema (current version), observation log. Pass file paths only — do not summarize or interpret content.
+   - Agent writes: `projects/<domain>/extractions/{paper_id}_qc.json`
+   - Agent writes QC summary to observation log
+
+2. **Read each QC report.** For any paper whose QC report recommends re-extraction (coverage gaps, compliance violations), re-invoke @extractor for that paper before proceeding. Pass the same file paths as Phase 3a — the extractor reads the QC report from the observation log. Do not embed QC findings in the extractor prompt.
+
+3. **Commit:** `"Phase 3a-QC: QC {N} papers ({gap_count} gaps, {re_extract_count} re-extractions)"`
 
 ### Phase 3b — Normalization
 
@@ -218,7 +229,7 @@ whether the schema generalizes. Do NOT expand to all papers yet.
 2. **Select new subset.** Invoke @subset-selector for 3-4 fresh papers (no overlap
    with previous subsets except the anchor).
 
-3. **Extract new subset** with the current schema. Run Phase 3a → 3b → 3.5.
+3. **Extract new subset** with the current schema. Run Phase 3a → 3a-QC → 3b → 3.5.
 
 4. **If MA Critique says "ready"** on the new subset: schema generalizes.
    Rotate once more with different papers to confirm. After 2-3 successful
@@ -241,8 +252,6 @@ Once the schema is validated across multiple rotated subsets:
 3. **Normalize** the full corpus.
 
 4. **Validate extractions.** For each paper, cross-check:
-   - Extracted row count vs survey's estimated_atomic_rows
-   - All variants mentioned in survey appear in extraction
    - All identity dimensions are populated
    - Flag papers with large row count discrepancies for human review
 
