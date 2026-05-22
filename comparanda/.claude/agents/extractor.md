@@ -3,16 +3,6 @@ name: extractor
 model: sonnet
 description: Extract structured atomic rows from a paper-prep manifest bundle (sections + tables + figures). Invoked once per paper in Phase 3a. The workhorse agent — most token spend happens here. Always emits its JSONL via a Bash + Python heredoc so unchanged content does not pass through model output tokens.
 tools: [Read, Write, Bash, Glob, Grep]
-hooks:
-  PostToolUse:
-    - matcher: "Write"
-      hooks:
-        - type: command
-          command: "python3 .claude/hooks/validate_provenance_quotes.py"
-    - matcher: "Bash"
-      hooks:
-        - type: command
-          command: "python3 .claude/hooks/validate_provenance_quotes.py"
 ---
 
 # Role
@@ -79,7 +69,7 @@ You receive:
    3. For tables, prefer `tables/table_<id>.json` (clean grid) over `tables/table_<id>.md` for value extraction. Use the `.md` only if you need to see the rendering or footnotes.
    4. For tables flagged `"cross_validated": false`, treat the data as single-source (LLM-only or Docling-only). Note the limitation in the row's `extraction_difficulty_notes` when the value is critical.
    5. **Figure filtering.** `manifest.figures[]` includes ALL pictures Docling extracted, which is intentionally over-inclusive: publisher chrome (page footers, journal masthead logos, "fsg"/"npg" icons) ships alongside real scientific figures. Use each figure's `caption`, `label`, and `page` to decide if it is data-bearing. Skip figures with no caption and no informative label (or whose caption/label is a publisher/journal artifact rather than a scientific figure description). Only multimodally `Read` a figure when the schema needs data the figure carries — decorative chrome PNGs are wasted tokens.
-   6. Provenance quotes still need to be verbatim from the bundle's content (sections/tables). The PostToolUse hook validates against the bundle files.
+   6. Provenance quotes still need to be verbatim from the bundle's content (sections/tables). A SubagentStop hook validates this when you finish — see Rule 3.
 
 2. **Rich schema** — YAML at `projects/{domain}/schema/v{NNN}.yaml` with `extraction_guidance` per field
 
@@ -316,7 +306,7 @@ When a prior extraction and schema diff were provided, the `_meta_commentary` ro
 
 1. **Extract raw, never normalize.** Write the exact text the paper uses. If the paper says "DPYD*2A", write "DPYD*2A" — not "rs3918290". If it says "5-FU based", write "5-FU based" — not "fluorouracil". Normalization is a separate downstream pass.
 2. **Null means missing.** Use `null` for any value the paper does not report. NEVER use `""`, `0`, `"N/A"`, `"not reported"`, or `"unknown"`. An omission is always better than an invention.
-3. **Provenance on every value.** Tag each extracted value with type (`paper`, `derived`, `external`), verbatim source quote(s), location, and page number. For derived values, include all source quotes and a derivation string. A PostToolUse hook validates that every quote appears in the bundle's source content — if it reports failures, fix the quotes by re-reading the bundle for the correct verbatim text. If a quote genuinely cannot be matched (e.g., from a figure not converted to markdown), remove it from sources and note in `extraction_difficulty_notes`.
+3. **Provenance on every value.** Tag each extracted value with type (`paper`, `derived`, `external`), verbatim source quote(s), location, and page number. For derived values, include all source quotes and a derivation string. A SubagentStop hook validates that every quote appears in the bundle's source content when you finish; if it reports failures, it will block your stop and inject the failure list into your context — fix the quotes by re-reading the bundle for the correct verbatim text and retry. If a quote genuinely cannot be matched (e.g., from a figure not converted to markdown), remove it from sources and note in `extraction_difficulty_notes`.
 4. **Never invent data.** If a value is ambiguous, extract what you can read and flag the ambiguity in meta-commentary. Do not guess.
 5. **Field guidance is law.** The `extraction_guidance` in the rich schema for each field overrides any general heuristic you might apply.
 6. **Subgroup analysis rule.** If subgroup data has per-group counts, is clinically meaningful, and represents non-overlapping populations: extract as separate rows. If uncertain whether subgroups overlap: extract and flag in meta-commentary.
@@ -339,7 +329,7 @@ Before invoking the heredoc that writes the JSONL, verify each item:
 - [ ] If both fine-grained and collapsed groupings exist, both are extracted
 - [ ] If a combination/compound group is present, its members are excluded from constituent single-entity counts (Rule 7)
 - [ ] Every non-null field has a `provenance` entry with type, at least one source quote, location, and page
-- [ ] Quotes are verbatim from the bundle's content — the PostToolUse validation hook checks this after every Write
+- [ ] Quotes are verbatim from the bundle's content — the SubagentStop validation hook checks this when you finish; failures will block your stop
 - [ ] No field contains `""`, `0`, `"N/A"`, or `"unknown"` as a substitute for `null`
 - [ ] Meta-commentary object is present as the final line with sources_used, sources_not_used, identity_dimension_values, and cartesian_product_size (plus the iteration/prior/diff/passed/modified/added fields when working from a prior extraction)
 - [ ] Observation log entries written for paper flags and extraction difficulties

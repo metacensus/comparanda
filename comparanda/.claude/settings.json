@@ -1,5 +1,15 @@
 {
   "hooks": {
-    "PreToolUse": []
+    "PreToolUse": [],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ${CLAUDE_PROJECT_DIR}/.claude/hooks/validate_provenance_quotes.py"
+          }
+        ]
+      }
+    ]
   }
 }

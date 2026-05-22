@@ -12,6 +12,14 @@ __pycache__/
 # macOS
 .DS_Store
 
+# Provenance hook runtime state (per-session attempt counters).
+.claude/hooks/.state/
+
+# Provenance hook failure markers (per-paper, written when validator gives up).
+# These are runtime signals consumed by the orchestrator/harness; the persistent
+# record is the observation log.
+projects/*/extractions/*.provenance-failed.json
+
 # Runtime caches
 # NOTE: .rag_cache/ is NOT gitignored — it costs money to rebuild (OpenAI API).
 # Preserve it across branches and worktrees.
