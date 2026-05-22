@@ -215,16 +215,31 @@ class VariantResolver:
         return bool(self._by_text or self._by_id)
 
     def _resolve_value(self, value: object) -> str | None:
-        """Resolve a single variant string to a token: inline identifier first,
-        then a crosswalk text lookup."""
+        """Resolve a single variant string to a token.
+
+        Resolution order:
+        1. An rs-number is already canonical — use it directly.
+        2. Otherwise consult the crosswalk: try the match-key as-is, then with
+           the HGVS prefix (``c.``/``g.``/``m.``/``n.``/``p.``) stripped. The
+           Comparanda's canonical strings carry it, so a literal text-key match
+           silently fails without the strip.
+        3. Fall back to whatever ``_canonical_token`` recognized (typically a
+           bare HGVS string) — better than ``None`` when the crosswalk has no
+           entry, since two HGVS strings from different papers will still
+           compare equal.
+        """
         tok = _canonical_token(value)
-        if tok is not None:
+        if tok is not None and tok.startswith("rs"):
             return tok
         if self._by_text:
             k = _match_key(value)
-            if k and k in self._by_text:
-                return self._by_text[k]
-        return None
+            if k:
+                if k in self._by_text:
+                    return self._by_text[k]
+                k2 = re.sub(r"^[cgmnp]\.", "", k)
+                if k2 != k and k2 in self._by_text:
+                    return self._by_text[k2]
+        return tok
 
     def resolve_extraction(self, row: dict) -> str | None:
         """Resolve an extraction row to its primary canonical token."""

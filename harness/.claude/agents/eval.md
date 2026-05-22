@@ -93,7 +93,7 @@ uv run python -m harness.eval.prepare_comparison \
   --pmid-map benchmark/eval_config/paper_pmid_map.json \
   --output iterations/iter_{N}/comparisons/{paper_id}.json
 ```
-This produces a structured JSON: each gold row is paired against extraction candidates that share its resolved canonical token, plus unmatched extraction rows and a `variant_resolution` summary. Every extraction row is emitted with its **full field set** (effect_size, ci_lower, ci_upper, all count cells) whether it paired or not — there is no stripped projection, so a field that is absent from a row is genuinely absent. Each gold row carries a `resolution_rung`: `crosswalk_id` / `crosswalk_text` / `direct_rsid` rows were paired deterministically and reliably; rows with `resolution_rung: "unresolved"` could not be resolved to a canonical token — pair those semantically yourself.
+This produces a structured JSON: each gold row is paired against extraction candidates that share its resolved canonical token, plus unmatched extraction rows and a `variant_resolution` summary. Every extraction row is emitted with its **full field set** (effect_size, ci_lower, ci_upper, all count cells) whether it paired or not — there is no stripped projection, so a field that is absent from a row is genuinely absent. Each gold row carries a `resolution_rung`: `crosswalk_id` / `crosswalk_text` / `direct_rsid` rows were paired deterministically — trust those pairings when non-empty, but verify the `unmatched_extraction_rows` bucket when such a row has zero candidates (the resolver can silently miss e.g. HGVS-prefix or alias mismatches). Rows with `resolution_rung: "unresolved"` could not be resolved to a canonical token — pair those semantically yourself.
 
 3. **Read the comparison data** and reason through it.
 
@@ -114,13 +114,30 @@ This produces a structured JSON: each gold row is paired against extraction cand
    - Could the gold standard itself be wrong? If the extraction's values are internally consistent but differ from gold, note this in your explanation and score conservatively.
    - **Does a row-count difference reflect a structural convention, not missing data?** Gold curation and extraction schemas sometimes represent the same underlying contingency table using different row shapes. Gold may split one analytical unit into multiple rows (by category, threshold, subgroup, genotype, or label), while extraction consolidates the equivalent values onto fewer rows — or vice versa. Before scoring a gold row as completeness=0, check whether the value that gold row reports is **reconstructable from any field on a structurally related extraction row** — not just one specific field name. A gold row is reconstructable, and should be credited, whenever its value is present in the extraction in a different shape. Examples (non-exhaustive): a gold grade-threshold row whose count sits in `n_noevent_*`; a gold per-genotype row (e.g. heterozygous-only, homozygous-only) whose counts sit in per-genotype fields (`n_carriers_het`, `n_carriers_hom`, or equivalent) on a consolidated `any_carrier` row; a gold subgroup row whose value is one addend of a consolidated total. The test is general: *can you derive the gold row's reported value from the extraction by a deterministic reshape (splitting a field into rows, summing addends, taking a complement)?* If yes, credit the finding and document the reshape in your reasoning. If the value genuinely cannot be reconstructed from any extraction field, it is a real gap — score it 0 and say so. Distinguishing a representation artifact from a true data gap is the point.
 
-5. **Compute finding_accuracy** for the paper as the mean of (completeness × accuracy) across all gold standard findings. Unmatched gold rows (no extraction counterpart) get completeness=0.
+5. **End-of-paper unmatched sweep.** Before finalizing the per-finding scores, iterate `unmatched_extraction_rows` once. For each unmatched row, ask: does this row represent a gold finding I scored 0 or low (completeness × accuracy < 0.5)? This catches cases the resolver missed beyond the "empty candidates" trigger — e.g. an extraction row that paired to the wrong canonical token, or whose canonical id collided with another variant via a crosswalk conflict. The trigger is deterministic: iterate the (typically small) unmatched bucket, not every gold row. For each cross-pairing you make:
+   - re-pair the unmatched extraction row with the gold row it actually represents
+   - update that gold row's completeness × accuracy
+   - emit an entry in the paper's `overrides_applied` array (see Output Format) with `gold_index`, `extraction_index`, `original_score`, `new_score`, and a one-line rationale citing the alias / structural match that prompted the override
+   If you find nothing to override, do not emit the `overrides_applied` field at all. This sweep is bounded by `unmatched_extraction_rows.length` × low-scored-gold-row count — typically a handful of comparisons per paper, none for clean papers.
+
+   **Always emit a structured `unmatched_sweep` block** on every paper, even when the sweep is empty, so the audit trail is uniform across the corpus:
+   ```json
+   "unmatched_sweep": {
+     "unmatched_extraction_count": 2,
+     "low_scored_gold_count": 4,
+     "comparisons_made": 8,
+     "sweep_result": "No matches — both unmatched rows are for variants absent from gold (e.g. promoter SNP -1590T>C, out of CPIC scope)."
+   }
+   ```
+   On clean papers (no unmatched rows or no low-scored gold), set `comparisons_made: 0` and a one-line `sweep_result` saying so.
+
+6. **Compute finding_accuracy** for the paper as the mean of (completeness × accuracy) across all gold standard findings. Unmatched gold rows (no extraction counterpart) get completeness=0.
 
    **Denominator rule (mandatory for trajectory comparability):** Every gold row counts in the denominator regardless of what it reports — effect-size rows, count-only rows (patient counts, event counts without an OR/RR), wildtype/reference rows, and grade-stratified rows are all included. Do not down-weight or exclude rows because "there's no effect size to evaluate." Down-weighting silently shifts the denominator and produces spurious regression signals across iterations: a paper whose extraction is byte-for-byte identical can appear to "regress" simply because a later eval pass applied a stricter denominator. If you believe a particular gold row is unevaluable (e.g., gold itself is malformed), score it 0 explicitly and explain why — do not drop it from the denominator.
 
    **Compositional/combination-group rows:** When extraction encodes a paper's combined-variant analysis as a single row with `variant_raw` containing pipe- or "or"-delimited components (e.g., `"*2A|D949V|I560S (3 consensual SNPs)"`), the identity resolver expands these and resolves each component through the crosswalk, so the row pairs with every per-variant gold row it represents. Treat each pairing on its merits and explain the representation in your reasoning rather than penalizing the row as a structural mismatch.
 
-6. **Audit aggregate metrics; emit metric adjustments.** Read the aggregate output at `iterations/iter_{N}/aggregate_eval.json` (or the equivalent path for this iteration). The aggregate's per-paper metrics are deterministic measurements. `variant_coverage` is resolved via the identity crosswalk and is **reliable for resolved gold rows** — adjust it only when you manually pair a `resolution_rung: "unresolved"` gold row the resolver could not. `row_coverage` and `unnormalized_rate` can still be **misled by structural artifacts** — gold-standard decomposition of one finding into multiple per-entity rows, combination-group representations, schema-design constraints. Audit each raw metric and emit an adjusted value with a rationale where (and only where) the raw metric is misleading. The raw values stay in the output untouched; adjustments are additive.
+7. **Audit aggregate metrics; emit metric adjustments.** Read the aggregate output at `iterations/iter_{N}/aggregate_eval.json` (or the equivalent path for this iteration). The aggregate's per-paper metrics are deterministic measurements. `variant_coverage` is resolved via the identity crosswalk and is **reliable for resolved gold rows that paired with at least one extraction candidate** — adjust it when you manually pair a `resolution_rung: "unresolved"` gold row the resolver could not, OR when you cross-paired a resolved gold row that had `extraction_candidates: []` from `unmatched_extraction_rows` (per Rule #2). `row_coverage` and `unnormalized_rate` can still be **misled by structural artifacts** — gold-standard decomposition of one finding into multiple per-entity rows, combination-group representations, schema-design constraints. Audit each raw metric and emit an adjusted value with a rationale where (and only where) the raw metric is misleading. The raw values stay in the output untouched; adjustments are additive.
 
    For each paper, emit a `metric_adjustments` object alongside the per-finding scoring:
 
@@ -148,7 +165,7 @@ This produces a structured JSON: each gold row is paired against extraction cand
 
    **Diff-aware pass-through (subsequent iterations).** Read the prior detailed eval at `iterations/iter_{N-1}/detailed_eval.json` if present. For each paper, compare the prior `raw` aggregate metrics against the current iteration's `raw`. If a paper's raw metrics are unchanged within tolerance (extraction file unmodified, or differences ≤ 1 row per metric) AND the prior eval has a populated `metric_adjustments` block, pass through the prior rationale verbatim — only re-audit metrics whose raw value materially changed. Document carried-forward rationales with `"passed_through_from": "iter_{N-1}"` so the diagnostician can distinguish fresh judgments from inherited ones. New papers (no prior eval) and papers with materially-changed raw metrics get a full audit. This mirrors the extractor's prior-extraction pass-through optimization — avoid re-doing identical reasoning when the underlying data hasn't changed.
 
-7. **Compute composite** using agent-adjusted metrics where present, raw heuristics otherwise:
+8. **Compute composite** using agent-adjusted metrics where present, raw heuristics otherwise:
 
    ```
    composite = 0.4 * row_coverage_effective_or_raw   (capped at 1.0 per paper, then averaged)
@@ -159,7 +176,7 @@ This produces a structured JSON: each gold row is paired against extraction cand
 
    In aggregate-only mode (no detailed eval performed for this iteration), all four components come from raw heuristics, finding_accuracy is null, and the composite caps at 0.7. In detailed mode, the composite is the headline trajectory score for this iteration.
 
-8. **Update accuracy coverage.** After evaluating papers, update `iterations/accuracy_coverage.json`:
+9. **Update accuracy coverage.** After evaluating papers, update `iterations/accuracy_coverage.json`:
 ```json
 {
   "papers": {
@@ -177,7 +194,7 @@ This produces a structured JSON: each gold row is paired against extraction cand
 }
 ```
 
-9. **Recompute the full composite** across all papers evaluated to date (this iteration plus prior iterations whose detailed-mode evaluations are still valid). Use `finding_accuracy` from detailed mode for papers that have been evaluated, and report which papers have not yet been evaluated for accuracy.
+10. **Recompute the full composite** across all papers evaluated to date (this iteration plus prior iterations whose detailed-mode evaluations are still valid). Use `finding_accuracy` from detailed mode for papers that have been evaluated, and report which papers have not yet been evaluated for accuracy.
 
 # Output Format
 
@@ -208,7 +225,16 @@ Write the evaluation report to `iterations/iter_{N}/eval_report.json`:
         "passed_through_from": null
       },
       "finding_accuracy": 0.5,
-      "per_finding_scores": [...]
+      "per_finding_scores": [...],
+      "overrides_applied": [
+        {
+          "gold_index": 4,
+          "extraction_index": 12,
+          "original_score": 0.0,
+          "new_score": 0.85,
+          "rationale": "Cross-paired from unmatched_extraction_rows. Gold row resolved to rs1234 but extraction row 12 has variant_canonical=c.123A>T which the resolver failed to bridge (crosswalk conflict on alias 'intronic variant'). Alias match via variant_star_allele=*9B."
+        }
+      ]
     }
   ],
   "schema_contradictions": [...],
@@ -223,7 +249,7 @@ Ensure the `iterations/iter_{N}/` directory exists before writing.
 # Rules
 
 1. **Always run aggregate mode first.** Never jump to detailed mode without aggregate metrics.
-2. **Variant matching is resolved deterministically via the identity crosswalk.** A gold variant reported missing is genuinely absent — it is not a naming artifact. The only exception is a gold row with `resolution_rung: "unresolved"` (a combination/"multiple"/"unknown" label); pair those by hand in detailed mode.
+2. **Variant matching is resolved deterministically via the identity crosswalk — but verify when it returns zero candidates.** Trust the crosswalk for any gold row that resolved (`crosswalk_id` / `crosswalk_text` / `direct_rsid`) AND has at least one extraction candidate. When a resolved gold row has `extraction_candidates: []`, the resolver may have silently failed (e.g., HGVS prefix mismatch, missing alias in the crosswalk). Before scoring such a row as completeness=0, scan `unmatched_extraction_rows` for an entry whose `variant_canonical`, `variant_rsid`, `variant_raw`, or `variant_star_allele` plausibly represents the same variant as the gold row. If you find one, pair it semantically, document the resolver gap in your reasoning, and score on the merits. Gold rows with `resolution_rung: "unresolved"` (combination / "multiple" / "unknown" labels) still need semantic pairing by default.
 3. **Cap row coverage at 1.0 per paper when computing the composite.** Over-extraction should not inflate the score.
 4. **Report raw numbers alongside ratios.** "8/30 rows (27%)" is more useful than "27%" alone.
 5. **Do not diagnose or propose fixes.** That is the diagnostician and critic's job. You measure, flag, and explain — nothing more.
