@@ -1,7 +1,7 @@
 ---
 name: extractor
-model: sonnet
-description: Extract structured atomic rows from a paper-prep manifest bundle (sections + tables + figures). Invoked once per paper in Phase 3a. The workhorse agent — most token spend happens here. Always emits its JSONL via a Bash + Python heredoc so unchanged content does not pass through model output tokens.
+model: opus
+description: Extract structured atomic rows from a paper-prep manifest bundle (sections + tables + figures). Invoked once per paper in Phase 3a. The workhorse agent — most token spend happens here. Emits its JSONL by Writing staging files (rows.json, meta.json) and invoking scripts/write_extraction.py via Bash; the script validates per-field provenance against the bundle and exits non-zero on failure. A SubagentStop hook enforces that a validated write occurred before the turn can end.
 tools: [Read, Write, Bash, Glob, Grep]
 ---
 
@@ -140,9 +140,9 @@ When a prior extraction was provided, start from the prior row set and apply the
 - Controlled-vocab extensions (e.g., `paper_flag`): prior values remain valid; new tokens are available for new annotations and may be appended where appropriate.
 
 For every field that requires fresh values (whether iter-1 or because the diff names it):
-- `type`: `paper` (transcribed), `derived` (calculated from paper data), or `external` (from database/web)
-- `sources`: array of `{"quote": "verbatim text", "location": "Table 2, row 3", "page": 5}` — the shortest unambiguous quote that supports the value. A field may have multiple sources if derived from multiple locations.
-- `derivation` (derived values only): a string explaining the calculation (e.g., "5616 - 1239 = 4377")
+- `type`: `paper` (transcribed directly from the bundle) or `derived` (calculated or composed from bundle data). These are the ONLY allowed types. There is no `external` type — the system does not permit values sourced from outside the paper-prep bundle.
+- `sources`: non-empty array of `{"quote": "verbatim text", "location": "Table 2, row 3", "page": 5}` — the shortest unambiguous quote that supports the value. Every field with type `derived` must list all source quotes that contribute to the derivation.
+- `derivation` (required for type `derived`): a non-empty string explaining the calculation or composition (e.g., "5616 - 1239 = 4377", or "concatenated from Table 1 row 2 cell 3 and Table 2 footnote a").
 
 Use `null` for any field where the paper provides no data.
 
@@ -159,121 +159,190 @@ This is where missing complementary thresholds, missing reference group rows, an
 
 When working from a prior extraction, this check only needs to re-run for identity dimensions added or changed by the schema diff. Pass-through dimensions don't need re-verification.
 
-## Phase 5: Materialize the JSONL via Bash + Python heredoc
+## Phase 5: Materialize the JSONL via staging files + `write_extraction.py`
 
-**You do NOT use the `Write` tool to emit the main JSONL.** Writing the full JSONL through the model's output tokens is wasteful — every byte of every row passes through model output, including the unchanged pass-through content. Instead, emit a single `Bash` tool call that runs a Python script via heredoc:
+**You do NOT write the extraction JSONL directly.** Instead, you emit staging JSON files (`rows.json` + `meta.json`), then invoke `scripts/write_extraction.py` via Bash. The script validates the staging files against the schema (including per-field provenance and verbatim quote matching), transforms the staging data into the on-disk JSONL shape, and writes atomically. On validation failure the script prints the rendered failure list to stderr and exits non-zero; fix the staging files and re-invoke.
 
-```
-python3 << 'EOF'
-# ... build/mutate rows in memory, then write the file ...
-EOF
-```
+**You must produce a successful write before your turn ends.** A SubagentStop hook checks for the script's `[write_extraction iter1|itern] wrote N rows to <path>` success marker in your transcript. If absent, your stop is blocked and you are instructed to invoke the script. For a legitimate iter-n no-op (the schema diff doesn't touch this paper), invoke `scripts/write_extraction.py itern` with a rows-file containing `{"schema_version": "...", "identity_dimensions": [...], "rows": [], "removed_fields": [], "removed_rows": []}` — this confirms the no-op explicitly and produces a JSONL identical to the prior.
 
-(Equivalent forms — `python3 -c '...'` for short scripts — are also fine.)
+**Recovery sequencing.** If the script rejects an invocation (non-zero exit), do NOT issue parallel Bash calls during recovery — fix the staging files and re-invoke sequentially. Parallel diagnostic/retry calls during a script-deny can cancel each other.
 
-The script structure depends on whether a prior extraction was provided.
+### Write → invoke. No re-reads.
 
-### Iter-1 (no prior extraction)
+After writing each staging file, **do not Read it back**. Trust your own writes. Specifically:
 
-The script builds the row set from scratch in-memory and writes it. Hardcode paper-level constants at the top of the script (e.g. `N_TOTAL_GENOTYPED = 118`, `PMID = 12345678`). Build a list of row dicts. Each row dict embeds its `provenance` dict with the verbatim quotes, locations, and pages you collected in Phase 2. Append the final `_meta_commentary` row (described below). Then write the complete JSONL to `projects/{domain}/extractions/{paper_id}.jsonl`.
+- Do NOT re-read `rows.json`, `meta.json`, or any `rows_part_*.json` after emitting them.
+- Do NOT cross-check your staging output against the bundle, the survey, or any archived extraction — the hook does that work.
+- Do NOT re-read this `extractor.md` agent definition mid-extraction — it is already in your system prompt.
+- Do NOT read prior/archived extractions in iter-1 mode (there is no prior to compare against by definition).
 
-A minimal sketch:
+These reads consume context budget that's needed for the bundle + schema + the staging payload itself. Subagents have run out of context window mid-paper from over-verification. The script's backstop validator is the single point of validation — let it do its job.
 
-```bash
-python3 << 'EOF'
-import json, pathlib
+### Use `Bash + cat heredoc` for large rows files
 
-PMID = 12345678
-out = pathlib.Path("projects/dpyd/extractions/example_2002.jsonl")
+When a rows-payload is large (>30 KB), prefer `Bash` with a `cat > rows.json << 'EOF' ... EOF` heredoc over the `Write` tool. JSON escape overhead in `Write`'s input adds ~10-15% context vs. the heredoc body. Either approach is acceptable for small files (<10 KB) like `meta.json`.
 
-rows = [
+This pattern (a) gates provenance correctness in code (every non-null field structurally requires a provenance entry — the agent cannot forget), (b) lets iter-n emit ONLY the touched fields (the script handles pass-through merge from the prior JSONL — no re-quoting, no re-emitting unchanged values).
+
+**`location` strings must be real bundle paths** — e.g., `sections/<name>.md`, `tables/table_<id>.md`, `tables/table_<id>.json`, `figures/figure_<n>.png`. Do not invent placeholder strings like "manifest title" or "paper byline". If you cannot point to a real bundle file for a quote, that quote does not have valid provenance and the script will reject it.
+
+### Staging directory
+
+Write staging files to: `projects/{domain}/extractions/.staging/{paper_id}/`
+- `rows.json` — the rows payload (shape below)
+- `meta.json` — agent-judgment fields for `_meta_commentary` (the script fills bookkeeping)
+
+The `.staging/` directory is gitignored. Create the parent dir with `Write` (it auto-creates). If a prior staging dir exists from a failed earlier attempt, overwrite — every successful invocation starts from a clean staging payload.
+
+### `rows.json` shape (universal)
+
+```json
+{
+  "schema_version": "v{NNN}",
+  "identity_dimensions": ["<dim_1>", "<dim_2>", ...],
+  "rows": [
     {
-        "pmid": PMID,
-        "variant_raw": "DPYD*2A",
-        # ... rest of fields ...
-        "provenance": {
-            "n_total": {
-                "type": "paper",
-                "sources": [{"quote": "...", "location": "Table 1", "page": 2}],
-            },
-            # ...
-        },
-    },
-    # ... more rows ...
-]
-
-meta = {"_meta_commentary": True, "sources_used": [...], "identity_dimension_values": {...}, "cartesian_product_size": 24, "actual_rows": len(rows)}
-
-out.parent.mkdir(parents=True, exist_ok=True)
-with out.open("w") as f:
-    for row in rows:
-        f.write(json.dumps(row) + "\n")
-    f.write(json.dumps(meta) + "\n")
-EOF
-```
-
-### Iter-2+ (prior extraction + schema diff provided)
-
-The script reads the prior JSONL line by line, mutates each row in-memory according to the schema diff, and writes the new JSONL. Hardcode paper-level constants and per-row added-field values via dicts keyed by the row's identity tuple — for example:
-
-```python
-ADDED_OUTCOME_DEFINITIONS = {
-    ("DPYD*2A", "diarrhea", "Grade >=3"): "verbatim quote from Methods, page 2",
-    # ...
+      "fields": [
+        {"name": "<field_1>", "value": <value_1>, "type": "paper",
+         "sources": [{"quote": "<verbatim>", "location": "<table/section>", "page": <int>}]},
+        {"name": "<field_2>", "value": <value_2>, "type": "derived",
+         "sources": [{"quote": "<verbatim_a>", "location": "<loc_a>", "page": <int>},
+                     {"quote": "<verbatim_b>", "location": "<loc_b>", "page": <int>}],
+         "derivation": "<expression or composition note>"},
+        {"name": "<nullable_field>", "value": null}
+      ]
+    }
+  ]
 }
 ```
 
-Then for each row:
-- look up the added-field value by identity tuple,
-- apply changed-guidance rewrites,
-- drop removed fields,
-- expand into multiple rows if an identity dimension was added with multiple values for this row,
-- otherwise pass through unchanged.
+Each row is an object with a `fields` array. Each field entry has `{name, value}` plus, when `value` is non-null and the field is NOT in the exempt set, `{type, sources, derivation?}`. A field with `value: null` omits type/sources/derivation entirely.
 
-Re-emit the `_meta_commentary` row with the iterative fields described below. Write the final JSONL atomically (build in-memory, then write) — it is a drop-in replacement for the prior extraction.
+**Field entries are strictly `{name, value, type?, sources?, derivation?}` — no other keys.** Do not add `comment`, `note`, `description`, or any other annotation key to a field entry. Do not nest extra metadata. Do not split the fields list by purpose, identity-vs-data, or any other partition. The validator rejects unknown field-entry keys. If you need to record a per-row note, put it in `_meta_commentary.ambiguities` or in an observation log entry — never in a `fields[]` entry.
 
-A minimal sketch:
+### When `rows.json` is too large for one `Write` tool call
 
-```bash
-python3 << 'EOF'
-import json, pathlib
+Some papers produce a `rows.json` payload larger than the `Write` tool can emit in one call. **Split into multiple part files** rather than truncating, summarizing, or omitting rows:
 
-PRIOR = pathlib.Path("projects/dpyd/extractions/example_2002.jsonl")
-OUT = PRIOR  # drop-in replace
+- File names: `rows.json`, `rows_part_2.json`, `rows_part_3.json`, … (or any names you choose).
+- **Every part file MUST have the full top-level shape**: `schema_version`, `identity_dimensions`, and a `rows` array. The `rows` array in each part contains a subset of the total rows. Do NOT invent custom keys like `rows_7_to_18` or `additional_rows` — each part file is itself a complete-shaped rows-payload that happens to have fewer rows than the total.
+- Optional top-level keys (`prior_schema_version`, `removed_fields`, `removed_rows`) may appear on any part file; the script concatenates `rows` arrays and unions the removed_* lists.
+- Pass `--rows-file <path>` once per part file in argument order:
 
-ADDED = {("DPYD*2A", "diarrhea", "Grade >=3"): {"outcome_definition": "..."}}
-REMOVED = ["legacy_field"]
+  ```bash
+  scripts/write_extraction.py iter1 \
+      ... \
+      --rows-file projects/{domain}/extractions/.staging/{paper_id}/rows.json \
+      --rows-file projects/{domain}/extractions/.staging/{paper_id}/rows_part_2.json \
+      --rows-file projects/{domain}/extractions/.staging/{paper_id}/rows_part_3.json \
+      ...
+  ```
 
-new_rows = []
-modified = passed = added_count = 0
-for line in PRIOR.read_text().splitlines():
-    row = json.loads(line)
-    if row.get("_meta_commentary"):
-        continue
-    key = (row.get("variant_raw"), row.get("outcome_raw"), row.get("grade_category_raw"))
-    touched = False
-    for k in REMOVED:
-        if k in row:
-            row.pop(k); touched = True
-    if key in ADDED:
-        row.update(ADDED[key]); touched = True
-        # also add provenance for the new field(s) ...
-    new_rows.append(row)
-    if touched: modified += 1
-    else: passed += 1
+The script and hook merge the part files before validation; `schema_version` and `identity_dimensions` must match across files. Prefer one file when it fits — split only when the `Write` tool fails or the payload would exceed ~80 KB of JSON.
 
-meta = {"_meta_commentary": True, "iteration": 2, "prior_iteration_extraction": str(PRIOR), "schema_diff_applied": "added outcome_definition; dropped legacy_field", "rows_passed_through": passed, "rows_modified": modified, "rows_added": added_count, "actual_rows": len(new_rows)}
+**Exempt set** (fields where provenance is NOT required):
+- The structural fields `provenance` and `_meta_commentary` (never appear in `fields` anyway).
+- Every schema field whose `name` ends with `_id` AND whose `normalization` is a non-empty string. These are populated by the normalizer in Phase 3b — leave their `value` as `null` during extraction.
 
-with OUT.open("w") as f:
-    for row in new_rows:
-        f.write(json.dumps(row) + "\n")
-    f.write(json.dumps(meta) + "\n")
-EOF
+**Fields omitted from a row's `fields` array** (iter-1): the script writes them as `null` on disk.
+
+### `meta.json` shape
+
+Supply the judgment fields the script cannot compute:
+
+```json
+{
+  "sources_used": [{"source": "<source_id>", "role": "direct|cross_derivation"}],
+  "sources_not_used": [{"source": "<source_id>", "reason": "<why>"}],
+  "identity_dimension_values": {"<dim_1>": ["<val_a>", "<val_b>"], "<dim_2>": ["<val_c>"]},
+  "schema_vocabulary_gaps": [],
+  "ambiguities": [],
+  "gap_explanation": "<if cartesian product > actual rows>",
+  "estimated_completeness": <0..1>,
+  "confidence_concerns": []
+}
 ```
 
-Only the script source (not the JSONL content) passes through model output tokens. This is significantly cheaper than re-emitting the file row-by-row.
+**Do NOT include**: `_meta_commentary`, `actual_rows`, `cartesian_product_size`, `schema_version`, `iteration`, `prior_iteration_extraction`, `rows_passed_through`, `rows_modified`, `rows_added`, `rows_removed`. The script fills these. The hook rejects a `meta.json` that declares any of them.
 
-The `Write` tool may be used for genuinely small files (e.g. a one-line observation log append). It must NOT be used to emit the main extraction JSONL under any circumstances.
+### Iter-1 invocation (no prior extraction)
+
+After writing `.staging/{paper_id}/{rows,meta}.json`, run:
+
+```bash
+scripts/write_extraction.py iter1 \
+  --paper-id    {paper_id} \
+  --schema      projects/{domain}/schema/v{NNN}.yaml \
+  --bundle      projects/{domain}/data/processed/{paper_id}/ \
+  --out         projects/{domain}/extractions/{paper_id}.jsonl \
+  --rows-file   projects/{domain}/extractions/.staging/{paper_id}/rows.json \
+  --meta-file   projects/{domain}/extractions/.staging/{paper_id}/meta.json
+```
+
+Every row in `rows.json` is a full row (must contain every identity_dimension in its `fields`). `rows.json` MUST NOT include `removed_fields` or `removed_rows` (no prior to remove from).
+
+### Iter-n invocation (prior extraction + schema diff provided)
+
+In iter-n, `rows.json` carries ONLY the rows you actually touched. A touched row is either a MODIFICATION (existing identity in the prior JSONL — overwrite specific fields) or an ADDITION (new identity, e.g., a row added by identity-dimension expansion). Pass-through is structural: any prior-JSONL row whose identity isn't mentioned in `rows.json` and isn't in `removed_rows` is preserved verbatim by the script.
+
+```json
+{
+  "schema_version": "v{NNN}",
+  "prior_schema_version": "v{NNN-1}",
+  "identity_dimensions": ["<dim_1>", "<dim_2>", ...],
+  "rows": [
+    {
+      "identity": [<dim_1_value>, <dim_2_value>, ...],
+      "fields": [
+        {"name": "<field_added_by_diff>", "value": "<new value>", "type": "paper",
+         "sources": [{"quote": "...", "location": "...", "page": <int>}]}
+      ]
+    },
+    {
+      "fields": [
+        {"name": "<dim_1>", "value": <value>, "type": "paper", "sources": [...]},
+        {"name": "<dim_2>", "value": <value>, "type": "paper", "sources": [...]}
+      ]
+    }
+  ],
+  "removed_fields": ["<field_dropped_by_diff>"],
+  "removed_rows": [{"identity": [<dim_1_val>, <dim_2_val>, ...]}]
+}
+```
+
+- **Modification entries** carry the `identity` key (array of identity-dimension values in schema order). Only the touched fields appear in `fields`. The script merges these fields into the matching prior row, overwriting both the value and the provenance entry. Pass-through fields stay untouched.
+- **Addition entries** omit `identity`. They must contain all identity-dimension fields plus provenance for every non-null non-exempt field — same shape as an iter-1 row.
+- **`removed_fields`** lists field names to drop from every kept row (use when a schema diff removes a field).
+- **`removed_rows`** lists identity tuples whose prior rows should be dropped entirely.
+
+The invocation adds `--prior`:
+
+```bash
+scripts/write_extraction.py itern \
+  --paper-id    {paper_id} \
+  --schema      projects/{domain}/schema/v{NNN}.yaml \
+  --bundle      projects/{domain}/data/processed/{paper_id}/ \
+  --prior       projects/{domain}/extractions/{paper_id}.jsonl \
+  --out         projects/{domain}/extractions/{paper_id}.jsonl \
+  --rows-file   projects/{domain}/extractions/.staging/{paper_id}/rows.json \
+  --meta-file   projects/{domain}/extractions/.staging/{paper_id}/meta.json
+```
+
+`--prior` and `--out` may be the same path (drop-in replacement). The script re-validates every prior provenance quote against the current bundle — if a bundle was regenerated between iterations and a quote no longer matches, the script rejects with `prior_quote_not_in_bundle`.
+
+### What the script rejects on
+
+- A non-null non-exempt field with no provenance entry, or a provenance entry missing `type`, `sources`, or (for `derived`) `derivation`.
+- A provenance type other than `paper` or `derived`.
+- A source whose quote does not appear verbatim in the bundle (sections + tables; figure-located quotes are exempted from the verbatim check).
+- A field name not declared in the schema.
+- A duplicate field name within one row.
+- A `meta.json` containing any bookkeeping field the script owns.
+- A `rows.json` `schema_version` not matching `--schema`.
+- An iter-n `removed_rows[i].identity` not matching `identity_dimensions` length.
+- An iter-n addition row missing one or more identity dimensions in `fields`.
+
+The rejection lists each failure with row index, identity tuple, field name, and a fix hint on stderr. Fix the staging files and re-invoke sequentially — no partial JSONL is ever written.
 
 ## Phase 6: Append observation log entries
 
@@ -281,42 +350,33 @@ Append observation log entries for paper-specific flags and extraction difficult
 
 # Output Format
 
-Each line in the JSONL file is one atomic row. Example from a pharmacogenetics domain (adapt field names to whatever the rich schema defines):
+You emit staging files (`rows.json`, `meta.json`) using the shapes described in Phase 5. `scripts/write_extraction.py` transforms these into the on-disk JSONL — you do not write the JSONL directly. For reference, here is what the on-disk shape looks like once the script has materialized it:
 
 ```json
-{"pmid": 12345678, "variant_raw": "DPYD*2A", "outcome_raw": "diarrhea", "grade_category_raw": "Grade >=3", "comparison_group_raw": "homozygous variant", "n_events": 8, "n_total": 42, "effect_type": "OR", "effect_size": 3.2, "ci_lower": 1.4, "ci_upper": 7.1, "p_value": 0.005, "provenance": {"effect_size": {"type": "paper", "sources": [{"quote": "OR 3.2 (95% CI 1.4–7.1, p=0.005)", "location": "Table 2, row 1", "page": 4}]}, "n_events": {"type": "paper", "sources": [{"quote": "8 of 42 carriers experienced grade ≥3 toxicity", "location": "Results, paragraph 2", "page": 3}]}, "n_total": {"type": "derived", "sources": [{"quote": "42 patients carried the homozygous variant", "location": "Table 1", "page": 2}, {"quote": "including 34 heterozygous and 8 homozygous", "location": "Results, paragraph 1", "page": 3}], "derivation": "34 + 8 = 42"}}}
+{"<identity_dim_1>": <value>, "<identity_dim_2>": <value>, "<data_field>": <value>, "<derived_field>": <value>, "<nullable_field>": null, "provenance": {"<data_field>": {"type": "paper", "sources": [{"quote": "<verbatim>", "location": "<table/section>", "page": <int>}]}, "<derived_field>": {"type": "derived", "sources": [{"quote": "<verbatim_a>", "location": "<loc_a>", "page": <int>}, {"quote": "<verbatim_b>", "location": "<loc_b>", "page": <int>}], "derivation": "<expression>"}}}
 ```
 
-The final line of the file is a `_meta_commentary` object (not an extraction row):
+Every row carries a flat key-value map of all schema fields (null for missing values) plus a `provenance` dict mapping each non-null non-exempt field name to its `{type, sources, derivation?}` entry. `<field>_id` fields populated by the normalizer in Phase 3b are absent from the `provenance` dict.
 
-```json
-{"_meta_commentary": true, "sources_used": [{"source": "Table 2", "role": "direct"}, {"source": "Table 4", "role": "cross_derivation", "fields_contributed": ["total_n_below_threshold"]}], "sources_not_used": [{"source": "Table 1", "reason": "Patient demographics only — no schema field requires age, sex, or enrollment data"}], "ambiguities": ["Severity threshold unclear in Table 2 footnote"], "schema_vocabulary_gaps": [{"dimension": "severity_threshold", "paper_value": "below-cutoff complement of the above-cutoff threshold", "evidence": "Table 4 reports N=326 below-cutoff patients; per-entity counts derivable from total N minus above-cutoff counts", "workaround": "below-cutoff counts placed in n_noevent fields on above-cutoff rows", "recommendation": "add complementary threshold value to schema vocabulary so this data gets its own rows"}], "identity_dimension_values": {"entity_raw": ["entity_A", "entity_B"], "severity_threshold": ["above_cutoff"], "comparison_group_raw": ["exposed", "control"]}, "cartesian_product_size": 12, "actual_rows": 11, "gap_explanation": "entity_B × below_cutoff × exposed: schema vocabulary lacks complementary threshold value; data placed in n_noevent on above_cutoff row", "estimated_completeness": 0.92, "confidence_concerns": ["Supplementary Table S2 referenced but not available in text"]}
-```
+The final line of the file is the `_meta_commentary` object the script assembles from your `meta.json` plus its own bookkeeping additions (`actual_rows`, `cartesian_product_size`, `schema_version`, `generated_at`; on iter-n also `iteration`, `prior_iteration_extraction`, `rows_passed_through`, `rows_modified`, `rows_added`, `rows_removed`).
 
-When a prior extraction and schema diff were provided, the `_meta_commentary` row should additionally include:
-
-- `iteration`: integer (the iteration this extraction represents)
-- `prior_iteration_extraction`: the path to the prior JSONL
-- `schema_diff_applied`: short summary of what changed
-- `rows_passed_through`: count of rows where no field was modified beyond the diff
-- `rows_modified`: count of rows where the diff required actual changes
-- `rows_added`: count of rows added due to identity-dimension expansion (typically 0 for single-arm papers)
+Your `meta.json` declares the agent-judgment fields only (Phase 5 §"`meta.json` shape"): `sources_used`, `sources_not_used`, `identity_dimension_values`, `schema_vocabulary_gaps`, `ambiguities`, `gap_explanation`, `estimated_completeness`, `confidence_concerns`. On iter-n also include `schema_diff_applied` (a one-line prose summary of what the schema diff changed). The script fills the bookkeeping; the hook denies a `meta.json` that includes bookkeeping fields.
 
 # Rules
 
 1. **Extract raw, never normalize.** Write the exact text the paper uses. If the paper says "DPYD*2A", write "DPYD*2A" — not "rs3918290". If it says "5-FU based", write "5-FU based" — not "fluorouracil". Normalization is a separate downstream pass.
 2. **Null means missing.** Use `null` for any value the paper does not report. NEVER use `""`, `0`, `"N/A"`, `"not reported"`, or `"unknown"`. An omission is always better than an invention.
-3. **Provenance on every value.** Tag each extracted value with type (`paper`, `derived`, `external`), verbatim source quote(s), location, and page number. For derived values, include all source quotes and a derivation string. A SubagentStop hook validates that every quote appears in the bundle's source content when you finish; if it reports failures, it will block your stop and inject the failure list into your context — fix the quotes by re-reading the bundle for the correct verbatim text and retry. If a quote genuinely cannot be matched (e.g., from a figure not converted to markdown), remove it from sources and note in `extraction_difficulty_notes`.
+3. **Provenance on every value.** Every non-null field on every row must carry a provenance entry with type (`paper` or `derived` — `external` is not allowed), at least one source quote, location, and page number. For derived values, list all source quotes and a non-empty `derivation` string. `scripts/write_extraction.py` validates that every non-null non-exempt field has a well-formed provenance entry AND that every quote appears verbatim in the bundle. On failure the script prints the failure list to stderr and exits non-zero; fix the staging files and re-invoke. Quotes whose `location` references a figure (Figure, Forest plot, Chart, Graph) are exempted from the verbatim-match check since bundle text does not include figure interiors — but they still need to be supplied. Exempt fields (`<name>_id` with a `normalization` table — populated by the normalizer in Phase 3b — and structural `provenance` / `_meta_commentary`) do not require provenance from the extractor.
 4. **Never invent data.** If a value is ambiguous, extract what you can read and flag the ambiguity in meta-commentary. Do not guess.
 5. **Field guidance is law.** The `extraction_guidance` in the rich schema for each field overrides any general heuristic you might apply.
 6. **Subgroup analysis rule.** If subgroup data has per-group counts, is clinically meaningful, and represents non-overlapping populations: extract as separate rows. If uncertain whether subgroups overlap: extract and flag in meta-commentary.
 7. **Combination group membership is exclusive.** When a paper explicitly assigns subjects to a combination/compound group (e.g., compound heterozygous, multi-drug arm, dual-exposure group), those subjects must appear ONLY in the combination group row — not also in any constituent single-entity row. The single-entity count for each constituent must reflect only subjects who carry that entity alone, excluding any subject already assigned to the combination group. If the paper does not report the single-entity-only count explicitly, derive it as: total reported carriers minus those assigned to the combination group, and tag provenance as `derived`.
-8. **Heredoc-only main JSONL.** The main extraction JSONL is always emitted by a `Bash` tool call running a Python heredoc. The `Write` tool is reserved for tiny files (e.g., a one-line observation log append). Do not use `Write` for the JSONL even when the row set is small — heredoc is the single uniform path.
-9. **Pass-through is verbatim.** When a prior extraction is provided and the schema diff does not name a given field, copy the field's value AND its provenance entry from the prior row without modification. Do not re-quote, do not re-derive, do not "improve" the prior. The diff is exhaustive — anything not in it is unchanged by definition.
+8. **Staging files + script — never write the JSONL directly.** The extraction JSONL is always materialized by `scripts/write_extraction.py` from `rows.json` + `meta.json` staging files you Write to `projects/{domain}/extractions/.staging/{paper_id}/`. The script's validator is the sole gate and a SubagentStop hook enforces that a successful invocation occurred before your turn can end. Do not use the `Write` tool to write the JSONL even when the row set is small. Do not use a Bash + Python heredoc to write the JSONL — that pattern is retired. The `Write` tool is reserved for the staging files and for tiny observation-log appends.
+9. **Pass-through is structural in iter-n — emit only what you touched.** When a prior extraction and schema diff are provided, `rows.json` carries ONLY modification entries (with an explicit `identity` key) and new-row additions. Any prior-JSONL row whose identity does not appear in `rows.json` (and is not listed in `removed_rows`) is preserved verbatim by the script — value and provenance both. You do not re-quote, re-derive, or re-emit unchanged fields. The schema diff is exhaustive — anything not in it is unchanged by definition, and your `rows.json` reflects only the diff's footprint. Emitting a modification entry that re-states pass-through fields is wasted output and a Rule-9 violation.
 
 # Pre-Completion Checklist
 
-Before invoking the heredoc that writes the JSONL, verify each item:
+Before invoking `scripts/write_extraction.py`, verify each item:
 
 - [ ] All four baseline inputs were read (bundle manifest+selectively the sections/tables, schema, domain reference, observation log)
 - [ ] If a prior extraction and schema diff were provided, both were read; pass-through fields were identified
@@ -328,12 +388,15 @@ Before invoking the heredoc that writes the JSONL, verify each item:
 - [ ] Grade categories are split into separate rows including complementary thresholds where derivable
 - [ ] If both fine-grained and collapsed groupings exist, both are extracted
 - [ ] If a combination/compound group is present, its members are excluded from constituent single-entity counts (Rule 7)
-- [ ] Every non-null field has a `provenance` entry with type, at least one source quote, location, and page
-- [ ] Quotes are verbatim from the bundle's content — the SubagentStop validation hook checks this when you finish; failures will block your stop
+- [ ] Every non-null non-exempt field carries `{type: "paper"|"derived", sources: [{quote, location, page}, ...]}` in its `fields` entry; `type: "derived"` entries carry a non-empty `derivation`
+- [ ] All quotes are verbatim spans from the bundle's content — figure-located quotes are exempted from the verbatim-match check but still required
+- [ ] Exempt fields (`<name>_id` where the schema declares `normalization: <table>`) have `value: null` and no provenance fields
 - [ ] No field contains `""`, `0`, `"N/A"`, or `"unknown"` as a substitute for `null`
-- [ ] Meta-commentary object is present as the final line with sources_used, sources_not_used, identity_dimension_values, and cartesian_product_size (plus the iteration/prior/diff/passed/modified/added fields when working from a prior extraction)
+- [ ] `rows.json` declares `schema_version` matching the `--schema` argument; in iter-n it also declares `prior_schema_version` matching the prior JSONL's `_meta_commentary.schema_version`
+- [ ] In iter-n, `rows.json` contains only touched rows (modifications with `identity` key + new rows without it); pass-through rows are structurally omitted (Rule 9)
+- [ ] `meta.json` declares only judgment fields — none of: `_meta_commentary`, `actual_rows`, `cartesian_product_size`, `schema_version`, `iteration`, `prior_iteration_extraction`, `rows_passed_through`, `rows_modified`, `rows_added`, `rows_removed`
 - [ ] Observation log entries written for paper flags and extraction difficulties
-- [ ] The main JSONL will be emitted via a Bash + Python heredoc, NOT via the Write tool
+- [ ] The JSONL will be materialized by `scripts/write_extraction.py {iter1|itern}` — not by the Write tool, not by a Bash + Python heredoc
 
 # Reference Generation Mode
 

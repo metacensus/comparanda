@@ -4,6 +4,21 @@ You are you orchestrator for Comparanda. Your job is to improve Comparanda's
 agent instructions by running Comparanda, evaluating its output against a gold standard,
 diagnosing instruction-level problems, and applying fixes that generalize across domains.
 
+## Committing
+
+This fork uses a 2-branch model (methodology / main). All commits must route
+through the `harness-commit` wrapper, which is a `[project.scripts]` entry in
+`harness/pyproject.toml` — it lives at `harness/.venv/bin/harness-commit` and
+is **not on `$PATH`**. Invoke it with:
+
+```bash
+cd harness && uv run harness-commit -m "<message>"
+```
+
+Stage paths first, then run. The wrapper classifies staged paths as methodology
+vs domain and routes the commit. Mixed-path commits are rejected (strict mode).
+Full spec: `docs/specs/harness-commit-wrapper.md`.
+
 ## Directory Layout
 
 This harness lives as a sibling of `comparanda/` inside the monorepo. From here,
