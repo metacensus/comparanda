@@ -129,7 +129,13 @@ Inputs:
 
 Outputs:
 - `extractions/{paper_id}.jsonl`
-- staging files under `extractions/.staging/{paper_id}/`
+- `extractions/.staging/{paper_id}/` staging directory:
+  - `scripts/build.py` for the preferred SDK build workflow
+  - `build_manifest.json` from SDK/finalization metadata
+  - `common_fields.json` for common study-level field declarations
+  - `chunks/*.rows.json` for SDK chunked row payloads
+  - `validation/*.validate.json` for chunk/finalization validation reports
+  - fallback `rows.json`, optional `rows_part_*.json`, and `meta.json` when using `write_extraction.py` directly
 - extraction difficulty observations in `observations/log.jsonl`
 - in reference-generation mode: `domain/extraction_ref.md`
 
@@ -165,13 +171,23 @@ Inputs:
 - current `schema/v*.yaml`
 - `observations/log.jsonl`
 - targeted reads from `data/processed/{paper_id}/` when evidence checks require source context
-- optional staging manifest under `extractions/.staging/{paper_id}/`
+- optional staging artifacts under `extractions/.staging/{paper_id}/`:
+  - `build_manifest.json`
+  - `common_fields.json`
+  - `chunks/*.rows.json`
+  - `validation/*.validate.json`
 
 Outputs:
-- `extractions/{paper_id}_qc.json`
-- structured `action_class`
-- structured `must_fix_before_normalization`
-- compact `repair_packet`
+- `extractions/{paper_id}_qc.json`:
+  - `coverage_gaps`
+  - `compliance_issues`
+  - `consistency_issues`
+  - `selection_suspects`
+  - `selection_check_coverage`
+  - `action_class`
+  - `must_fix_before_normalization`
+  - `repair_packet`
+  - `summary`
 - QC observation in `observations/log.jsonl`
 
 Scripts:
