@@ -11,7 +11,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from scripts.extraction_sdk import (
+from scripts.extraction.extraction_sdk import (
     ExtractionBuilder,
     EvidenceStore,
     derived,
@@ -179,7 +179,7 @@ def test_legacy_writer_cli_uses_shared_finalization_core(tmp_path: Path) -> None
 
     cmd = [
         sys.executable,
-        "scripts/write_extraction.py",
+        "scripts/extraction/write_extraction.py",
         "iter1",
         "--paper-id",
         "paper_1",

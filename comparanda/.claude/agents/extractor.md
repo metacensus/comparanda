@@ -1,7 +1,7 @@
 ---
 name: extractor
 model: "claude-sonnet-5[1m]"
-description: Extract structured atomic rows from a paper-prep manifest bundle (sections + tables + figures). Invoked once per paper in Phase 3a. The workhorse agent — most token spend happens here. Emits staging files and materializes JSONL only through the unified extraction builder or scripts/write_extraction.py, which validate provenance, table cell anchors, derivations, and certainty tags.
+description: Extract structured atomic rows from a paper-prep manifest bundle (sections + tables + figures). Invoked once per paper in Phase 3a. The workhorse agent — most token spend happens here. Emits staging files and materializes JSONL only through the unified extraction builder or scripts/extraction/write_extraction.py, which validate provenance, table cell anchors, derivations, and certainty tags.
 tools: [Read, Write, Bash, Glob, Grep]
 ---
 
@@ -100,8 +100,8 @@ Before writing or repairing extraction code, read:
 `docs/extraction-sdk-agent-contract.md`
 
 Use that contract as the stable API surface. Do not read
-`scripts/extraction_sdk.py`, `scripts/extraction_builder.py`,
-`scripts/extraction_validator.py`, or `scripts/extraction_core.py` unless:
+`scripts/extraction/extraction_sdk.py`, `scripts/extraction/extraction_builder.py`,
+`scripts/extraction/extraction_validator.py`, or `scripts/extraction/extraction_core.py` unless:
 
 - the contract lacks a capability you need;
 - a traceback points to a likely SDK/validator bug;
@@ -113,7 +113,7 @@ summary.
 Run generated build scripts through the blessed runner:
 
 ```bash
-uv run scripts/run_extraction_build.py \
+uv run scripts/extraction/run_extraction_build.py \
   --paper-id {paper_id} \
   --project projects/{domain} \
   --script projects/{domain}/extractions/.staging/{paper_id}/scripts/build.py
@@ -153,7 +153,7 @@ When a QC repair packet (input 7) is available, enter **resume repair mode**:
   whole paper for a targeted repair.
 - Use the existing staging/chunk structure when possible.
 - Rerun chunk validation, final validation, and finalization through the SDK
-  contract or `scripts/write_extraction.py`.
+  contract or `scripts/extraction/write_extraction.py`.
 - Report the before/after row count, changed fields, validation status, and the
   final success marker.
 
@@ -220,14 +220,14 @@ When working from a prior extraction, this check only needs to re-run for identi
 **Preferred iter-1 workflow:** use the unified Extraction Builder SDK. It lets
 you declare common study-level fields once, add row chunks by table/figure/
 section, validate chunks locally, persist validation reports, and finalize
-through the same validation core used by `scripts/write_extraction.py`.
+through the same validation core used by `scripts/extraction/write_extraction.py`.
 
 Create a build script under
 `projects/{domain}/extractions/.staging/{paper_id}/scripts/build.py` or in a
 temporary location that you then copy into that staging scripts directory. Use:
 
 ```python
-from scripts.extraction_sdk import (
+from scripts.extraction.extraction_sdk import (
     ExtractionBuilder,
     paper,
     derived,
@@ -304,18 +304,18 @@ Key SDK rules:
 - Validate each chunk before moving on. The SDK writes compact text and JSON
   validation reports under `.staging/{paper_id}/validation/`.
 - Finalization must go through `b.finalize(...)` or
-  `scripts/extraction_builder.py finalize`, never a direct JSONL write.
+  `scripts/extraction/extraction_builder.py finalize`, never a direct JSONL write.
 
 CLI equivalents are available:
 
 ```bash
-uv run scripts/extraction_builder.py validate \
+uv run scripts/extraction/extraction_builder.py validate \
   --project projects/{domain} \
   --paper-id {paper_id} \
   --schema projects/{domain}/schema/v{NNN}.yaml \
   --bundle projects/{domain}/data/processed/{paper_id}
 
-uv run scripts/extraction_builder.py finalize \
+uv run scripts/extraction/extraction_builder.py finalize \
   --project projects/{domain} \
   --paper-id {paper_id} \
   --schema projects/{domain}/schema/v{NNN}.yaml \
@@ -331,7 +331,7 @@ success marker expected by the finalization hook.
 **You do NOT write the extraction JSONL directly.** Instead, emit staging JSON
 files (`rows.json` + `meta.json`) under
 `projects/{domain}/extractions/.staging/{paper_id}/`, then invoke
-`scripts/write_extraction.py` via Bash. The script validates the staging files
+`scripts/extraction/write_extraction.py` via Bash. The script validates the staging files
 against the schema and bundle, transforms them into the on-disk JSONL shape, and
 writes atomically. On validation failure it prints the rendered failure list to
 stderr and exits non-zero; fix the staging files and re-invoke sequentially.
@@ -339,7 +339,7 @@ stderr and exits non-zero; fix the staging files and re-invoke sequentially.
 **You must produce a successful write before your turn ends.** A SubagentStop
 hook checks for the script's `[write_extraction iter1|itern] wrote N rows to
 <path>` success marker in your transcript. If absent, your stop is blocked. For
-a legitimate iter-n no-op, invoke `scripts/write_extraction.py itern` with a
+a legitimate iter-n no-op, invoke `scripts/extraction/write_extraction.py itern` with a
 rows file containing `{"schema_version": "...", "identity_dimensions": [...],
 "rows": [], "removed_fields": [], "removed_rows": []}`.
 
@@ -435,13 +435,13 @@ script owns those bookkeeping fields.
 Iter-1:
 
 ```bash
-scripts/write_extraction.py iter1   --paper-id    {paper_id}   --schema      projects/{domain}/schema/v{NNN}.yaml   --bundle      projects/{domain}/data/processed/{paper_id}/   --out         projects/{domain}/extractions/{paper_id}.jsonl   --rows-file   projects/{domain}/extractions/.staging/{paper_id}/rows.json   --meta-file   projects/{domain}/extractions/.staging/{paper_id}/meta.json
+scripts/extraction/write_extraction.py iter1   --paper-id    {paper_id}   --schema      projects/{domain}/schema/v{NNN}.yaml   --bundle      projects/{domain}/data/processed/{paper_id}/   --out         projects/{domain}/extractions/{paper_id}.jsonl   --rows-file   projects/{domain}/extractions/.staging/{paper_id}/rows.json   --meta-file   projects/{domain}/extractions/.staging/{paper_id}/meta.json
 ```
 
 Iter-n:
 
 ```bash
-scripts/write_extraction.py itern   --paper-id    {paper_id}   --schema      projects/{domain}/schema/v{NNN}.yaml   --bundle      projects/{domain}/data/processed/{paper_id}/   --prior       projects/{domain}/extractions/{paper_id}.jsonl   --out         projects/{domain}/extractions/{paper_id}.jsonl   --rows-file   projects/{domain}/extractions/.staging/{paper_id}/rows.json   --meta-file   projects/{domain}/extractions/.staging/{paper_id}/meta.json
+scripts/extraction/write_extraction.py itern   --paper-id    {paper_id}   --schema      projects/{domain}/schema/v{NNN}.yaml   --bundle      projects/{domain}/data/processed/{paper_id}/   --prior       projects/{domain}/extractions/{paper_id}.jsonl   --out         projects/{domain}/extractions/{paper_id}.jsonl   --rows-file   projects/{domain}/extractions/.staging/{paper_id}/rows.json   --meta-file   projects/{domain}/extractions/.staging/{paper_id}/meta.json
 ```
 
 In iter-n, `rows.json` carries ONLY modification entries with an explicit
@@ -489,17 +489,17 @@ When a prior extraction and schema diff were provided, the `_meta_commentary` ro
 
 1. **Extract raw, never normalize.** Write the exact text the paper uses. If the paper says "Treatment group A", write "Treatment group A" — not a normalized intervention ID. Normalization is a separate downstream pass.
 2. **Null means missing.** Use `null` for any value the paper does not report. NEVER use `""`, `0`, `"N/A"`, `"not reported"`, or `"unknown"`. An omission is always better than an invention.
-3. **Provenance on every value.** Every non-null field on every row must carry a provenance entry with type (`paper` or `derived`), at least one source quote, location, and page number. `external` is not allowed. For derived values, list all source quotes and a non-empty `derivation` string. `scripts/write_extraction.py` validates the structure, quote location, table cell anchors, derivation arithmetic, certainty tags, and reasoning requirements.
+3. **Provenance on every value.** Every non-null field on every row must carry a provenance entry with type (`paper` or `derived`), at least one source quote, location, and page number. `external` is not allowed. For derived values, list all source quotes and a non-empty `derivation` string. `scripts/extraction/write_extraction.py` validates the structure, quote location, table cell anchors, derivation arithmetic, certainty tags, and reasoning requirements.
 4. **Never invent data.** If a value is ambiguous, extract what you can read and flag the ambiguity in meta-commentary. Do not guess.
 5. **Field guidance is law.** The `extraction_guidance` in the rich schema for each field overrides any general heuristic you might apply.
 6. **Subgroup analysis rule.** If subgroup data has per-group counts, is clinically meaningful, and represents non-overlapping populations: extract as separate rows. If uncertain whether subgroups overlap: extract and flag in meta-commentary.
 7. **Combination group membership is exclusive.** When a paper explicitly assigns subjects to a combination/compound group (e.g., multi-drug arm, dual-exposure group, or combined intervention), those subjects must appear ONLY in the combination group row — not also in any constituent single-entity row. The single-entity count for each constituent must reflect only subjects assigned to that entity alone, excluding any subject already assigned to the combination group. If the paper does not report the single-entity-only count explicitly, derive it as: total reported exposed/assigned subjects minus those assigned to the combination group, and tag provenance as `derived`.
-8. **Staging files + script — never write the JSONL directly.** The extraction JSONL is always materialized by `scripts/write_extraction.py` from staging files. Do not use Write, Edit, MultiEdit, NotebookEdit, or a Bash/Python heredoc to write `extractions/{paper_id}.jsonl` directly.
+8. **Staging files + script — never write the JSONL directly.** The extraction JSONL is always materialized by `scripts/extraction/write_extraction.py` from staging files. Do not use Write, Edit, MultiEdit, NotebookEdit, or a Bash/Python heredoc to write `extractions/{paper_id}.jsonl` directly.
 9. **Pass-through is structural in iter-n.** When a prior extraction and schema diff are provided, `rows.json` carries ONLY touched fields on modification entries and complete fields for new-row additions. Any prior row whose identity is not mentioned and not removed is preserved verbatim by the script.
 
 # Pre-Completion Checklist
 
-Before invoking `scripts/write_extraction.py`, verify each item:
+Before invoking `scripts/extraction/write_extraction.py`, verify each item:
 
 - [ ] All four baseline inputs were read (bundle manifest+selectively the sections/tables, schema, domain reference, observation log)
 - [ ] If a prior extraction and schema diff were provided, both were read; pass-through fields were identified
@@ -522,7 +522,7 @@ Before invoking `scripts/write_extraction.py`, verify each item:
 - [ ] In iter-n, `rows.json` contains only touched rows; pass-through rows are structurally omitted
 - [ ] `meta.json` declares only judgment fields and none of the script-owned bookkeeping fields
 - [ ] Observation log entries written for paper flags and extraction difficulties
-- [ ] The JSONL will be materialized by `scripts/write_extraction.py {iter1|itern}` — not by direct file write
+- [ ] The JSONL will be materialized by `scripts/extraction/write_extraction.py {iter1|itern}` — not by direct file write
 
 # Reference Generation Mode
 

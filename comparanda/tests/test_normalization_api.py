@@ -6,7 +6,7 @@ from pathlib import Path
 
 
 REPO = Path(__file__).resolve().parents[1]
-API = REPO / "scripts" / "normalization_api.py"
+API = REPO / "scripts" / "normalization" / "normalization_api.py"
 
 
 def write_schema(project: Path) -> None:

@@ -24,7 +24,7 @@ Before changing normalization state, read:
 `docs/normalization-api-agent-contract.md`
 
 Use that contract as the stable API surface. Do not read
-`scripts/normalization_api.py` internals unless:
+`scripts/normalization/normalization_api.py` internals unless:
 
 - the contract lacks a capability you need;
 - a traceback points to a likely API bug;
@@ -57,7 +57,7 @@ extraction rows.
 
 Normalization tables are compact lookup tables. Verbose reconciliation
 rationale belongs in the separate decision ledger written by
-`scripts/normalization_api.py reconcile`, not in table entries.
+`scripts/normalization/normalization_api.py reconcile`, not in table entries.
 
 # Inputs
 
@@ -85,7 +85,7 @@ Before collecting only unresolved raw values, audit whether existing normalizati
 Run the reconciliation hint helper:
 
 ```bash
-uv run scripts/normalization_reconcile.py --project projects/{domain} --iteration {N}
+uv run scripts/normalization/normalization_reconcile.py --project projects/{domain} --iteration {N}
 ```
 
 This writes:
@@ -113,7 +113,7 @@ For every candidate, decide one of:
 Record every reviewed candidate through the API:
 
 ```bash
-uv run scripts/normalization_api.py reconcile \
+uv run scripts/normalization/normalization_api.py reconcile \
   --project projects/{domain} \
   --iteration {N} \
   --table {table_name} \
@@ -162,7 +162,7 @@ For each proposed mapping, assign confidence:
 ## Step 5: Apply confidence thresholds
 
 For each resolved mapping:
-- **confidence >= 0.9**: Auto-apply through `scripts/normalization_api.py apply`.
+- **confidence >= 0.9**: Auto-apply through `scripts/normalization/normalization_api.py apply`.
 - **confidence >= 0.7 and < 0.9**: Apply through the API only if the current project policy allows medium-confidence application; flag for review with category `normalization_note`.
 - **confidence < 0.7**: Do NOT apply. Log as a dispute in the observation log with category `normalization_note`. Leave the ID field null.
 
@@ -184,14 +184,14 @@ For reconciled existing entries, preserve `iteration_added` and add/update:
 Apply canonical IDs through the API only:
 
 ```bash
-uv run scripts/normalization_api.py apply --project projects/{domain} --threshold 0.9
+uv run scripts/normalization/normalization_api.py apply --project projects/{domain} --threshold 0.9
 ```
 
 For an explicitly reviewed medium-confidence reconciliation decision, use the
 API's explicit reviewed-medium flag rather than silently lowering the threshold:
 
 ```bash
-uv run scripts/normalization_api.py apply \
+uv run scripts/normalization/normalization_api.py apply \
   --project projects/{domain} \
   --tables {table_name} \
   --raw '{raw value}' \
@@ -205,7 +205,7 @@ Never modify `_raw` fields.
 Before finishing, run:
 
 ```bash
-uv run scripts/normalization_api.py validate --project projects/{domain} --base-ref HEAD
+uv run scripts/normalization/normalization_api.py validate --project projects/{domain} --base-ref HEAD
 ```
 
 # Output Format
@@ -264,7 +264,7 @@ allocate the next collision-safe `OBS-NNN` id.
 8. **Reconciliation hints are not truth.** `normalization_reconcile.py` is allowed to be noisy or incomplete. Use it to focus attention, then make your own semantic judgment.
 9. **API writes only.** Do not use Write, Edit, MultiEdit, or Bash/Python heredocs to mutate normalization tables or extraction JSONL directly. Use `normalization_api.py reconcile` and `normalization_api.py apply`.
 10. **Audit outside lookup tables.** Keep verbose prior-state history, reasons, and evidence in the reconciliation ledger, not in normalization table entries.
-11. **No implementation-internals browsing during ordinary runs.** Do not read, grep, or sed `scripts/normalization_api.py` unless the stable API contract's exception criteria are met.
+11. **No implementation-internals browsing during ordinary runs.** Do not read, grep, or sed `scripts/normalization/normalization_api.py` unless the stable API contract's exception criteria are met.
 12. **Observation ids are helper-owned.** Do not hand-author observation ids; omit `id` so `observation_log.py append` allocates one.
 
 # Pre-Completion Checklist

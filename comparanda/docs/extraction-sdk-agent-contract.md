@@ -9,7 +9,7 @@ in your final extraction summary.
 ## Goal
 
 Produce `projects/<domain>/extractions/<paper_id>.jsonl` only through the
-staged Extraction Builder SDK or `scripts/write_extraction.py`. Never write the
+staged Extraction Builder SDK or `scripts/extraction/write_extraction.py`. Never write the
 final JSONL directly.
 
 Use one build script per paper:
@@ -27,7 +27,7 @@ full replacement extraction.
 Run build scripts from the repository root through:
 
 ```bash
-uv run scripts/run_extraction_build.py \
+uv run scripts/extraction/run_extraction_build.py \
   --paper-id <paper_id> \
   --project projects/<domain> \
   --script projects/<domain>/extractions/.staging/<paper_id>/scripts/build.py
@@ -43,12 +43,12 @@ variables:
 - `COMPARANDA_STAGING_DIR`
 
 If the build script writes staging files but does not finalize, add
-`--finalize` to finalize through `scripts/extraction_builder.py finalize`.
+`--finalize` to finalize through `scripts/extraction/extraction_builder.py finalize`.
 
 ## Minimal Build Script
 
 ```python
-from scripts.extraction_sdk import (
+from scripts.extraction.extraction_sdk import (
     ExtractionBuilder,
     abstained,
     derived,

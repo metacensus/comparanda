@@ -26,7 +26,7 @@ from harness.eval.identity import EntityResolver, load_crosswalk_config
 
 
 # High-leverage numeric fields whose uncertainty matters most for pooling.
-# Mirror of comparanda/scripts/review_queue.py:32 (HIGH_LEVERAGE) — keep the
+# Mirror of comparanda/scripts/review/review_queue.py:32 (HIGH_LEVERAGE) — keep the
 # two sets in sync (review note).
 HIGH_LEVERAGE = {
     "effect_estimate", "effect_size", "effect_size_value",

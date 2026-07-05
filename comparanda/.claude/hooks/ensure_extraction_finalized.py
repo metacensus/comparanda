@@ -48,7 +48,7 @@ EXTRACTOR_AGENT_TYPE = "extractor"
 # the long extractions that most need it (review note). Overridable via env.
 RECENT_WINDOW_SECONDS = int(os.environ.get("COMPARANDA_FINALIZE_WINDOW_SECONDS", "1800"))
 
-# Success marker emitted by scripts/write_extraction.py on a clean write.
+# Success marker emitted by scripts/extraction/write_extraction.py on a clean write.
 SUCCESS_MARKER = re.compile(
     r"\[write_extraction (iter1|itern)\] wrote \d+ rows? to "
 )
@@ -59,11 +59,11 @@ MAX_ATTEMPTS = 3
 
 BLOCK_REASON = (
     "Extractor cannot stop without producing a validated JSONL via "
-    "scripts/write_extraction.py. Either:\n"
-    "  (a) invoke scripts/write_extraction.py iter1|itern and observe a "
+    "scripts/extraction/write_extraction.py. Either:\n"
+    "  (a) invoke scripts/extraction/write_extraction.py iter1|itern and observe a "
     "`[write_extraction ...] wrote N rows to <path>` result in stderr, or\n"
     "  (b) for an iter-n with zero field/row changes, invoke "
-    "scripts/write_extraction.py itern with a rows-file containing "
+    "scripts/extraction/write_extraction.py itern with a rows-file containing "
     '{"schema_version": "...", "identity_dimensions": [...], "rows": [], '
     '"removed_fields": [], "removed_rows": []} to confirm the no-op '
     "explicitly.\n"

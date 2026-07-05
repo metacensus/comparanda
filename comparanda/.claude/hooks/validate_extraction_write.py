@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """PreToolUse gate (review note): the extraction JSONL may ONLY be produced by
-`scripts/write_extraction.py` or the unified `scripts/extraction_builder.py`
+`scripts/extraction/write_extraction.py` or the unified `scripts/extraction/extraction_builder.py`
 finalization path, never by a direct Write/Edit.
 
 The provenance/value contract (extraction_validator.py) is enforced inside
@@ -26,6 +26,11 @@ _EXTRACTION_JSONL_IN_COMMAND = re.compile(
     r"(?P<path>(?:[A-Za-z0-9_./~:-]+/)?extractions/[^\s'\";]+\.jsonl)"
 )
 _WRITE_MODE = re.compile(r"['\"][wax+][bt+]*['\"]")
+_ALLOWED_FINALIZERS = (
+    "scripts/extraction/write_extraction.py",
+    "scripts/extraction/extraction_builder.py",
+    "scripts/extraction/run_extraction_build.py",
+)
 
 
 def _is_final_extraction_jsonl(path: str) -> bool:
@@ -57,11 +62,7 @@ def _bash_direct_target(tool_input: dict) -> str | None:
     command = tool_input.get("command")
     if not isinstance(command, str):
         return None
-    if (
-        "write_extraction.py" in command
-        or "extraction_builder.py" in command
-        or "run_extraction_build.py" in command
-    ):
+    if any(path in command for path in _ALLOWED_FINALIZERS):
         return None
 
     targets = [
@@ -108,8 +109,8 @@ def _bash_direct_target(tool_input: dict) -> str | None:
 def _deny(path: str) -> int:
     msg = (
         "BLOCKED: extraction JSONL must be produced by "
-        "scripts/write_extraction.py (iter1|itern) or "
-        "scripts/extraction_builder.py finalize, never written directly. "
+        "scripts/extraction/write_extraction.py (iter1|itern) or "
+        "scripts/extraction/extraction_builder.py finalize, never written directly. "
         "Direct writes bypass provenance + value validation "
         "(quote-at-location, value-in-quote, derivation arithmetic). "
         f"Attempted direct write to: {path}. Emit rows.json/meta.json staging "

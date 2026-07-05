@@ -2,11 +2,11 @@
 
 This is the stable contract for Comparanda normalizer agents.
 
-Use `scripts/normalization_api.py` for all normalization decisions,
+Use `scripts/normalization/normalization_api.py` for all normalization decisions,
 normalization-table writes, canonical-field propagation, and validation. Do not
 edit normalization JSON files or extraction JSONL files directly.
 
-Only read `scripts/normalization_api.py` internals if:
+Only read `scripts/normalization/normalization_api.py` internals if:
 
 - this contract lacks a capability needed for the current normalization task;
 - the CLI reports an internally inconsistent validation result;
@@ -40,7 +40,7 @@ projects/{domain}/normalization/reconciliation/decisions_iter_{N}.jsonl
 2. Run the reconciliation hint helper:
 
    ```bash
-   uv run scripts/normalization_reconcile.py \
+   uv run scripts/normalization/normalization_reconcile.py \
      --project projects/{domain} \
      --iteration {N}
    ```
@@ -63,7 +63,7 @@ projects/{domain}/normalization/reconciliation/decisions_iter_{N}.jsonl
 ### Record One Decision
 
 ```bash
-uv run scripts/normalization_api.py reconcile \
+uv run scripts/normalization/normalization_api.py reconcile \
   --project projects/{domain} \
   --iteration {N} \
   --table {table_name} \
@@ -93,7 +93,7 @@ be null/unresolved.
 ### Apply Canonical Fields
 
 ```bash
-uv run scripts/normalization_api.py apply \
+uv run scripts/normalization/normalization_api.py apply \
   --project projects/{domain} \
   --threshold 0.9
 ```
@@ -102,7 +102,7 @@ uv run scripts/normalization_api.py apply \
 only be used for explicitly reviewed medium-confidence reconciliation decisions:
 
 ```bash
-uv run scripts/normalization_api.py apply \
+uv run scripts/normalization/normalization_api.py apply \
   --project projects/{domain} \
   --tables {table_name} \
   --raw '{raw value}' \
@@ -113,7 +113,7 @@ uv run scripts/normalization_api.py apply \
 Optional narrowing:
 
 ```bash
-uv run scripts/normalization_api.py apply \
+uv run scripts/normalization/normalization_api.py apply \
   --project projects/{domain} \
   --tables comparison_groups \
   --raw 'wild-type'
@@ -126,7 +126,7 @@ single-domain rules or assumptions about one naming convention.
 ### Validate Writes
 
 ```bash
-uv run scripts/normalization_api.py validate \
+uv run scripts/normalization/normalization_api.py validate \
   --project projects/{domain} \
   --base-ref HEAD
 ```
@@ -146,7 +146,7 @@ Use only for migration cleanup when an older run wrote verbose audit metadata
 into normalization tables:
 
 ```bash
-uv run scripts/normalization_api.py clean-audit-metadata \
+uv run scripts/normalization/normalization_api.py clean-audit-metadata \
   --project projects/{domain} \
   --iteration {N}
 ```
@@ -160,7 +160,7 @@ the reconciliation decision ledger for that iteration.
 - Do not directly rewrite extraction JSONL.
 - Do not store `previous_mappings`, `reconciliation_reason`, or long audit text
   in normalization table entries.
-- Do not read, grep, or sed `scripts/normalization_api.py` internals during an
+- Do not read, grep, or sed `scripts/normalization/normalization_api.py` internals during an
   ordinary normalizer run unless the contract's explicit exception criteria are
   met.
 - Do not hand-author observation ids. Omit `id` in observation append payloads

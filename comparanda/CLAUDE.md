@@ -157,7 +157,7 @@ iterating.
 1. For each paper in current subset:
    - Invoke @extractor with file paths to: bundle (`projects/<domain>/data/processed/{paper_id}/`), rich schema, domain reference. Pass file paths only — do not summarize, interpret, or pre-digest content. The extractor reads `manifest.json` and processes bundle assets per its own instructions.
    - Agent writes: `projects/<domain>/extractions/{paper_id}.jsonl`
-   - Record the returned extractor agent/subagent ID, the parent session ID if available, schema version, staging script path, and finalized JSONL path in `projects/<domain>/extractions/.staging/extractor_sessions.json` using `uv run scripts/extractor_session_registry.py upsert ...`. This registry is required for QC repair and later schema-iteration re-extraction.
+   - Record the returned extractor agent/subagent ID, the parent session ID if available, schema version, staging script path, and finalized JSONL path in `projects/<domain>/extractions/.staging/extractor_sessions.json` using `uv run scripts/extraction/extractor_session_registry.py upsert ...`. This registry is required for QC repair and later schema-iteration re-extraction.
    - Agent writes paper flags to observation log
 
 2. **Commit:** `"Phase 3a: Extract {N} papers ({total_rows} rows)"`

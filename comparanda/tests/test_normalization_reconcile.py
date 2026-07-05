@@ -6,7 +6,7 @@ from pathlib import Path
 
 
 REPO = Path(__file__).resolve().parents[1]
-SCRIPT = REPO / "scripts" / "normalization_reconcile.py"
+SCRIPT = REPO / "scripts" / "normalization" / "normalization_reconcile.py"
 
 
 def write_schema(path: Path, version: str, guidance: str, include_routes: bool = True) -> None:

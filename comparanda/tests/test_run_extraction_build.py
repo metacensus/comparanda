@@ -63,7 +63,7 @@ def test_runner_sets_environment_runs_script_and_finalizes(tmp_path: Path) -> No
 from pathlib import Path
 import os
 
-from scripts.extraction_sdk import ExtractionBuilder, paper
+from scripts.extraction.extraction_sdk import ExtractionBuilder, paper
 
 paper_id = os.environ["COMPARANDA_PAPER_ID"]
 project_dir = Path(os.environ["COMPARANDA_PROJECT_DIR"])
@@ -99,7 +99,7 @@ b.write_staging()
     proc = subprocess.run(
         [
             sys.executable,
-            "scripts/run_extraction_build.py",
+            "scripts/extraction/run_extraction_build.py",
             "--paper-id",
             paper_id,
             "--project",

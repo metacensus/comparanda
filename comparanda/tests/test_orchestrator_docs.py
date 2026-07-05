@@ -34,10 +34,10 @@ def test_orchestrator_records_extractor_registry() -> None:
 def test_extractor_prompt_points_to_sdk_contract_before_internals() -> None:
     text = (REPO_ROOT / ".claude" / "agents" / "extractor.md").read_text()
     contract_idx = text.index("docs/extraction-sdk-agent-contract.md")
-    internals_idx = text.index("scripts/extraction_sdk.py")
+    internals_idx = text.index("scripts/extraction/extraction_sdk.py")
 
     assert contract_idx < internals_idx
-    assert "scripts/run_extraction_build.py" in text
+    assert "scripts/extraction/run_extraction_build.py" in text
     assert "resume repair mode" in text
 
 

@@ -75,9 +75,9 @@ def test_blocks_bash_mutations_to_final_extraction_jsonl() -> None:
 
 def test_allows_sanctioned_finalizers_and_runner() -> None:
     for command in (
-        "uv run scripts/write_extraction.py iter1 --out projects/example_domain/extractions/paper_1.jsonl",
-        "uv run scripts/extraction_builder.py finalize --out projects/example_domain/extractions/paper_1.jsonl",
-        "uv run scripts/run_extraction_build.py --finalize --out projects/example_domain/extractions/paper_1.jsonl",
+        "uv run scripts/extraction/write_extraction.py iter1 --out projects/example_domain/extractions/paper_1.jsonl",
+        "uv run scripts/extraction/extraction_builder.py finalize --out projects/example_domain/extractions/paper_1.jsonl",
+        "uv run scripts/extraction/run_extraction_build.py --finalize --out projects/example_domain/extractions/paper_1.jsonl",
     ):
         proc = run_hook("Bash", {"command": command})
         assert proc.returncode == 0, command

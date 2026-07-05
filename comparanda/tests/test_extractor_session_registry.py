@@ -9,7 +9,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from scripts.extractor_session_registry import (  # noqa: E402
+from scripts.extraction.extractor_session_registry import (  # noqa: E402
     get_session,
     hydrate_manifest,
     load_registry,
