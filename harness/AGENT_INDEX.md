@@ -174,11 +174,6 @@ Resume policy:
 - Current orchestrator behavior is fresh invocation.
 - Proposal JSON is the durable handoff.
 
-## Guardrails and References
+## Guardrails
 
-Mechanical guardrails:
 - `.claude/hooks/harness-guardrail-comparanda-writes.sh`: prevents harness-side agents from writing arbitrary Comparanda files. The harness may only modify approved universal instruction/orchestrator files in `../comparanda/`.
-
-Navigation references:
-- `CLAUDE.md`: authoritative harness operating manual.
-- `../comparanda/AGENT_INDEX.md`: System 1 agent map.

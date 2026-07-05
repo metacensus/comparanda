@@ -257,16 +257,8 @@ Resume policy:
 - Current orchestrator behavior is fresh invocation per critique.
 - Critique JSON is the durable handoff to orchestrator and schema-proposer.
 
-## Guardrails and References
+## Guardrails
 
-Mechanical guardrails:
 - `.claude/hooks/validate_extraction_write.py`: blocks direct writes to `extractions/{paper_id}.jsonl`; only sanctioned extraction finalizers may materialize JSONL.
 - `.claude/hooks/ensure_extraction_finalized.py`: ensures extractor agents finish with successful sanctioned finalization or a legitimate iter-n no-op.
 - `scripts/extraction/write_extraction.py`, `scripts/extraction/extraction_builder.py`, and `scripts/extraction/run_extraction_build.py`: sanctioned materialization paths that validate provenance, table anchors, derivations, certainty, and reasoning.
-
-Stable agent contracts:
-- `docs/extraction-sdk-agent-contract.md`: extractor-facing SDK/API contract; this is an extractor input.
-- `docs/normalization-api-agent-contract.md`: normalizer-facing API contract; this is a normalizer input.
-
-Navigation references:
-- `scripts/README.md`: script family index for humans and maintainers.
