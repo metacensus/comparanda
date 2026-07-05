@@ -19,6 +19,7 @@ __pycache__/
 # These are runtime signals consumed by the orchestrator/harness; the persistent
 # record is the observation log.
 projects/*/extractions/*.provenance-failed.json
+projects/*/extractions/.staging/
 
 # Runtime caches
 # NOTE: .rag_cache/ is NOT gitignored — it costs money to rebuild (OpenAI API).

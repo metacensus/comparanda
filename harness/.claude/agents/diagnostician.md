@@ -27,9 +27,9 @@ Before you can diagnose whether a problem needs System 2 intervention, you need 
 
 - **Extractor** (`extractor.md`): Follows the schema's extraction_guidance to extract rows from papers. If it's not extracting something, check whether the instruction exists first. An instruction that exists but isn't followed is a different problem than a missing instruction.
 
-- **Normalizer** (`normalizer.md`): Maps raw values to canonical IDs with confidence thresholds. Intentionally leaves some rows un-normalized (haplotypes, wildtype, compound variants, low-confidence). Check the normalization table and dispute log before diagnosing normalizer gaps.
+- **Normalizer** (`normalizer.md`): Maps raw values to canonical IDs with confidence thresholds. Intentionally leaves some rows un-normalized when values are composite, ambiguous, reference/control-only, or low-confidence. Check the normalization table and dispute log before diagnosing normalizer gaps.
 
-- **Survey** (`survey.md`): Catalogs what each paper contains (tables, figures, groupings, outcomes). Survey outputs are available at `../comparanda/projects/dpyd/surveys/`.
+- **Survey** (`survey.md`): Catalogs what each paper contains (tables, figures, groupings, outcomes). Survey outputs are available at `../comparanda/projects/<domain>/surveys/`.
 
 **Also read** `../comparanda/CLAUDE.md` — this is the System 1 orchestrator. It describes the full inner loop phases, what triggers schema changes vs re-extraction, and how convergence works.
 
@@ -40,13 +40,13 @@ Before you can diagnose whether a problem needs System 2 intervention, you need 
 Before analysis, locate and read these files:
 
 1. **System 2 lessons** — `../docs/specs/system2-lessons.md`. Read this FIRST. These are previously diagnosed patterns. Do not re-diagnose known issues; reference them instead.
-2. **Eval report** — `iterations/iter_{N}/eval_report.json`. Contains per-paper metrics: row counts, variant coverage, outcome coverage, field fill rates, composite score, and any detailed mode findings with explanations.
+2. **Eval report** — `iterations/iter_{N}/eval_report.json`. Contains per-paper metrics: row counts, entity coverage, outcome coverage, field fill rates, composite score, and any detailed mode findings with explanations.
 3. **System 1 agent instruction files** — `../comparanda/.claude/agents/*.md`. Read the specific agent's file when you suspect it is the root cause. Also read when determining whether an instruction already exists for the issue you're diagnosing.
-4. **Observation log** — `../comparanda/projects/dpyd/observations/log.jsonl`. Structured log of what happened during extraction — agent observations, schema rationale, paper flags, extraction difficulties, normalization disputes.
-5. **Current schema** — `../comparanda/projects/dpyd/schema/v*.yaml`. The schema that was active during the evaluated extraction run. Check extraction_guidance and required status for relevant fields.
+4. **Observation log** — `../comparanda/projects/<domain>/observations/log.jsonl`. Structured log of what happened during extraction — agent observations, schema rationale, paper flags, extraction difficulties, normalization disputes.
+5. **Current schema** — `../comparanda/projects/<domain>/schema/v*.yaml`. The schema that was active during the evaluated extraction run. Check extraction_guidance and required status for relevant fields.
 6. **Gold standard** — `benchmark/gold_standard/`. The reference data extractions are compared against.
-7. **MA Critique output** — `../comparanda/projects/dpyd/critiques/iter_*.json` (latest). What did MA Critique flag in its most recent assessment? Did it catch the same issue you're diagnosing? If so, System 1 is already aware.
-8. **Survey outputs** — `../comparanda/projects/dpyd/surveys/*.json`. What does the survey say the paper contains? If the survey catalogs data that the extraction missed, the problem may be extraction execution, not instruction.
+7. **MA Critique output** — `../comparanda/projects/<domain>/critiques/iter_*.json` (latest). What did MA Critique flag in its most recent assessment? Did it catch the same issue you're diagnosing? If so, System 1 is already aware.
+8. **Survey outputs** — `../comparanda/projects/<domain>/surveys/*.json`. What does the survey say the paper contains? If the survey catalogs data that the extraction missed, the problem may be extraction execution, not instruction.
 
 # Procedure
 
@@ -58,32 +58,32 @@ Read `../docs/specs/system2-lessons.md`. For each finding you produce later, che
 
 Read the eval report. For each paper, note:
 - Row count ratio (extracted / gold). Below 0.7 is a red flag.
-- Which gold standard variants are missing from extraction.
+- Which gold standard entities are missing from extraction.
 - Which gold standard outcomes are missing from extraction.
 - Field fill rate anomalies (fields that are consistently null).
 - **Schema contradictions** — required fields with <100% fill. A field marked `required: true` with 0% fill may indicate the schema-proposer added a field the extractor can never populate, or the extraction_guidance contradicts the required status.
-- **Normalization gaps** — papers with high unnormalized rates. Trace through: is the normalizer's confidence threshold too conservative? Are the variants legitimately un-normalizable (haplotypes, wildtype, compound variants)? Does the schema contradict itself (required: true but guidance says null)?
+- **Normalization gaps** — papers with high unnormalized rates. Trace through: is the normalizer's confidence threshold too conservative? Are the values legitimately un-normalizable (composite categories, reference/control groups, ambiguous values)? Does the schema contradict itself (required: true but guidance says null)?
 - **Detailed mode findings** — if the eval agent ran detailed mode, read its per-finding explanations. Look for patterns: are mismatches systematic (same cause across papers) or paper-specific?
 
-Sort findings by severity: largest row coverage gap first, then accuracy issues from detailed mode, then missing variants, then normalization/schema contradictions, then field fill gaps.
+Sort findings by severity: largest row coverage gap first, then accuracy issues from detailed mode, then missing entities, then normalization/schema contradictions, then field fill gaps.
 
 ## Step 3: Examine the extraction artifacts
 
 For the worst-performing papers, read:
-- The extraction output (`../comparanda/projects/dpyd/extractions/{paper_id}.jsonl`)
+- The extraction output (`../comparanda/projects/<domain>/extractions/{paper_id}.jsonl`)
 - The observation log entries for that paper (grep for the paper ID)
-- The survey output (`../comparanda/projects/dpyd/surveys/{paper_id}.json`) if available
+- The survey output (`../comparanda/projects/<domain>/surveys/{paper_id}.json`) if available
 - The current schema's identity dimensions and field list
 
 Look for patterns: Did the extractor produce rows but at the wrong granularity? Did it miss entire tables? Did it extract the right data under wrong field names? Did the schema force it to collapse distinct groups into one row?
 
-**If the eval report flags normalization gaps** (rows with variant_raw but no variant_canonical/rsid), also examine:
-- The normalization table (`../comparanda/projects/dpyd/normalization/variants.json`) — are the un-normalized variants present? What confidence scores do they have? Are their canonical_id fields deliberately null?
+**If the eval report flags normalization gaps**, also examine:
+- The relevant normalization table under `../comparanda/projects/<domain>/normalization/` — are the un-normalized values present? What confidence scores do they have? Are their canonical_id fields deliberately null?
 - The normalizer observation log entries (category `normalization_note`) — were disputes logged?
-- The schema field definitions for variant_canonical and variant_rsid — does `required:` match the extraction_guidance? A field marked `required: true` whose guidance says "null for combined groups" is a schema internal contradiction that should be traced to the schema-proposer.
+- The schema field definitions for the raw/canonical pair — does `required:` match the extraction_guidance? A field marked `required: true` whose guidance says "null for combined groups" is a schema internal contradiction that should be traced to the schema-proposer.
 - The normalizer agent instructions (`../comparanda/.claude/agents/normalizer.md`) — do the confidence thresholds or notation handling rules explain why these rows were left un-normalized?
 
-The root cause of normalization gaps could be in any of: the normalizer instructions (too conservative thresholds), the schema (contradictory requirements), or the extractor (producing variant_raw values the normalizer can't resolve). Trace through the pipeline rather than assuming the normalizer is at fault.
+The root cause of normalization gaps could be in any of: the normalizer instructions (too conservative thresholds), the schema (contradictory requirements), or the extractor (producing raw values the normalizer can't resolve). Trace through the pipeline rather than assuming the normalizer is at fault.
 
 ## Step 4: Classify each finding
 
@@ -97,7 +97,7 @@ For each finding, apply the failure taxonomy and answer four questions:
    - Check the survey output — does the survey catalog the data that's missing from the extraction? If yes, the extractor has the information but isn't using it, which may self-correct on re-extraction.
    - Is this a schema design decision (what groupings to extract, what granularity) that belongs to the schema-proposer driven by MA Critique feedback? If so, System 2 shouldn't override it.
 
-3. **Is this a universal instruction problem?** Could a change to agent instructions prevent this failure across ALL domains (not just DPYD)? If yes, it is System 2 fixable. Apply the overfitting test: "If this domain disappeared, would fixing this instruction still help?" If no, classify as domain-specific.
+3. **Is this a universal instruction problem?** Could a change to agent instructions prevent this failure across ALL domains, not only the current one? If yes, it is System 2 fixable. Apply the overfitting test: "If this domain disappeared, would fixing this instruction still help?" If no, classify as domain-specific.
 
 4. **What specifically in the instructions?** Identify the section, step number, or principle that is missing, ambiguous, or wrong. If the instruction exists but isn't being followed, note whether the issue is: instruction not prominent enough (enforcement), instruction ambiguous (clarification needed), or instruction contradicted by another instruction (conflict).
 
@@ -114,12 +114,12 @@ Produce the structured output (see Output Format). Rank findings by expected imp
 | Category | Example | System 2 fixable? |
 |----------|---------|-------------------|
 | `completeness_under_extraction` | Paper has 52 gold rows, extraction has 14 | Yes — instruction granularity |
-| `completeness_missing_variants` | Gold has variant X, extraction omits it | Maybe — depends on cause |
+| `completeness_missing_entities` | Gold has entity X, extraction omits it | Maybe — depends on cause |
 | `accuracy_wrong_values` | Extracted effect size does not match gold | Yes — extraction guidance |
 | `schema_forced_compression` | Identity dims too coarse, distinct groups collapsed | Yes — schema-proposer guidance |
 | `schema_missing_dimension` | No schema field for a gold standard column | Yes — schema-proposer guidance |
 | `normalization_vocabulary_drift` | Same concept appears as different strings across papers | Yes — normalizer/schema guidance |
-| `normalization_incomplete` | variant_raw populated but variant_canonical/rsid null; normalizer didn't resolve | Yes — normalizer instructions (confidence thresholds, notation handling) |
+| `normalization_incomplete` | raw value populated but configured canonical field null; normalizer didn't resolve | Yes — normalizer instructions (confidence thresholds, notation handling) |
 | `schema_internal_contradiction` | Field marked `required: true` but extraction_guidance permits null | Yes — schema-proposer should validate internal consistency |
 | `data_gap` | Gold value derived from supplement not available to agent | No — paper limitation |
 | `domain_quirk` | One paper uses unusual table format requiring special handling | No — domain reference, not instructions |
@@ -172,4 +172,3 @@ runs in the same iteration do not overwrite each other.
 6. **Rank by impact.** Findings are ordered by expected improvement to composite score. The Critic will act on the highest-ranked instruction-fixable finding.
 7. **Be specific about target section.** "The extractor instructions need improvement" is useless. "Extractor > Atomicity Rules > Rule 3 does not account for subgroup-level outcome reporting" is useful.
 8. **Do not propose fixes.** That is the Critic's job. You provide the diagnosis and suggested direction, not the exact text change.
-

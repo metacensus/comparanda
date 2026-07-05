@@ -17,8 +17,11 @@ class IterationRecord:
     iteration: int
     composite_score: float
     row_coverage: float
-    variant_coverage: float
-    finding_accuracy: float  # from LLM judge, 1.0 if not yet run
+    entity_coverage: float
+    # finding_accuracy is None when detailed mode has NOT been run this
+    # iteration (review note: the old `1.0 if not yet run` default flattered
+    # un-judged iterations and biased keep/revert toward "keep").
+    finding_accuracy: float | None
     field_fill_rate: float
     instruction_sizes: dict[str, int]  # agent_name → word count
     total_instruction_words: int
@@ -29,6 +32,27 @@ class IterationRecord:
     rationale: str
     overfitting_test_passed: bool | None = None
     papers_evaluated: list[str] = field(default_factory=list)
+    # --- audit fields (F3/F7/F21): make every keep/revert reproducible ---
+    composite_mode: str = "full"          # "full" | "aggregate_only"
+    raw_composite: float | None = None     # code-computed from raw metrics
+    adjusted_composite: float | None = None  # if agent_adjusted reported
+    value_mismatch_count: int = 0          # deterministic value-diff gate
+    value_gate_passed: bool = True
+    schema_version: str | None = None      # the schema scored against
+    subset_ids: list[str] = field(default_factory=list)
+    gold_hash: str | None = None           # pins composite to a gold version
+    papers_detailed_this_iter: list[str] = field(default_factory=list)
+    attribution_confounded: bool = False   # True if schema changed mid-iteration
+    # --- round-2 audit fields ---
+    # 100% recall gate: gold findings with values but no extraction match.
+    unmatched_gold_with_values: int = 0
+    coverage_gate_passed: bool = True
+    # "per_finding" (code-recomputed) | "unvalidated_scalar" | None.
+    finding_accuracy_source: str | None = None
+    # Run-to-run noise: composite scores from repeat runs of identical
+    # instructions on the fixed panel; sigma derived from these.
+    replicate_scores: list[float] = field(default_factory=list)
+    noise_sigma: float | None = None
 
 
 @dataclass
@@ -42,23 +66,78 @@ class Trajectory:
         return self.iterations[-1] if self.iterations else None
 
     @property
+    def _full_iters(self) -> list[IterationRecord]:
+        # Only full-mode iterations are comparable watermarks (review note):
+        # an aggregate-only composite must not set best/converge. R2-07:
+        # attribution-confounded iterations (schema changed mid-iteration)
+        # are likewise excluded — CLAUDE.md Step 8 said so, the code didn't.
+        return [
+            r for r in self.iterations
+            if r.composite_mode == "full" and not r.attribution_confounded
+        ]
+
+    @property
     def best_composite(self) -> float:
-        if not self.iterations:
+        full = self._full_iters
+        if not full:
             return 0.0
-        return max(r.composite_score for r in self.iterations)
+        return max(r.composite_score for r in full)
 
     @property
     def best_iteration(self) -> IterationRecord | None:
-        if not self.iterations:
+        full = self._full_iters
+        if not full:
             return None
-        return max(self.iterations, key=lambda r: r.composite_score)
+        return max(full, key=lambda r: r.composite_score)
 
-    def is_converged(self, window: int = 3, threshold: float = 0.01) -> bool:
-        """Check if composite score has plateaued over the last N iterations."""
-        if len(self.iterations) < window:
+    def is_converged(self, window: int = 3, threshold: float | None = None) -> bool:
+        """Plateau over the last N *full-mode, unconfounded* iterations, with
+        no open value gate (review note/F10/F19) and no open recall gate
+        (R2-03: a gold finding with values but no extraction match blocks
+        convergence — 100% recall against gold is a hard requirement).
+        The plateau threshold defaults to the noise-calibrated delta when
+        sigma is known, else 0.01."""
+        full = self._full_iters
+        if len(full) < window:
             return False
-        recent = [r.composite_score for r in self.iterations[-window:]]
-        return max(recent) - min(recent) < threshold
+        recent = full[-window:]
+        if any(not r.value_gate_passed for r in recent):
+            return False
+        if not recent[-1].coverage_gate_passed:
+            return False
+        if recent[-1].finding_accuracy_source == "unvalidated_scalar":
+            return False
+        if threshold is None:
+            threshold = self.delta_required()
+        scores = [r.composite_score for r in recent]
+        return max(scores) - min(scores) < threshold
+
+    # --- R2-07: noise-calibrated minimum effect size for keep/revert ---
+
+    @property
+    def sigma(self) -> float | None:
+        """Most recent known run-to-run noise sigma, from explicit
+        noise_sigma or computed from a record's replicate_scores (>=3)."""
+        for r in reversed(self.iterations):
+            if r.noise_sigma is not None:
+                return r.noise_sigma
+            if len(r.replicate_scores) >= 3:
+                xs = r.replicate_scores
+                m = sum(xs) / len(xs)
+                var = sum((x - m) ** 2 for x in xs) / (len(xs) - 1)
+                return var ** 0.5
+        return None
+
+    def delta_required(self, floor: float = 0.01) -> float:
+        """delta >= 2*sigma (CLAUDE.md Step 8), never below the floor."""
+        s = self.sigma
+        return max(2 * s, floor) if s is not None else floor
+
+    def meets_delta(self, composite_before: float, composite_after: float,
+                    floor: float = 0.01) -> bool:
+        """Keep-eligibility: improvement must exceed the noise-calibrated
+        minimum effect size. 'Any amount' is not enough (review note)."""
+        return (composite_after - composite_before) >= self.delta_required(floor)
 
     def instruction_size_trend(self) -> list[int]:
         """Get total instruction word count across iterations."""
@@ -109,13 +188,13 @@ def format_trajectory(trajectory: Trajectory) -> str:
         lines.append(f"Converged: {trajectory.is_converged()}")
     lines.append("")
 
-    lines.append("| Iter | Composite | Row Cov | Var Cov | Words | Change | Decision |")
+    lines.append("| Iter | Composite | Row Cov | Ent Cov | Words | Change | Decision |")
     lines.append("|------|-----------|---------|---------|-------|--------|----------|")
     for r in trajectory.iterations:
         change = r.change_applied[:30] + "..." if r.change_applied and len(r.change_applied) > 30 else (r.change_applied or "none")
         lines.append(
             f"| {r.iteration} | {r.composite_score:.3f} | {r.row_coverage:.0%} | "
-            f"{r.variant_coverage:.0%} | {r.total_instruction_words} | {change} | {r.decision} |"
+            f"{r.entity_coverage:.0%} | {r.total_instruction_words} | {change} | {r.decision} |"
         )
 
     size_trend = trajectory.instruction_size_trend()

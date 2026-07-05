@@ -43,8 +43,10 @@ EXTRACTOR_AGENT_TYPE = "extractor"
 
 # How long ago (seconds) the subagent transcript must have been touched to
 # count as the just-stopped one. Generous window because extraction runs can
-# pause for minutes on Bash subprocesses.
-RECENT_WINDOW_SECONDS = 300
+# pause for many minutes on Bash subprocesses (large staging writes, slow
+# validator runs) — a too-small window silently DISARMS the hook for exactly
+# the long extractions that most need it (review note). Overridable via env.
+RECENT_WINDOW_SECONDS = int(os.environ.get("COMPARANDA_FINALIZE_WINDOW_SECONDS", "1800"))
 
 # Success marker emitted by scripts/write_extraction.py on a clean write.
 SUCCESS_MARKER = re.compile(
@@ -224,12 +226,38 @@ def main() -> int:
     write_attempts(counter_path, attempts)
 
     if attempts >= MAX_ATTEMPTS:
+        # review note: the escape hatch must not be SILENT. Write a loud sentinel
+        # and surface a systemMessage so the orchestrator (and a human) see
+        # that an extraction was allowed to stop WITHOUT a validated write —
+        # rather than silently treating the paper as successfully extracted.
+        try:
+            marker = state_dir() / "FINALIZE_FAILED.jsonl"
+            with marker.open("a") as f:
+                f.write(json.dumps({
+                    "ts": datetime.now(timezone.utc).isoformat(),
+                    "subagent_transcript": str(subagent_transcript),
+                    "attempts": attempts,
+                    "status": "escape_hatch_unfinalized",
+                }) + "\n")
+        except OSError:
+            pass
         fire_trace({
             "decision": "allow",
             "reason": "max_attempts_escape",
             "attempts": attempts,
             "subagent_transcript": str(subagent_transcript),
         })
+        # Allow the stop (prevents an infinite loop) but make it loud.
+        print(json.dumps({
+            "systemMessage": (
+                "WARNING: extractor stopped after "
+                f"{attempts} blocked finalize attempts WITHOUT a validated "
+                "write_extraction.py run. A FINALIZE_FAILED sentinel was "
+                "written to .claude/hooks/.state/. This paper's extraction is "
+                "NOT finalized — do not treat it as complete; re-extract or "
+                "escalate for human review."
+            )
+        }))
         return allow()
 
     fire_trace({

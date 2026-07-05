@@ -36,8 +36,8 @@ def test_classify_pure_methodology():
 
 def test_classify_pure_domain():
     c = classify_paths([
-        "comparanda/projects/dpyd/schema/v007.yaml",
-        "comparanda/projects/dpyd/extractions/foo.jsonl",
+        "comparanda/projects/example_domain/schema/v007.yaml",
+        "comparanda/projects/example_domain/extractions/foo.jsonl",
         "harness/iterations/iter_10/aggregate_eval.json",
         "harness/iterations/trajectory.json",
     ])
@@ -48,7 +48,7 @@ def test_classify_pure_domain():
 def test_classify_mixed_rejected_by_caller():
     c = classify_paths([
         "comparanda/.claude/agents/extractor.md",      # methodology
-        "comparanda/projects/dpyd/extractions/foo.jsonl",  # domain
+        "comparanda/projects/example_domain/extractions/foo.jsonl",  # domain
     ])
     assert c.is_mixed
     assert not c.is_pure_methodology
@@ -95,8 +95,8 @@ def repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     (tmp_path / "comparanda" / ".claude" / "agents").mkdir()
     (tmp_path / "comparanda" / ".claude" / "agents" / "extractor.md").write_text("baseline\n")
     (tmp_path / "comparanda" / "projects").mkdir()
-    (tmp_path / "comparanda" / "projects" / "dpyd").mkdir()
-    (tmp_path / "comparanda" / "projects" / "dpyd" / "extractions").mkdir()
+    (tmp_path / "comparanda" / "projects" / "example_domain").mkdir()
+    (tmp_path / "comparanda" / "projects" / "example_domain" / "extractions").mkdir()
     (tmp_path / "harness").mkdir()
     (tmp_path / "harness" / "iterations").mkdir()
     (tmp_path / "README.md").write_text("hi\n")
@@ -131,9 +131,9 @@ def test_pure_methodology_from_main_routes_to_methodology_and_merges_forward(rep
 
 def test_pure_domain_commits_on_main_directly(repo: Path):
     # Stage a domain change.
-    extractions = repo / "comparanda" / "projects" / "dpyd" / "extractions"
+    extractions = repo / "comparanda" / "projects" / "example_domain" / "extractions"
     (extractions / "foo.jsonl").write_text('{"x":1}\n')
-    _git("add", "comparanda/projects/dpyd/extractions/foo.jsonl", cwd=repo)
+    _git("add", "comparanda/projects/example_domain/extractions/foo.jsonl", cwd=repo)
 
     result = harness_commit("add foo extraction")
 
@@ -148,7 +148,7 @@ def test_pure_domain_commits_on_main_directly(repo: Path):
 
 def test_mixed_commit_rejected_in_strict_mode(repo: Path):
     (repo / "comparanda" / ".claude" / "agents" / "extractor.md").write_text("changed\n")
-    (repo / "comparanda" / "projects" / "dpyd" / "extractions" / "foo.jsonl").write_text("{}\n")
+    (repo / "comparanda" / "projects" / "example_domain" / "extractions" / "foo.jsonl").write_text("{}\n")
     _git("add", "-A", cwd=repo)
 
     with pytest.raises(SystemExit) as exc:
@@ -169,7 +169,7 @@ def test_unknown_path_rejected_in_strict_mode(repo: Path):
 
 def test_lenient_mode_allows_mixed(repo: Path):
     (repo / "comparanda" / ".claude" / "agents" / "extractor.md").write_text("changed\n")
-    (repo / "comparanda" / "projects" / "dpyd" / "extractions" / "foo.jsonl").write_text("{}\n")
+    (repo / "comparanda" / "projects" / "example_domain" / "extractions" / "foo.jsonl").write_text("{}\n")
     _git("add", "-A", cwd=repo)
 
     result = harness_commit("mixed in lenient", mode="lenient")
@@ -180,7 +180,7 @@ def test_lenient_mode_allows_mixed(repo: Path):
 def test_methodology_from_main_when_main_has_diverged_uses_merge_commit(repo: Path):
     """If main has domain commits past methodology, the merge can't be --ff-only."""
     # First: domain commit on main.
-    (repo / "comparanda" / "projects" / "dpyd" / "extractions" / "domain.jsonl").write_text("{}\n")
+    (repo / "comparanda" / "projects" / "example_domain" / "extractions" / "domain.jsonl").write_text("{}\n")
     _git("add", "-A", cwd=repo)
     harness_commit("first domain")
 

@@ -7,7 +7,7 @@ Claude Code session are slow and broken.
 
 Usage:
     uv run python -m paper_prep.batch \\
-        --subset examples/dpyd_batch_subset.json \\
+        --subset examples/example_batch_subset.json \\
         --pdfs-dir /path/to/pdfs \\
         --bundle-out /path/to/projects/<domain>/data/processed/ \\
         [--run-root /tmp/paper_prep_batch] \\

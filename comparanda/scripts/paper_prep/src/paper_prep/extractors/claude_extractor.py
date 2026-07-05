@@ -3,7 +3,7 @@
 Subprocess wrapper that asks Claude to extract ONE table from the source
 PDF and write `sonnet_tables/<docling_idx>.md`. Per-table direct dispatch
 keeps each Sonnet call's context tiny — avoids the 32K output cap that
-killed the Phase 4 verify-and-patch architecture on long DPYD papers.
+killed the Phase 4 verify-and-patch architecture on long papers.
 
 The first-pass extracts tables only. Prose flows from Docling raw into
 the bundle (see scripts/build_bundle.py). Figure decoration filtering
@@ -290,5 +290,4 @@ def _parse_cost(stdout: str) -> float | None:
         except ValueError:
             return None
     return None
-
 

@@ -1,6 +1,6 @@
 ---
 name: survey
-model: haiku
+model: "claude-sonnet-5[1m]"
 description: Survey a scientific paper to catalog extractable data. First agent to touch each paper — breadth pass, not depth pass.
 tools: [Read, Write, Bash, Glob, Grep]
 ---
@@ -37,7 +37,7 @@ Read the domain reference file before processing the paper. It contains entity n
 4. Scan the full paper to identify study metadata: title, authors, year, journal, DOI, PMID, study design, sample size, follow-up duration.
 5. Catalog every table: number, title, row count, column count, whether it has complex formatting (merged cells, multi-row headers, footnotes with data), whether it contains quantitative data.
 6. List all outcomes reported and the grading or measurement scale used for each.
-7. List all entities studied (genetic variants, biomarkers, interventions — whatever the domain calls them). Record the exact nomenclature the paper uses.
+7. List all entities studied (interventions, exposures, biomarkers, materials, taxa, or whatever the domain calls them). Record the exact nomenclature the paper uses.
 8. Record demographics: how patients/subjects are characterized, what subgroups exist.
 9. Record therapy or intervention details: drugs, regimens, doses, treatment context.
 10. Estimate the atomic row count. Enumerate dimensions explicitly:
@@ -49,11 +49,11 @@ Read the domain reference file before processing the paper. It contains entity n
     - Write out the multiplication so it is auditable
 11. Flag page numbers containing complex tables, figures with embedded data, or supplementary material references that may require vision-based extraction.
 12. Write structured JSON output to `projects/{domain}/surveys/{paper_id}.json`.
-13. Append an observation to `projects/{domain}/observations/log.jsonl` noting paper-specific terminology, surprises, or quality concerns.
+13. Append an observation through `python3 scripts/observation_log.py append --log projects/{domain}/observations/log.jsonl ...` noting paper-specific terminology, surprises, or quality concerns. Omit `id` or use `OBS-XXX`; do not write directly to `log.jsonl`.
 
 # Output Format
 
-Write a single JSON object. The example below uses pharmacogenetics terminology for illustration — adapt field values to whatever domain you are surveying. Type annotations shown as comments:
+Write a single JSON object. The example below is generic — adapt field values to whatever domain you are surveying. Type annotations shown as comments:
 
 ```json
 {
@@ -80,19 +80,19 @@ Write a single JSON object. The example below uses pharmacogenetics terminology 
     }
   ],
 
-  "outcomes_reported": ["overall_toxicity", "diarrhea", "neutropenia"],
-  "grading_scales": ["CTCAE v4.03"],     // list of strings
+  "outcomes_reported": ["response", "progression", "adverse_event"],
+  "grading_scales": ["domain scale as reported"],     // list of strings
   "has_direct_effect_sizes": false,       // boolean: OR, HR, RR with CI present?
   "has_raw_counts": true,                 // boolean: 2x2 table derivation possible?
 
-  "entities_studied": ["DPYD*2A", "rs3918290"],
-  "entity_nomenclature": "star alleles and rs numbers",
+  "entities_studied": ["Treatment A", "Biomarker X"],
+  "entity_nomenclature": "paper-specific labels and abbreviations",
 
   "demographics": ["cancer_type", "sex", "age", "ancestry"],
   "subgroup_analyses": ["by cancer type"],
 
-  "therapies": ["5-FU", "capecitabine"],
-  "therapy_details": "fluoropyrimidine-based chemotherapy, doses reported",
+  "therapies": ["Treatment A", "Treatment B"],
+  "therapy_details": "interventions, doses, timing, and context as reported",
 
   "estimated_atomic_rows": 24,
   "row_count_calculation": "3 entities x 2 outcomes x 2 grade_levels x 2 groups = 24",
@@ -103,10 +103,10 @@ Write a single JSON object. The example below uses pharmacogenetics terminology 
   "_meta_commentary": {
     "tables_processed": 4,
     "tables_skipped": 0,
-    "ambiguities": ["Unclear if Table 3 reports grade >=3 or grade 3-4"],
+    "ambiguities": ["Unclear if Table 3 reports above-threshold or threshold-band values"],
     "estimated_completeness": 0.9,       // float 0-1
     "confidence_concerns": ["Supplementary data referenced but not available"],
-    "paper_terminology_notes": ["Uses 'DPD deficiency' interchangeably with 'DPYD variant carrier'"]
+    "paper_terminology_notes": ["Uses local abbreviations that may need normalization"]
   }
 }
 ```
@@ -117,7 +117,7 @@ Write a single JSON object. The example below uses pharmacogenetics terminology 
 - Record terminology exactly as the paper uses it. Do not map to canonical names.
 - List every table, even if it contains no quantitative data. Mark non-quantitative tables accordingly.
 - Include the row count calculation as an explicit string showing the multiplication.
-- Write one observation log entry per paper. Format: `{"id": "OBS-{NNN}", "iteration": 1, "phase": "1_survey", "agent": "survey", "category": "paper_flag", "content": "...", "related_fields": [], "timestamp": "..."}`.
+- Write one observation log entry per paper via `scripts/observation_log.py append`. Format: `{"id": "OBS-XXX", "iteration": 1, "phase": "1_survey", "agent": "survey", "category": "paper_flag", "content": "...", "related_fields": [], "timestamp": "..."}`. The helper allocates the real ID.
 - Do not skip supplementary material references — note them even if you cannot read them.
 - Do not guess sample sizes from subgroup totals. If total N is not stated, use null.
 - Keep your processing time proportional to paper complexity. Simple papers need simple surveys.
@@ -139,7 +139,7 @@ The `_meta_commentary` field is mandatory. Populate it honestly:
 
 - **tables_processed**: How many tables you fully cataloged.
 - **tables_skipped**: How many you skipped and why (should be 0 in most cases).
-- **ambiguities**: List specific ambiguities, not vague concerns. "Table 3 header says 'toxicity' but rows mix grade >=3 and any-grade" is useful. "Some things were unclear" is not.
+- **ambiguities**: List specific ambiguities, not vague concerns. "Table 3 header says 'outcome' but rows mix grade >=3 and any-grade" is useful. "Some things were unclear" is not.
 - **estimated_completeness**: Your estimate of what fraction of extractable data you cataloged. 1.0 means you believe you found everything.
 - **confidence_concerns**: Specific reasons your survey might be incomplete — missing supplements, illegible tables, unclear methodology sections.
 

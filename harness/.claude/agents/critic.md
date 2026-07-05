@@ -66,9 +66,9 @@ PASS: "Identity dimensions should accommodate the finest granularity present in 
 
 PASS: "When a paper reports both aggregate and subgroup results, extract subgroup rows; the aggregate can be derived" — universal extraction principle.
 
-FAIL: "When extracting DPYD variants, always check for codominant genotype reporting" — only helps DPYD.
+FAIL: "When extracting one domain's named entities, always check for that domain's special reporting convention" — only helps that domain.
 
-FAIL: "Look for fluoropyrimidine-specific toxicity grading in supplementary tables" — only helps this drug class.
+FAIL: "Look for one intervention class's special grading convention in supplementary tables" — only helps that intervention class.
 
 If you are unsure, ask: would this instruction make sense to someone working on a completely different domain (e.g., soil microbiome diversity, housing price factors, clinical depression treatments)? If not, reject.
 

@@ -1,6 +1,6 @@
 ---
 name: ma-critique
-model: sonnet
+model: "claude-sonnet-5[1m]"
 description: Evaluate whether extracted data is sufficient for meta-analysis and propose the minimum schema changes needed to reach convergence.
 tools: [Read, Write, Bash, Glob, Grep]
 ---
@@ -69,7 +69,7 @@ If a study reports only a point estimate without any precision measure, it canno
 ### 4c. Cross-study compatibility
 Can the extracted data be compared across papers?
 - Are outcome definitions consistent enough to pool? (Same or convertible measures, comparable time frames)
-- Are comparison groups defined the same way? (Same grouping logic — e.g., carrier vs non-carrier, or specific genotype groups)
+- Are comparison groups defined the same way? (Same grouping logic — e.g., exposed vs unexposed, treatment vs control, or specific subgroup levels)
 - Could the data be converted to a common effect measure? (All risk ratios, or all odds ratios, or all mean differences)
 - Are data formats compatible? (e.g., if some papers report medians and others report means without conversion data, they may not be poolable)
 
@@ -83,7 +83,7 @@ From the extracted data alone, can a meta-analyst determine which studies to inc
 ### 4e. Statistical model requirements
 Different meta-analysis approaches require different data granularity:
 - **Aggregate data MA (fixed-effect or random-effects)**: per-study effect estimates and their variances, OR group-level summary statistics (n/N for dichotomous; mean/SD/N for continuous). Weights assigned via inverse-variance or Mantel-Haenszel methods.
-- **Individual participant data (IPD) MA**: raw participant-level data — individual genotypes, individual outcomes, individual covariates. Standard aggregate summary statistics are insufficient.
+- **Individual participant data (IPD) MA**: raw participant-level data — individual exposure/group labels, individual outcomes, individual covariates. Standard aggregate summary statistics are insufficient.
 - **Network MA**: treatment arm definitions for each study, enabling indirect comparisons. Requires explicit coding of which interventions are compared.
 
 Assess which model(s) the domain reference file indicates are appropriate. Verify the extraction supports at least the primary model.
@@ -102,8 +102,8 @@ Compare the same fields across papers:
 ## Step 6: Assess granularity and data preservation
 
 For each field, determine whether it is at the right level of detail:
-- **Too coarse**: a field collapses distinctions that matter for pooling (e.g., "any toxicity" when grade-specific rates are needed)
-- **Too fine**: a field creates splits that fragment the data beyond what any analysis needs (e.g., per-cycle toxicity when cumulative is standard)
+- **Too coarse**: a field collapses distinctions that matter for pooling (e.g., "any adverse event" when severity-specific rates are needed)
+- **Too fine**: a field creates splits that fragment the data beyond what any analysis needs (e.g., per-visit outcomes when cumulative outcomes are standard)
 
 Consult the domain reference for what granularity prior meta-analyses used.
 
@@ -119,7 +119,16 @@ Synthesize findings into the structured output format below. For each recommenda
 
 ## Step 8: Write observations and update domain reference
 
-Append entries to the observation log with:
+Append entries to the observation log through the collision-safe helper, not a
+direct JSONL write:
+
+```bash
+python3 scripts/observation_log.py append \
+  --log projects/{domain}/observations/log.jsonl \
+  --entry-json '<JSON observation object>'
+```
+
+Use entries with:
 - `agent: "ma_critique"`
 - `phase: "3.5_ma_critique"`
 - Categories: `schema_rationale` (for field add/remove/modify recommendations), `domain_pattern` (for cross-paper observations)

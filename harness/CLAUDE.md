@@ -4,21 +4,6 @@ You are you orchestrator for Comparanda. Your job is to improve Comparanda's
 agent instructions by running Comparanda, evaluating its output against a gold standard,
 diagnosing instruction-level problems, and applying fixes that generalize across domains.
 
-## Committing
-
-This fork uses a 2-branch model (methodology / main). All commits must route
-through the `harness-commit` wrapper, which is a `[project.scripts]` entry in
-`harness/pyproject.toml` — it lives at `harness/.venv/bin/harness-commit` and
-is **not on `$PATH`**. Invoke it with:
-
-```bash
-cd harness && uv run harness-commit -m "<message>"
-```
-
-Stage paths first, then run. The wrapper classifies staged paths as methodology
-vs domain and routes the commit. Mixed-path commits are rejected (strict mode).
-Full spec: `docs/specs/harness-commit-wrapper.md`.
-
 ## Directory Layout
 
 This harness lives as a sibling of `comparanda/` inside the monorepo. From here,
@@ -27,10 +12,9 @@ This harness lives as a sibling of `comparanda/` inside the monorepo. From here,
 ```
 harness/                      (you are here)
 ├── .claude/agents/           monitor, eval, diagnostician, critic
-├── benchmark/
-│   ├── gold_standard/        gold_standard.xlsx (symlink to local data)
-│   ├── eval_config/          paper_pmid_map.json
-│   └── MODIFICATIONS.md
+├── benchmark/                optional per-domain files in application forks
+│   ├── gold_standard/        configured gold-standard source
+│   └── eval_config/          document_id_map.json, gold_config.json, ...
 ├── iterations/               trajectory, per-iteration archives (created at runtime; gitignored)
 └── src/harness/              eval scripts, utilities
 
@@ -81,12 +65,12 @@ observation log growing, critique written).
 
 ```bash
 # CORRECT — run in background, no timeout, will be notified on completion
-cd ../comparanda && claude -p "Run 1 inner loop iteration on projects/dpyd" \
+cd ../comparanda && claude -p "Run 1 inner loop iteration on projects/<domain>" \
   --permission-mode bypassPermissions
 # (use run_in_background: true on the Bash tool call)
 
 # WRONG — will timeout and kill the process mid-run
-cd ../comparanda && claude -p "Run 1 inner loop iteration on projects/dpyd" \
+cd ../comparanda && claude -p "Run 1 inner loop iteration on projects/<domain>" \
   --permission-mode bypassPermissions \
   2>&1 | tail -30
 ```
@@ -105,7 +89,7 @@ smoke test to verify the fix landed. This is subject to strict bounds:
 - One paper, one re-extraction — never multiple papers
 - The prompt must be neutral — file paths only, no description of the fix
 - Output goes to `iterations/iter_{N}/verification/{paper_id}.jsonl`, NOT to
-  `../comparanda/projects/dpyd/extractions/`. It is a diagnostic artifact,
+  `../comparanda/projects/<domain>/extractions/`. It is a diagnostic artifact,
   not Comparanda state
 - After verification, you must still run a full inner loop to test
   generalization. The smoke test does not replace the loop
@@ -116,11 +100,11 @@ smoke test to verify the fix landed. This is subject to strict bounds:
 # Verification smoke test — output to harness iterations, not comparanda
 cd ../comparanda && claude -p \
   "Invoke @extractor to extract {paper_id}. \
-  Input file paths: Paper: projects/dpyd/data/{pdf_name}, \
-  Schema: projects/dpyd/schema/v{NNN}.yaml, \
-  Survey: projects/dpyd/surveys/{paper_id}.json, \
-  Domain ref: projects/dpyd/domain/extraction_ref.md, \
-  Observation log: projects/dpyd/observations/log.jsonl. \
+  Input file paths: Paper: projects/<domain>/data/{pdf_name}, \
+  Schema: projects/<domain>/schema/v{NNN}.yaml, \
+  Survey: projects/<domain>/surveys/{paper_id}.json, \
+  Domain ref: projects/<domain>/domain/extraction_ref.md, \
+  Observation log: projects/<domain>/observations/log.jsonl. \
   Write output to /tmp/verification_{paper_id}.jsonl." \
   --permission-mode bypassPermissions \
   2>&1 | tail -30
@@ -153,8 +137,8 @@ and where to investigate.
 
 ```bash
 uv run python -m harness.monitor \
-  --project-dir ../comparanda/projects/dpyd \
-  --session-dir ~/.claude/projects/<encoded-project-dir> \
+  --project-dir ../comparanda/projects/<domain> \
+  --session-dir ~/.claude/projects/<comparanda-session-dir> \
   --output /tmp/comparanda_monitor.log
 # (use run_in_background: true — monitor runs until you stop it)
 ```
@@ -168,7 +152,7 @@ The monitor appends events as they occur:
   description: Extract Teh 2013
   log: ~/.claude/projects/.../{session_id}/subagents/agent-a3fc7b32.jsonl
 [11:32:05] EXTRACTION: teh_2013_23942539.jsonl created (57 lines)
-[11:35:44] NORMALIZATION: variants.json created/updated
+[11:35:44] NORMALIZATION: normalization table created/updated
 [11:36:01] SUBAGENT: agent-a01d636c spawned
   type: ma-critique
   description: Phase 3.5 MA Critique
@@ -179,7 +163,7 @@ When you see these events, use the session and subagent log paths to investigate
 behavior. You know what correct behavior looks like — read the logs and verify.
 
 ### File-based monitoring (manual)
-If the monitor is not running, check these directly from `../comparanda/projects/dpyd/`:
+If the monitor is not running, check these directly from `../comparanda/projects/<domain>/`:
 - `extractions/*.jsonl` — extraction output (row counts, field coverage)
 - `normalization/*.json` — normalization tables
 - `critiques/iter_*.json` — MA Critique assessments
@@ -190,7 +174,7 @@ If the monitor is not running, check these directly from `../comparanda/projects
 ```bash
 git -C ../comparanda log --oneline -10
 git -C ../comparanda diff HEAD~1 -- .claude/agents/   # did instructions change?
-git -C ../comparanda diff HEAD~1 -- projects/dpyd/schema/  # did schema change?
+git -C ../comparanda diff HEAD~1 -- projects/<domain>/schema/  # did schema change?
 ```
 
 ### Behavior alignment verification (required after every run)
@@ -266,14 +250,14 @@ determine whether it's an instruction problem or a one-time issue, and re-run if
 
 Before running Comparanda, read the current state to understand where it is:
 
-- **Latest critique** (`../comparanda/projects/dpyd/critiques/iter_*.json`) — what did
+- **Latest critique** (`../comparanda/projects/<domain>/critiques/iter_*.json`) — what did
   MA Critique last recommend? Is it "ready" or "not ready"? What action type?
-- **Schema version** (`../comparanda/projects/dpyd/schema/v*.yaml`) — has the schema
+- **Schema version** (`../comparanda/projects/<domain>/schema/v*.yaml`) — has the schema
   been updated since the latest critique? If not and the critique recommended schema
   changes, Comparanda needs to start at Phase 4.
-- **Extractions** (`../comparanda/projects/dpyd/extractions/`) — which papers have been
+- **Extractions** (`../comparanda/projects/<domain>/extractions/`) — which papers have been
   extracted? If empty, Comparanda starts at Phase 3a with subset selection.
-- **Observation log tail** (`../comparanda/projects/dpyd/observations/log.jsonl`) — what
+- **Observation log tail** (`../comparanda/projects/<domain>/observations/log.jsonl`) — what
   was the last phase and iteration? Any reset markers?
 
 This informs your prompt. If Comparanda is mid-loop (critique exists but Phase 4 hasn't
@@ -295,10 +279,10 @@ regressions fast, detailed mode assesses whether extracted values are actually c
 ### Aggregate metrics (fast, every iteration)
 Invoke @eval in aggregate mode. Produces:
 - **Row count comparison** per paper (extracted vs gold)
-- **Variant coverage** — which gold standard variants appear in extraction
+- **Entity coverage** — which gold standard entities appear in extraction
 - **Field fill rates** — split by required vs optional fields
 - **Schema contradictions** — required fields with <100% fill (may indicate schema internal inconsistency)
-- **Normalization completeness** — which extraction rows have variant_canonical vs raw-only
+- **Normalization completeness** — which extraction rows have canonical IDs vs raw-only values for configured normalization fields
 - **Identity dimension completeness** — are all ID dims populated
 
 Aggregate mode does NOT compute finding_accuracy — that requires detailed mode.
@@ -308,10 +292,50 @@ Invoke @eval in detailed mode for:
 - Papers flagged by aggregate (CRITICAL, WARNING, normalization gaps)
 - A representative sample of papers not yet evaluated for accuracy
 
-The eval agent reads prepared comparison data (gold vs extraction rows paired
-side-by-side) and reasons about whether the extraction captured the same findings
-as the gold standard. It scores completeness and accuracy per finding with
-explanations the diagnostician can consume.
+The eval agent owns detailed eval setup. Tell it the paper id(s), iteration/run
+id, and run mode. Do not paste detailed eval methodology into the prompt.
+
+For ordinary harness calibration runs, use `outer-loop` mode:
+
+```text
+Invoke @eval: run field-level coverage eval for paper {paper_id}, iteration
+iter_{N}, run mode outer-loop. Prepare/refresh your isolated workspace, use the
+field coverage eval session registry, validate your output, update accuracy
+coverage, and report artifact paths.
+```
+
+For a one-time end-of-run accuracy check outside the calibration loop, use
+`one-shot` mode:
+
+```text
+Invoke @eval: run field-level coverage eval for paper {paper_id}, iteration
+iter_{N}, run mode one-shot. Prepare a fresh isolated workspace, validate your
+output, and report artifact paths.
+```
+
+The eval agent prepares comparison data, creates or refreshes the isolated
+workspace, reasons about whether extraction fields represent gold field-values,
+writes `field_coverage.json`, validates it, and updates eval coverage metadata.
+The orchestrator should not micromanage workbench navigation, helper scripts,
+field adjudication schema, or validation repair.
+
+### Eval resume policy (outer-loop mode)
+
+Field-level semantic eval is expensive. On subsequent iterations for a paper
+that already has a field-level eval session:
+
+1. Check `iterations/*/field_coverage_eval_sessions.json` for the latest entry
+   for that paper.
+2. If the original eval agent is resumable in the current Claude Code session,
+   resume it with `SendMessage` and pass only the new iteration id, paper id,
+   and current artifact paths. Tell it to re-read current inputs before reusing
+   prior adjudications.
+3. If the original eval agent cannot be resumed, invoke a fresh @eval agent in
+   `outer-loop` mode and point it to the prior valid field coverage artifact.
+   The eval agent will copy that prior output into its new isolated workspace as
+   `input/previous_field_coverage.json`.
+4. Never ask the orchestrator to adjudicate fields or browse old row-level eval
+   artifacts directly. The eval agent owns that scope.
 
 **Accuracy is not optional.** It is 30% of the composite signal. Skipping it
 means you are optimizing blind. Every gold standard paper must be evaluated for
@@ -329,7 +353,7 @@ this file. Check it before convergence decisions.
 composite = (
     0.4 * row_coverage          # extracted_rows / gold_rows per paper, averaged, capped at 1.0
   + 0.3 * finding_accuracy      # eval agent detailed mode score (NOT a Python formula)
-  + 0.2 * variant_coverage      # fraction of gold variants present
+  + 0.2 * entity_coverage       # fraction of gold entities present
   + 0.1 * field_fill_rate       # non-null rate for key fields
 )
 ```
@@ -375,7 +399,7 @@ Targeted re-extraction only happens as bounded verification after `fix_instructi
 ### Failure taxonomy
 | Category | Example | Fixable by harness? |
 |----------|---------|---------------------|
-| Completeness: missing variants | Gold has variant X, extraction doesn't | Maybe — depends on cause |
+| Completeness: missing entities | Gold has entity X, extraction doesn't | Maybe — depends on cause |
 | Accuracy: wrong values | Effect size doesn't match gold | Yes — extraction guidance |
 | Schema: forced compression | Identity dims too coarse for data | Yes — schema-proposer guidance |
 | Schema: missing dimension | No field for a gold standard column | Yes — schema-proposer guidance |
@@ -404,7 +428,7 @@ Multiple simultaneous changes make attribution impossible.
   "expected_impact": "what metric should improve and by how much",
   "overfitting_test": {
     "domain_independent": true,
-    "rationale": "why this generalizes beyond DPYD",
+    "rationale": "why this generalizes beyond the current domain",
     "if_domain_disappeared": "what other domains benefit"
   }
 }
@@ -459,7 +483,7 @@ After applying a fix:
 
 2. **Required: full inner loop.** Run Comparanda for 1 full inner loop iteration:
    ```bash
-   cd ../comparanda && claude -p "Run 1 inner loop iteration on projects/dpyd" \
+   cd ../comparanda && claude -p "Run 1 inner loop iteration on projects/<domain>" \
      --permission-mode bypassPermissions
    ```
    Comparanda's own loop logic (subset selection, Phase 4 schema refinement, MA Critique)
@@ -581,5 +605,5 @@ See `.claude/agents/` for definitions.
 
 - Comparanda v2 spec: `../docs/specs/comparanda-v2-spec.md`
 - Harness lessons: `../docs/specs/system2-lessons.md`
-- Gold standard: `benchmark/gold_standard/`
-- Eval config: `benchmark/eval_config/`
+- Gold standard: supplied by the per-domain fork or explicit eval CLI path
+- Eval config: supplied by the per-domain fork or explicit eval CLI path

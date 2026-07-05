@@ -1,0 +1,14 @@
+{
+  "description": "Example paper-prep subset shape for a domain fork",
+  "count": 2,
+  "papers": [
+    {
+      "pmid": 12345678,
+      "survey_key": "smith_2024_12345678"
+    },
+    {
+      "pmid": 23456789,
+      "survey_key": "jones_2025_23456789"
+    }
+  ]
+}

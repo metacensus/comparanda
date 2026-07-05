@@ -4,20 +4,20 @@ System 2 for [Comparanda](../comparanda/) — improves Comparanda's agent instru
 
 ## Domain Scope
 
-This harness instance is configured for **DPYD pharmacogenetics**. The calibration logic is domain-agnostic, but the eval infrastructure is tied to the current gold standard.
+This harness is domain-agnostic methodology. Per-domain forks provide benchmark data and eval config, either under `benchmark/` or through explicit CLI paths.
 
 | Component | Domain-specific | Reusable |
 |-----------|:-:|:-:|
-| Eval scripts (`src/harness/eval/`) | x | |
+| Eval scripts (`src/harness/eval/`) | | x |
 | Gold standard data (`benchmark/`) | x | |
 | Judge field mappings (gold column -> extraction field) | x | |
-| Variant normalization heuristics | x | |
+| Entity normalization crosswalks | x | |
 | Agent definitions (`.claude/agents/`) | | x |
 | Orchestration logic (`CLAUDE.md`) | | x |
 | Trajectory tracking | | x |
 | Overfitting test / simplicity principle | | x |
 
-To apply Comparanda to a new domain: keep the harness architecture and agents, replace the benchmark data and eval field mappings. The universal agent instructions produced by calibration carry over.
+To apply Comparanda to a domain: keep the harness architecture and agents, and provide benchmark data, document-id mappings, field mappings, and optional entity crosswalks from the application fork. The universal agent instructions produced by calibration carry over.
 
 ## Architecture
 
@@ -26,13 +26,12 @@ comparanda-harness/           (System 2)
 ├── .claude/
 │   ├── agents/               monitor, eval, diagnostician, critic
 │   └── settings.json         permissions + guard hooks
-├── benchmark/
-│   ├── gold_standard/        gold_standard.xlsx
-│   ├── eval_config/          paper_pmid_map.json
-│   └── prior_meta_analyses/  Phase 0 reference papers
+├── benchmark/                optional per-domain files in application forks
+│   ├── gold_standard/        gold-standard spreadsheets
+│   └── eval_config/          document_id_map.json, gold_config.json, ...
 ├── iterations/               trajectory.json, per-iteration archives
 ├── src/harness/eval/
-│   ├── aggregate.py          Row coverage, variant coverage, fill rates, composite score
+│   ├── aggregate.py          Row coverage, entity coverage, fill rates, composite score
 │   ├── judge.py              Finding accuracy (deterministic + optional LLM matching)
 │   ├── gold_standard.py      Gold standard loader
 │   └── trajectory.py         Iteration tracking, convergence detection
@@ -40,7 +39,7 @@ comparanda-harness/           (System 2)
 
 ../comparanda/                (System 1 — the system under calibration)
 ├── .claude/agents/           Agent definitions that System 2 modifies
-├── projects/dpyd/            Project data (extractions, schema, observations)
+├── projects/<domain>/        Project data (extractions, schema, observations)
 └── CLAUDE.md                 System 1 orchestrator
 ```
 
@@ -59,9 +58,9 @@ comparanda-harness/           (System 2)
 ```bash
 # Aggregate metrics + deterministic judge (recommended):
 uv run python -m harness.eval.aggregate \
-  --extractions-dir ../comparanda/projects/dpyd/extractions \
-  --gold-standard "benchmark/gold_standard/gold_standard.xlsx" \
-  --pmid-map benchmark/eval_config/paper_pmid_map.json \
+  --extractions-dir ../comparanda/projects/<domain>/extractions \
+  --gold-standard "benchmark/gold_standard/<gold-standard-file>.xlsx" \
+  --document-id-map benchmark/eval_config/document_id_map.json \
   --with-judge \
   --output iterations/iter_N/eval_report.json
 
@@ -69,8 +68,8 @@ uv run python -m harness.eval.aggregate \
 # Add --with-judge-llm --judge-cwd /path/to/comparanda-harness
 ```
 
-Composite score: `0.4 * row_coverage + 0.3 * finding_accuracy + 0.2 * variant_coverage + 0.1 * fill_rate`
+Composite score is emitted by the eval pipeline from row/field coverage, finding accuracy, claim faithfulness, and fill-rate surfaces.
 
 ## Guard Hooks
 
-A PreToolUse hook (`.claude/hooks/guard-comparanda.sh`) prevents System 2 from modifying any comparanda files except the universal instruction sections of `../comparanda/.claude/agents/*.md`.
+A PreToolUse hook (`.claude/hooks/harness-guardrail-comparanda-writes.sh`) prevents System 2 from modifying any comparanda files except the universal instruction sections of `../comparanda/.claude/agents/*.md`.

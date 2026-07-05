@@ -9,7 +9,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash .claude/hooks/guard-comparanda.sh",
+            "command": "bash ${CLAUDE_PROJECT_DIR}/.claude/hooks/harness-guardrail-comparanda-writes.sh",
             "timeout": 5
           }
         ]

@@ -22,8 +22,8 @@ Usage from CLI:
 
     uv run python -m harness.eval.bundle_metrics \\
         --fork-root /path/to/comparanda-<domain> \\
-        --domain dpyd \\
-        --paper-ids bozina_2022_34780066,Cremolini_2018_29487697 \\
+        --domain <domain> \\
+        --paper-ids Author_2022_0000001,Author_2018_0000002 \\
         --session-log-dir ~/.claude/projects/<encoded-cwd> \\
         --output iterations/iter_10_bundle_ab/bundle_metrics.json
 
@@ -425,7 +425,7 @@ def main() -> None:
         dest="fork_root",
         help="DEPRECATED alias for --fork-root (will be removed in a future release)",
     )
-    p.add_argument("--domain", required=True, help="Domain name (e.g. dpyd)")
+    p.add_argument("--domain", required=True, help="Domain name (the per-domain project slug)")
     p.add_argument("--paper-ids", required=True, help="Comma-separated paper IDs")
     p.add_argument(
         "--session-log-dir",

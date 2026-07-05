@@ -36,8 +36,8 @@ last_modified_iteration: 1
 identity_dimensions:
   - field: pmid
     description: "PubMed identifier"
-  - field: variant_raw
-    description: "Genetic variant as reported"
+  - field: entity_raw
+    description: "Primary entity as reported"
   - field: outcome_category
     description: "Clinical outcome measured"
   - field: comparison_group
@@ -137,7 +137,12 @@ Check that these exist:
 
 ## Inner Loop
 
-Repeat Phases 2-4 until MA Critique says "ready" or 5 iterations reached.
+Repeat Phases 2-4 until MA Critique says "ready" on the current subset. There
+is no fixed iteration cap; convergence is governed by generalization (see Phase
+5), not a hard count. If the same subset churns without progress (e.g. the
+schema oscillates or each iteration only fits one pathological paper), stop and
+escalate to a human — that is a signal of overfitting, not a reason to keep
+iterating.
 
 ### Phase 2 — Schema Proposal (first iteration only)
 
@@ -152,6 +157,7 @@ Repeat Phases 2-4 until MA Critique says "ready" or 5 iterations reached.
 1. For each paper in current subset:
    - Invoke @extractor with file paths to: bundle (`projects/<domain>/data/processed/{paper_id}/`), rich schema, domain reference. Pass file paths only — do not summarize, interpret, or pre-digest content. The extractor reads `manifest.json` and processes bundle assets per its own instructions.
    - Agent writes: `projects/<domain>/extractions/{paper_id}.jsonl`
+   - Record the returned extractor agent/subagent ID, the parent session ID if available, schema version, staging script path, and finalized JSONL path in `projects/<domain>/extractions/.staging/extractor_sessions.json` using `uv run scripts/extractor_session_registry.py upsert ...`. This registry is required for QC repair and later schema-iteration re-extraction.
    - Agent writes paper flags to observation log
 
 2. **Commit:** `"Phase 3a: Extract {N} papers ({total_rows} rows)"`
@@ -163,7 +169,14 @@ Repeat Phases 2-4 until MA Critique says "ready" or 5 iterations reached.
    - Agent writes: `projects/<domain>/extractions/{paper_id}_qc.json`
    - Agent writes QC summary to observation log
 
-2. **Read each QC report.** For any paper whose QC report recommends re-extraction (coverage gaps, compliance violations), re-invoke @extractor for that paper before proceeding. Pass the same file paths as Phase 3a — the extractor reads the QC report from the observation log. Do not embed QC findings in the extractor prompt.
+2. **Read each QC report.** Each QC report must include `action_class`, `must_fix_before_normalization`, and `repair_packet`.
+
+   - If `action_class` is `blocking_reextract` or `targeted_extraction_repair` and `must_fix_before_normalization=true`, look up the original extractor in `projects/<domain>/extractions/.staging/extractor_sessions.json`.
+   - Resume the original extractor with `SendMessage` to the recorded extractor agent ID. Pass file paths only: extraction JSONL, QC report, repair packet, current schema, bundle path, SDK contract, and existing staging script path. Do not paste the QC findings into the prompt except by giving the file paths; the resumed extractor reads the repair packet.
+   - Wait for the resumed extractor's completion/notification before deciding the repair is done. `SendMessage` may return before the resumed subagent finishes in the background.
+   - Rerun @extraction-qc for the affected paper after repair.
+   - Do not silently launch a fresh extractor for targeted repair. If the original extractor cannot be resumed, either block normalization for that paper or record a machine-readable waiver explaining why the unresolved repair is safe to carry forward.
+   - For `schema_or_normalization_note` and `nonblocking_note`, do not mutate extraction rows; carry the note forward.
 
 3. **Commit:** `"Phase 3a-QC: QC {N} papers ({gap_count} gaps, {re_extract_count} re-extractions)"`
 
@@ -200,12 +213,18 @@ Repeat Phases 2-4 until MA Critique says "ready" or 5 iterations reached.
 2. **Determine next action based on critique severity:**
 
    **Major schema change** (new identity dimensions, fields added/removed):
-   → Clear ALL extraction cache. Re-extract entire current subset.
+   → Re-extract entire current subset against the new schema, but first try to
+   resume each original extractor from `extractor_sessions.json` and have it
+   patch its existing `.staging/<paper_id>/scripts/build.py` using the schema
+   diff. Preserve prior staging scripts and session metadata for audit. If an
+   original extractor cannot be resumed, record that fact explicitly before
+   launching any replacement extractor.
    → Return to Phase 3a with same papers + updated schema.
 
    **Minor schema change** (extraction guidance updates, vocabulary fixes):
-   → Clear extraction cache for AFFECTED papers only (named in the critique).
-   → Re-extract only those papers. Keep other extractions.
+   → Re-extract only affected papers (named in the critique), preferably by
+   resuming the recorded extractor and patching its existing build script. Keep
+   other extractions.
    → Return to Phase 3a with partial re-extraction.
 
    **Schema works** (critique says "ready" or "near-ready, no structural changes needed"):
@@ -231,12 +250,25 @@ whether the schema generalizes. Do NOT expand to all papers yet.
 
 3. **Extract new subset** with the current schema. Run Phase 3a → 3a-QC → 3b → 3.5.
 
-4. **If MA Critique says "ready"** on the new subset: schema generalizes.
-   Rotate once more with different papers to confirm. After 2-3 successful
-   rotations, the schema is stable → proceed to Phase 6.
+   **Convergence rule (replaces any fixed iteration cap):** the schema is
+   stable when it survives **3 consecutive clean rotations** — three new subsets
+   in a row that need **no new structural schema change**. A *structural* change
+   is adding/removing an identity dimension or a field; vocabulary additions and
+   extraction-guidance tweaks are non-structural and do NOT reset the counter. A
+   "clean" rotation is one whose MA Critique returns "ready" (or asks only for
+   non-structural fixes). Keep a single fixed regression anchor across all
+   rotations to detect regressions.
 
-5. **If MA Critique says "not ready"**: the schema has gaps exposed by the new
-   papers. Return to Phase 4, refine, and continue the inner loop.
+4. **If the rotation is clean** (ready / non-structural only): increment the
+   consecutive-clean counter. At 3, the schema is validated → proceed to Phase 6.
+   Otherwise select another fresh subset and rotate again.
+
+5. **If the rotation needs a structural change**: reset the consecutive-clean
+   counter to 0, return to Phase 4, refine the schema, then resume rotating.
+   Distinguish a *generalizable* gap (a structural need that recurs across
+   multiple papers) from *overfitting* (a dimension demanded by a single
+   pathological paper) — defer the latter as a documented edge case rather than
+   growing the schema for one paper.
 
 **Key principle:** Previous subset extractions are development artifacts, not
 final output. Only the final full-corpus extraction (Phase 6) is the deliverable.
@@ -269,7 +301,7 @@ Once the schema is validated across multiple rotated subsets:
 4. **Commit after every phase** — git history is the audit trail
 5. **Read observation log before each phase** — maintain context across iterations
 6. **One row = one finding** — Cartesian expansion: paper × entities × outcomes × grade levels × groups
-7. **Reference/wildtype group is always a row** — not implicit background
+7. **Reference/control group is always a row** — not implicit background
 8. **Provenance on everything** — tag as `paper`, `derived`, or `external`
 9. **Always delegate to agents** — never perform extraction, normalization, survey, or critique yourself. Invoke the appropriate @agent. Each agent has specialized instructions that the orchestrator does not replicate. This applies to re-extraction as well as initial extraction.
 10. **Neutral agent prompts** — when invoking any agent, pass file paths to its inputs only. Do not summarize, interpret, or pre-digest file content in the prompt. Do not embed MA Critique findings, survey conclusions, or your own analysis into agent prompts. Each agent reads its own inputs and makes its own decisions — that is what we are testing. If the prompt tells the agent what to do, you are testing prompt compliance, not instruction quality.

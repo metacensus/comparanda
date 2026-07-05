@@ -14,7 +14,7 @@ Orchestrates, for one paper:
     3. Run status -> paper_runs/<paper>/run_status.json
 
 Per-table dispatch (smallest possible per-call context) avoids the
-32K output cap that killed Phase 4 verify-and-patch on long DPYD papers.
+32K output cap that killed Phase 4 verify-and-patch on long papers.
 See `docs/phase4_findings.md` for the trajectory + revival roadmap.
 
 Each step is idempotent. The first-pass resumes at per-table granularity
