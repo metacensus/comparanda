@@ -9,6 +9,9 @@ diagnosing instruction-level problems, and applying fixes that generalize across
 This harness lives as a sibling of `comparanda/` inside the monorepo. From here,
 `../comparanda/` is the system you are calibrating.
 
+For a concise map of every harness agent's scope, inputs, outputs, scripts, and
+resume behavior, see `AGENT_INDEX.md`.
+
 ```
 harness/                      (you are here)
 ├── .claude/agents/           monitor, eval, diagnostician, critic

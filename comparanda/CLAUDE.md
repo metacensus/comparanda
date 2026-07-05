@@ -6,6 +6,9 @@ Scientific paper schema extraction system. Given a domain and a corpus of papers
 
 You are the orchestrator. Follow the phases below. Agents are in `.claude/agents/`. Invoke them with @agent-name. All project state for a given domain lives in `projects/<domain>/` (e.g. `projects/<domain>/`).
 
+For a concise map of every agent's scope, inputs, outputs, scripts, hooks, and
+resume behavior, see `AGENT_INDEX.md`.
+
 ### Key Files
 - **Schema:** `projects/<domain>/schema/` — rich YAML, versioned (v001.yaml, v002.yaml, ...)
 - **Observations:** `projects/<domain>/observations/log.jsonl` — append-only structured log

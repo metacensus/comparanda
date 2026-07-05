@@ -30,6 +30,7 @@ comparanda-harness/           (System 2)
 │   ├── gold_standard/        gold-standard spreadsheets
 │   └── eval_config/          document_id_map.json, gold_config.json, ...
 ├── iterations/               trajectory.json, per-iteration archives
+├── AGENT_INDEX.md            agent scopes, file contracts, scripts, resume behavior
 ├── src/harness/eval/
 │   ├── aggregate.py          Row coverage, identity-match coverage, fill rates, composite score
 │   ├── judge.py              Finding accuracy (deterministic + optional LLM matching)
