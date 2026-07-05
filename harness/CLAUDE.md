@@ -279,7 +279,9 @@ regressions fast, detailed mode assesses whether extracted values are actually c
 ### Aggregate metrics (fast, every iteration)
 Invoke @eval in aggregate mode. Produces:
 - **Row count comparison** per paper (extracted vs gold)
-- **Entity coverage** — which gold standard entities appear in extraction
+- **Field-value recoverability** — which gold-standard field values are
+  recoverable from the extraction, including direct and accepted partial/lossy
+  representations
 - **Field fill rates** — split by required vs optional fields
 - **Schema contradictions** — required fields with <100% fill (may indicate schema internal inconsistency)
 - **Normalization completeness** — which extraction rows have canonical IDs vs raw-only values for configured normalization fields
@@ -353,7 +355,8 @@ this file. Check it before convergence decisions.
 composite = (
     0.4 * row_coverage          # extracted_rows / gold_rows per paper, averaged, capped at 1.0
   + 0.3 * finding_accuracy      # eval agent detailed mode score (NOT a Python formula)
-  + 0.2 * entity_coverage       # fraction of gold entities present
+  + 0.2 * field_value_recoverability_rate
+                                  # gold field values recoverable from extraction
   + 0.1 * field_fill_rate       # non-null rate for key fields
 )
 ```

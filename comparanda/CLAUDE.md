@@ -169,13 +169,14 @@ iterating.
    - Agent writes: `projects/<domain>/extractions/{paper_id}_qc.json`
    - Agent writes QC summary to observation log
 
-2. **Read each QC report.** Each QC report must include `action_class`, `must_fix_before_normalization`, and `repair_packet`.
+2. **Parse each QC report's structured action fields only.** Each QC report must include `action_class`, `must_fix_before_normalization`, and `repair_packet`. Do not read or interpret the full QC prose to decide what to do; the QC agent owns that judgment. The current action classes are exactly: `blocking_reextract`, `targeted_extraction_repair`, `schema_or_normalization_note`, and `nonblocking_note`.
 
    - If `action_class` is `blocking_reextract` or `targeted_extraction_repair` and `must_fix_before_normalization=true`, look up the original extractor in `projects/<domain>/extractions/.staging/extractor_sessions.json`.
-   - Resume the original extractor with `SendMessage` to the recorded extractor agent ID. Pass file paths only: extraction JSONL, QC report, repair packet, current schema, bundle path, SDK contract, and existing staging script path. Do not paste the QC findings into the prompt except by giving the file paths; the resumed extractor reads the repair packet.
+   - You MUST first resume the original extractor with `SendMessage` to the recorded extractor agent ID. Pass file paths only: extraction JSONL, QC report, repair packet, current schema, bundle path, SDK contract, and existing staging script path. Do not paste the QC findings into the prompt except by giving the file paths; the resumed extractor reads the repair packet.
    - Wait for the resumed extractor's completion/notification before deciding the repair is done. `SendMessage` may return before the resumed subagent finishes in the background.
+   - If resume fails, retry resume up to 2 more times with the same file-path-only packet and record each failed attempt in `extractor_sessions.json` or the observation log.
+   - If all resume attempts fail, instantiate a NEW extractor for that paper with the same file-path-only repair inputs and a new staging script path. Record the new extractor agent/subagent ID and mark that the original session could not be resumed. Do not use `continue` as the repair fallback.
    - Rerun @extraction-qc for the affected paper after repair.
-   - Do not silently launch a fresh extractor for targeted repair. If the original extractor cannot be resumed, either block normalization for that paper or record a machine-readable waiver explaining why the unresolved repair is safe to carry forward.
    - For `schema_or_normalization_note` and `nonblocking_note`, do not mutate extraction rows; carry the note forward.
 
 3. **Commit:** `"Phase 3a-QC: QC {N} papers ({gap_count} gaps, {re_extract_count} re-extractions)"`
@@ -210,27 +211,24 @@ iterating.
    - Writes new schema version: `v001.yaml` → `v002.yaml`
    - Logs `schema_rationale` entries to observation log for every change
 
-2. **Determine next action based on critique severity:**
+2. **Follow the critique's structured `recommended_action`.** Do not infer
+   re-extraction scope from critique prose. The MA Critique output must include
+   `recommended_action.type`, `recommended_action.papers_to_reextract`, and
+   `recommended_action.extraction_cache_action`; the orchestrator follows those
+   fields mechanically.
 
-   **Major schema change** (new identity dimensions, fields added/removed):
-   → Re-extract entire current subset against the new schema, but first try to
-   resume each original extractor from `extractor_sessions.json` and have it
-   patch its existing `.staging/<paper_id>/scripts/build.py` using the schema
-   diff. Preserve prior staging scripts and session metadata for audit. If an
-   original extractor cannot be resumed, record that fact explicitly before
-   launching any replacement extractor.
-   → Return to Phase 3a with same papers + updated schema.
-
-   **Minor schema change** (extraction guidance updates, vocabulary fixes):
-   → Re-extract only affected papers (named in the critique), preferably by
-   resuming the recorded extractor and patching its existing build script. Keep
-   other extractions.
-   → Return to Phase 3a with partial re-extraction.
-
-   **Schema works** (critique says "ready" or "near-ready, no structural changes needed"):
-   → Rotate subset (invoke @subset-selector for new 3-4 papers).
-   → Return to Phase 3a with new papers + current schema.
-   → This tests whether the schema generalizes beyond the current subset.
+   - `major_schema_change`: re-extract the entire current subset against the new
+     schema. Resume each original extractor from `extractor_sessions.json` when
+     possible and have it patch its existing `.staging/<paper_id>/scripts/build.py`
+     using the schema diff. If resume fails after the required retries, launch a
+     replacement extractor and record the new session metadata.
+   - `minor_guidance_update`: apply the updated vocabulary/extraction guidance
+     to the schema, then re-extract only `papers_to_reextract`. Resume the
+     recorded extractor first; if resume fails after retries, launch a new
+     extractor for the affected paper. Keep other extractions.
+   - `rotate_subset`: rotate subset with @subset-selector for new 3-4 papers and
+     return to Phase 3a with new papers + current schema. This tests whether the
+     schema generalizes beyond the current subset.
 
 3. **Commit:** `"Phase 4: Schema v{N} → v{N+1} — {changes}, {action taken}"`
 
@@ -253,14 +251,17 @@ whether the schema generalizes. Do NOT expand to all papers yet.
    **Convergence rule (replaces any fixed iteration cap):** the schema is
    stable when it survives **3 consecutive clean rotations** — three new subsets
    in a row that need **no new structural schema change**. A *structural* change
-   is adding/removing an identity dimension or a field; vocabulary additions and
-   extraction-guidance tweaks are non-structural and do NOT reset the counter. A
-   "clean" rotation is one whose MA Critique returns "ready" (or asks only for
-   non-structural fixes). Keep a single fixed regression anchor across all
-   rotations to detect regressions.
+   is adding/removing an identity dimension or a field. Vocabulary additions and
+   extraction-guidance tweaks are non-structural and do NOT reset the counter,
+   but they still MUST be folded into the next schema version and applied to any
+   affected re-extractions named by MA Critique. Non-structural means "does not
+   reset the counter," not "ignore or defer the fix." A "clean" rotation is one
+   whose MA Critique returns "ready" or asks only for non-structural fixes. Keep
+   a single fixed regression anchor across all rotations to detect regressions.
 
-4. **If the rotation is clean** (ready / non-structural only): increment the
-   consecutive-clean counter. At 3, the schema is validated → proceed to Phase 6.
+4. **If the rotation is clean** (ready / non-structural only): apply any
+   non-structural schema updates, then increment the consecutive-clean counter.
+   At 3, the schema is validated → proceed to Phase 6.
    Otherwise select another fresh subset and rotate again.
 
 5. **If the rotation needs a structural change**: reset the consecutive-clean

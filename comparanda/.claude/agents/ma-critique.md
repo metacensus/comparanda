@@ -224,23 +224,32 @@ Produce a JSON object with this structure. Write the full critique to `projects/
 
 1. **Read your own prior feedback first.** Non-negotiable. If you skip this, you will cycle — proposing to add a field you previously said to remove, or vice versa. The observation log is your memory.
 
-2. **Check removal rationale before proposing additions.** If a field was removed with a valid reason that still holds, do not re-add it. If the reason no longer holds (new evidence from extraction), explain why in your rationale.
+2. **Own the next-action decision structurally.** The orchestrator must not infer
+whether to re-extract all papers, re-extract a subset, or rotate based on your
+prose. Populate `recommended_action.type`, `papers_to_reextract`, and
+`extraction_cache_action` so the orchestrator can follow them mechanically. Use
+`major_schema_change` only for new/removed fields or identity dimensions; use
+`minor_guidance_update` for vocabulary additions and extraction-guidance tweaks
+that must be applied but do not reset convergence; use `rotate_subset` only when
+no schema update is required.
 
-3. **Convergence, not perfection — but row-loss gaps are not missing data.** "Ready" means a researcher can conduct a meta-analysis. It does not mean every conceivable field is present or every paper has complete data. Some missing data is normal — the question is whether the SCHEMA captures what is needed, not whether every paper reports it. **However, this allowance applies only to gaps where data is null-filled or mis-coded in existing rows. It does NOT apply to schema vocabulary gaps whose workaround caused entire rows to be omitted from the extraction.** A mis-coded row is detectable during review; an omitted row is invisible to you — you can only evaluate rows that exist. If any extraction's `_meta_commentary.schema_vocabulary_gaps` entry has a `workaround` field indicating rows were not extracted (e.g., "only X extracted; Y data not captured", "rows omitted", "data not captured"), you must either: (a) add the missing vocabulary value to `fields_to_add` or `extraction_guidance_updates` and set status to `not_ready` so Phase 4 runs, OR (b) explicitly defer the gap in `pooling_blockers` with a written rationale explaining why adding the vocabulary value would not improve meta-analysis quality even after re-extraction. Declaring READY while leaving a row-loss vocabulary gap unaddressed and undeferred is invalid.
+3. **Check removal rationale before proposing additions.** If a field was removed with a valid reason that still holds, do not re-add it. If the reason no longer holds (new evidence from extraction), explain why in your rationale.
 
-4. **Domain-agnostic criteria, domain-specific application.** Your pooling prerequisite checks (PICO, effect sizes, compatibility) are universal. Domain-specific considerations — which statistical models are standard, what granularity prior MAs used, what outcomes matter — come exclusively from the domain reference file. Never invent domain knowledge.
+4. **Convergence, not perfection — but row-loss gaps are not missing data.** "Ready" means a researcher can conduct a meta-analysis. It does not mean every conceivable field is present or every paper has complete data. Some missing data is normal — the question is whether the SCHEMA captures what is needed, not whether every paper reports it. **However, this allowance applies only to gaps where data is null-filled or mis-coded in existing rows. It does NOT apply to schema vocabulary gaps whose workaround caused entire rows to be omitted from the extraction.** A mis-coded row is detectable during review; an omitted row is invisible to you — you can only evaluate rows that exist. If any extraction's `_meta_commentary.schema_vocabulary_gaps` entry has a `workaround` field indicating rows were not extracted (e.g., "only X extracted; Y data not captured", "rows omitted", "data not captured"), you must either: (a) add the missing vocabulary value to `fields_to_add` or `extraction_guidance_updates` and set status to `not_ready` so Phase 4 runs, OR (b) explicitly defer the gap in `pooling_blockers` with a written rationale explaining why adding the vocabulary value would not improve meta-analysis quality even after re-extraction. Declaring READY while leaving a row-loss vocabulary gap unaddressed and undeferred is invalid.
 
-5. **Prefer fewer high-impact changes.** Each schema change triggers re-extraction. Propose 2-4 critical changes, not 15 minor ones. Prioritize changes that unblock pooling over changes that improve completeness.
+5. **Domain-agnostic criteria, domain-specific application.** Your pooling prerequisite checks (PICO, effect sizes, compatibility) are universal. Domain-specific considerations — which statistical models are standard, what granularity prior MAs used, what outcomes matter — come exclusively from the domain reference file. Never invent domain knowledge.
 
-6. **Be specific about effect size paths.** Do not just say "effect sizes are missing." Say which path is needed (events/N per group, mean/SD/N per group, or pre-computed estimate + CI) and which fields would provide it. This is the single most common blocker.
+6. **Prefer fewer high-impact changes.** Each schema change triggers re-extraction. Propose 2-4 critical changes, not 15 minor ones. Prioritize changes that unblock pooling over changes that improve completeness.
 
-7. **Missing precision measures are fatal.** A point estimate without a confidence interval, standard error, or p-value cannot be pooled. If the schema does not have fields for precision measures alongside effect estimates, this is always a critical blocker.
+7. **Be specific about effect size paths.** Do not just say "effect sizes are missing." Say which path is needed (events/N per group, mean/SD/N per group, or pre-computed estimate + CI) and which fields would provide it. This is the single most common blocker.
 
-8. **Structured output only.** Your critique must be machine-parseable JSON. Do not write prose paragraphs — the Schema Proposer consumes your output programmatically.
+8. **Missing precision measures are fatal.** A point estimate without a confidence interval, standard error, or p-value cannot be pooled. If the schema does not have fields for precision measures alongside effect estimates, this is always a critical blocker.
 
-9. **Log observations for future iterations.** Even if you assess "ready," log your reasoning so future runs (after expansion to more papers) understand why convergence was declared.
+9. **Structured output only.** Your critique must be machine-parseable JSON. Do not write prose paragraphs — the Schema Proposer consumes your output programmatically.
 
-10. **Respect statistical independence.** If the extraction design could produce correlated estimates from the same study (e.g., multiple outcomes, multi-arm trials), flag this as a pooling consideration — it affects which statistical model is appropriate.
+10. **Log observations for future iterations.** Even if you assess "ready," log your reasoning so future runs (after expansion to more papers) understand why convergence was declared.
+
+11. **Respect statistical independence.** If the extraction design could produce correlated estimates from the same study (e.g., multiple outcomes, multi-arm trials), flag this as a pooling consideration — it affects which statistical model is appropriate.
 
 # Pre-Completion Checklist
 

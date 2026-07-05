@@ -125,8 +125,9 @@ def _composite_lines(score: dict) -> list[str]:
             f"degraded mode that cannot support convergence."
         )
     out.append(
-        f"Components: row_coverage {score.get('row_coverage')}, entity_coverage "
-        f"{score.get('entity_coverage')}, field_fill_rate {score.get('field_fill_rate')}."
+        f"Components: row_coverage {score.get('row_coverage')}, "
+        f"field_value_recoverability_rate {score.get('field_value_recoverability_rate')}, "
+        f"field_fill_rate {score.get('field_fill_rate')}."
     )
     if score.get("convergence_eligible"):
         out.append("This iteration is **convergence-eligible** (all code-checked clauses hold).")

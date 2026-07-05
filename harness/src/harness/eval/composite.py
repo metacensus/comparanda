@@ -5,7 +5,7 @@ computed *by the eval LLM agent*, which also emitted `agent_adjusted`
 overrides of its own structural inputs — a closed self-grading loop. This
 module computes the composite deterministically in Python from:
 
-  - structural metrics (row/entity coverage, fill rate)   — always available
+  - structural metrics (row/identity coverage, fill rate) — always available
   - finding_accuracy                                       — LLM detailed mode
   - a deterministic value-mismatch count                  — value_diff.py
 

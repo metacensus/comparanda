@@ -14,7 +14,10 @@ def test_qc_repair_uses_resume_not_fresh_reinvoke() -> None:
 
     assert "SendMessage" in qc_section
     assert "extractor_sessions.json" in qc_section
-    assert "Do not silently launch a fresh extractor" in qc_section
+    assert "You MUST first resume the original extractor" in qc_section
+    assert "retry resume up to 2 more times" in qc_section
+    assert "instantiate a NEW extractor" in qc_section
+    assert "Do not use `continue` as the repair fallback" in qc_section
     assert "re-invoke @extractor" not in qc_section
 
 

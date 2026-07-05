@@ -40,7 +40,7 @@ Before you can diagnose whether a problem needs System 2 intervention, you need 
 Before analysis, locate and read these files:
 
 1. **System 2 lessons** — `../docs/specs/system2-lessons.md`. Read this FIRST. These are previously diagnosed patterns. Do not re-diagnose known issues; reference them instead.
-2. **Eval report** — `iterations/iter_{N}/eval_report.json`. Contains per-paper metrics: row counts, entity coverage, outcome coverage, field fill rates, composite score, and any detailed mode findings with explanations.
+2. **Eval report** — `iterations/iter_{N}/eval_report.json`. Contains per-paper metrics: row counts, field-value recoverability or identity-match coverage, outcome coverage, field fill rates, composite score, and any detailed mode findings with explanations.
 3. **System 1 agent instruction files** — `../comparanda/.claude/agents/*.md`. Read the specific agent's file when you suspect it is the root cause. Also read when determining whether an instruction already exists for the issue you're diagnosing.
 4. **Observation log** — `../comparanda/projects/<domain>/observations/log.jsonl`. Structured log of what happened during extraction — agent observations, schema rationale, paper flags, extraction difficulties, normalization disputes.
 5. **Current schema** — `../comparanda/projects/<domain>/schema/v*.yaml`. The schema that was active during the evaluated extraction run. Check extraction_guidance and required status for relevant fields.

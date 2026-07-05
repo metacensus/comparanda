@@ -559,7 +559,7 @@ def format_report(eval_result: AggregateEval) -> str:
     lines.append(f"Papers evaluated: {len(eval_result.papers)}")
     lines.append(f"Total rows: {eval_result.total_extracted_rows} extracted / {eval_result.total_gold_rows} gold ({eval_result.overall_row_coverage:.0%})")
     lines.append(f"Mean row coverage: {eval_result.mean_row_coverage:.0%}")
-    lines.append(f"Mean entity coverage: {eval_result.mean_entity_coverage:.0%}")
+    lines.append(f"Mean identity-match coverage: {eval_result.mean_entity_coverage:.0%}")
     lines.append(f"Finding accuracy: NOT EVALUATED (requires eval agent detailed mode)")
     lines.append(f"Aggregate composite: {eval_result.composite_score:.3f} "
                  f"(aggregate-only, capped at 0.50 — excludes finding_accuracy)")
