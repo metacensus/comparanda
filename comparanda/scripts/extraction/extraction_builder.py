@@ -56,13 +56,30 @@ def _meta_path(staging: Path) -> Path:
     return path
 
 
-def _write_report(staging: Path, name: str, failures: list[ev.Failure]) -> None:
+def _report_context(staging: Path, name: str, rows_path: Path | None = None) -> dict[str, str]:
+    context = {
+        "label": name,
+        "report_path": str(staging / "validation" / f"{name}.validate.json"),
+    }
+    if rows_path is not None:
+        context["rows_path"] = str(rows_path)
+    return context
+
+
+def _write_report(
+    staging: Path,
+    name: str,
+    failures: list[ev.Failure],
+    *,
+    rows_path: Path | None = None,
+) -> None:
     validation_dir = staging / "validation"
     validation_dir.mkdir(parents=True, exist_ok=True)
+    context = _report_context(staging, name, rows_path)
     (validation_dir / f"{name}.validate.json").write_text(
-        json.dumps(ev.failure_report(failures), indent=2, ensure_ascii=False)
+        json.dumps(ev.failure_report(failures, context=context), indent=2, ensure_ascii=False)
     )
-    text = ev.render_failures(failures) if failures else "ok\n"
+    text = ev.render_failures(failures, context=context) if failures else "ok\n"
     (validation_dir / f"{name}.validate.txt").write_text(text)
 
 
@@ -87,7 +104,8 @@ def cmd_init(args: argparse.Namespace) -> int:
 
 def cmd_validate(args: argparse.Namespace) -> int:
     staging = _staging_dir(args.project, args.paper_id, args.staging_dir)
-    rows_payload = _read_json(_rows_path(staging))
+    rows_path = _rows_path(staging)
+    rows_payload = _read_json(rows_path)
     meta_payload = _read_json(_meta_path(staging))
     failures = core.validate_iter1(
         schema_path=args.schema,
@@ -95,9 +113,15 @@ def cmd_validate(args: argparse.Namespace) -> int:
         rows_payload=rows_payload,
         meta_payload=meta_payload,
     )
-    _write_report(staging, "final", failures)
+    _write_report(staging, "final", failures, rows_path=rows_path)
     if failures:
-        print(ev.render_failures(failures), file=sys.stderr)
+        print(
+            ev.render_failures(
+                failures,
+                context=_report_context(staging, "final", rows_path),
+            ),
+            file=sys.stderr,
+        )
         return 3
     print(f"[extraction_builder validate] ok: {staging}", file=sys.stderr)
     return 0
@@ -109,7 +133,8 @@ def cmd_validate_chunk(args: argparse.Namespace) -> int:
     if not matches:
         print(f"chunk rows file not found for {args.chunk!r} under {staging / 'chunks'}", file=sys.stderr)
         return 2
-    rows_payload = _read_json(matches[0])
+    rows_path = matches[0]
+    rows_payload = _read_json(rows_path)
     meta_payload = _read_json(_meta_path(staging))
     failures = core.validate_iter1(
         schema_path=args.schema,
@@ -117,9 +142,15 @@ def cmd_validate_chunk(args: argparse.Namespace) -> int:
         rows_payload=rows_payload,
         meta_payload=meta_payload,
     )
-    _write_report(staging, args.chunk, failures)
+    _write_report(staging, args.chunk, failures, rows_path=rows_path)
     if failures:
-        print(ev.render_failures(failures), file=sys.stderr)
+        print(
+            ev.render_failures(
+                failures,
+                context=_report_context(staging, args.chunk, rows_path),
+            ),
+            file=sys.stderr,
+        )
         return 3
     print(f"[extraction_builder validate-chunk] ok: {matches[0]}", file=sys.stderr)
     return 0
@@ -138,13 +169,13 @@ def cmd_finalize(args: argparse.Namespace) -> int:
             meta_file=meta,
         )
     except core.ExtractionValidationError as e:
-        _write_report(staging, "final", e.failures)
+        _write_report(staging, "final", e.failures, rows_path=rows)
         print(str(e), file=sys.stderr)
         return 3
     except core.ExtractionCoreError as e:
         print(str(e), file=sys.stderr)
         return 2
-    _write_report(staging, "final", [])
+    _write_report(staging, "final", [], rows_path=rows)
     print(result.success_marker(), file=sys.stderr)
     return 0
 

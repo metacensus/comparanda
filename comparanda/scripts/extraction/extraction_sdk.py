@@ -624,16 +624,48 @@ class ExtractionBuilder:
         *,
         chunks: list[str] | None = None,
         write_report: bool = True,
-    ) -> list[ev.Failure]:
+    ) -> ev.FailureList:
         payload = self._rows_payload_for_chunks(chunks)
         bundle = ev.BundleSources.load(self.bundle_dir)
         failures = ev.validate_rows_payload(
             payload, schema=self.schema, bundle=bundle, mode="iter1"
         )
         failures += ev.validate_meta_payload(self._meta, mode="iter1")
+        context = self._validation_report_context(chunks=chunks)
+        failure_list = ev.FailureList(failures, report_context=context)
         if write_report:
-            self._write_validation_report(failures, chunks=chunks)
-        return failures
+            self._write_validation_report(failure_list, chunks=chunks)
+        return failure_list
+
+    def _safe_chunk_label(self, label: str) -> str:
+        return re.sub(r"[^A-Za-z0-9_.-]+", "_", label).strip("_") or "chunk"
+
+    def _chunk_rows_path(self, chunk_name: str) -> Path | None:
+        names = list(self._chunks.keys())
+        if chunk_name not in self._chunks:
+            return None
+        index = names.index(chunk_name)
+        safe_name = self._safe_chunk_label(chunk_name)
+        return self.staging_dir / "chunks" / f"{index:03d}_{safe_name}.rows.json"
+
+    def _validation_report_context(
+        self,
+        *,
+        chunks: list[str] | None = None,
+    ) -> dict[str, str]:
+        label = "final" if chunks is None else "_".join(chunks)
+        safe_label = self._safe_chunk_label(label)
+        context: dict[str, str] = {
+            "label": label,
+            "report_path": str(self.staging_dir / "validation" / f"{safe_label}.validate.json"),
+        }
+        if chunks is None:
+            context["rows_path"] = str(self.staging_dir / "expanded" / "rows.expanded.json")
+        elif len(chunks) == 1:
+            rows_path = self._chunk_rows_path(chunks[0])
+            if rows_path is not None:
+                context["rows_path"] = str(rows_path)
+        return context
 
     def _write_validation_report(
         self,
@@ -644,12 +676,17 @@ class ExtractionBuilder:
         validation_dir = self.staging_dir / "validation"
         validation_dir.mkdir(parents=True, exist_ok=True)
         label = "final" if chunks is None else "_".join(chunks)
-        safe_label = re.sub(r"[^A-Za-z0-9_.-]+", "_", label).strip("_") or "chunk"
-        report = ev.failure_report(failures)
-        (validation_dir / f"{safe_label}.validate.json").write_text(
+        safe_label = self._safe_chunk_label(label)
+        report_path = validation_dir / f"{safe_label}.validate.json"
+        context = self._validation_report_context(chunks=chunks)
+        context["report_path"] = str(report_path)
+        report = ev.failure_report(failures, context=context)
+        report_path.write_text(
             json.dumps(report, indent=2, ensure_ascii=False)
         )
-        text = ev.render_failures(failures) if failures else "ok\n"
+        if isinstance(failures, ev.FailureList):
+            failures.report_context = context
+        text = ev.render_failures(failures, context=context) if failures else "ok\n"
         (validation_dir / f"{safe_label}.validate.txt").write_text(text)
 
     def finalize(self, out_path: str | Path) -> core.FinalizationResult:

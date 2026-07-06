@@ -233,6 +233,21 @@ def test_derived_arithmetic_requires_source_components(tmp_path: Path) -> None:
         failures = chunk.validate()
 
     assert any(f.code == "missing_source_components" for f in failures)
+    rendered = str(failures)
+    assert "hint=DERIVED_COMPONENTS" in rendered
+    assert "Rows file:" in rendered
+    assert "Machine report:" in rendered
+    report_path = (
+        project
+        / "extractions"
+        / ".staging"
+        / "paper_1"
+        / "validation"
+        / "results.validate.json"
+    )
+    report = json.loads(report_path.read_text())
+    assert report["groups"][0]["hint_code"] == "DERIVED_COMPONENTS"
+    assert report["context"]["rows_path"].endswith("000_results.rows.json")
 
 
 def test_derived_prose_arithmetic_requires_source_components(tmp_path: Path) -> None:

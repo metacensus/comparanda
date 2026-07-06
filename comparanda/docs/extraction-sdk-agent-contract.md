@@ -300,23 +300,99 @@ large monolithic payload at the end.
 
 ## Validator Failure Meanings
 
+Validation output is intentionally compact. Repair from the grouped clusters
+first; open the machine-readable validation JSON or staged rows JSON only when
+the cluster does not give enough row/field/source context.
+
+The compact report includes:
+
+- `Rows file`: the staged rows payload whose zero-based indexes are shown in
+  the clusters.
+- `Machine report`: the grouped JSON report for targeted inspection.
+- `hint=<CODE>`: a stable hint code. Definitions are below so reports do not
+  repeat long guidance on every failure.
+
+Hint codes:
+
+- `PROV_LITERAL`: `paper(...)` means the field value must appear literally in
+  the cited quote or anchored table cell. If the value is not literal, either
+  cite a source that contains it, use `null(...)` when the paper truly does not
+  report a value for this field, use `derived(...)` for a non-null schema label,
+  sentinel, composed label, or calculated value supported by sources, use
+  `inferred(...)` for a contextual judgment that is not mechanically derived,
+  or use `not_applicable(...)` only for the schema sentinel `"not_applicable"`.
+- `DERIVED_COMPONENTS`: a derived arithmetic/component value needs
+  `source_components` for each source-supported operand. Use this for
+  calculated values, complements, sums, percentages, denominators, and composed
+  values whose parts must be audited.
+- `SOURCE_COMPONENT_LITERAL`: each `source_component.value` must appear in its
+  own cited component quote or table cell. Fix by citing the component source
+  that contains the operand, changing the component value, or removing an
+  unsupported component.
+- `CELL_ANCHOR`: table-sourced values need a resolvable row/column anchor, and
+  the anchored row/cell must contain the claimed value or operand. Fix the row
+  label, column label, source table, or source span.
+- `QUOTE_LOCATION`: the quote or pattern is not found at the cited location, or
+  exists elsewhere. Use exact text from the intended source, change the
+  location, or use the SDK quote-location hint to find the right file.
+- `NULL_SHAPE`: JSON `null` values should not carry paper/derived provenance.
+  Use `null(reason)` for unreported values, `abstained(...)` for unreadable
+  reported values, and non-null `derived(...)`/`inferred(...)` sentinels only
+  when the schema expects an actual string value.
+
 - `quote_not_at_location`: the quote exists elsewhere or not at all. Use the
   cited location named by the validator, or replace the quote with exact text
   from the intended source.
 - `quote_not_in_bundle`: the quote is not in the corpus text. Re-read the
   bundle source and replace it; do not paraphrase as a quote.
 - `value_not_in_quote`: `paper(...)` claims a value that the quote does not
-  contain. Use a shorter quote that contains the value, or switch to
-  `derived(...)` with sourced components if the value is calculated/composed.
+  contain. Follow `PROV_LITERAL`.
 - `cell_anchor_missing`, `cell_row_not_found`, `cell_column_not_found`: table
-  evidence needs a resolvable row and column anchor.
+  evidence needs a resolvable row and column anchor. Follow `CELL_ANCHOR`.
 - `missing_source_components`: an arithmetic or prose-arithmetic
-  `derived(...)` field needs
-  component operands.
+  `derived(...)` field needs component operands. Follow `DERIVED_COMPONENTS`.
 - `source_component_value_not_in_quote`: a component value is not in its own
-  component quote. Cite the operand's actual source.
+  component quote. Follow `SOURCE_COMPONENT_LITERAL`.
 - `derived_operand_missing_component`: a number in the derivation expression is
-  missing from `source_components`.
+  missing from `source_components`. Follow `DERIVED_COMPONENTS`.
+
+### Efficient Validation Queries
+
+Use Python for targeted inspection. Do not read a whole large JSON artifact
+unless the compact report is insufficient.
+
+Show grouped validation failures:
+
+```bash
+python3 - <<'PY'
+import json
+d = json.load(open("projects/<domain>/extractions/.staging/<paper>/validation/<name>.validate.json"))
+print(d["failure_count"], d["by_code"])
+for g in d["groups"][:10]:
+    print(g["code"], g.get("hint_code"), g["field"], g["row_ranges"], g["summary"])
+PY
+```
+
+Show staged rows by index:
+
+```bash
+python3 - <<'PY'
+import json
+rows = json.load(open("projects/<domain>/extractions/.staging/<paper>/chunks/<chunk>.rows.json"))["rows"]
+for i in [0, 1, 2]:
+    print("ROW", i)
+    for entry in rows[i]["fields"]:
+        if entry["name"] in {"variant_raw", "grade_threshold", "effect_type", "n_events"}:
+            print(entry["name"], json.dumps(entry, ensure_ascii=False)[:800])
+PY
+```
+
+Find the relevant build-script region:
+
+```bash
+grep -n "with b.chunk(\"<chunk_name>\")" projects/<domain>/extractions/.staging/<paper>/scripts/build.py
+grep -n "\"<field_name>\"" projects/<domain>/extractions/.staging/<paper>/scripts/build.py
+```
 
 ## Repair Or Re-Extraction Scope
 

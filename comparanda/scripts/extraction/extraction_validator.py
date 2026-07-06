@@ -91,6 +91,31 @@ class Failure:
         return f"[{self.code}] {self.location}: {self.detail}"
 
 
+class FailureList(list["Failure"]):
+    """List-like validation failures that render as the compact report.
+
+    Extractor build scripts often do ``raise SystemExit(f"... {failures}")``
+    after calling ``chunk.validate()``.  A normal list repr dumps every
+    dataclass instance; this preserves list behavior while making those legacy
+    string paths use the grouped, token-efficient report.
+    """
+
+    def __init__(
+        self,
+        failures: list["Failure"] | None = None,
+        *,
+        report_context: dict[str, Any] | None = None,
+    ):
+        super().__init__(failures or [])
+        self.report_context = report_context or {}
+
+    def __str__(self) -> str:
+        return render_failures(self, context=self.report_context)
+
+    def __repr__(self) -> str:
+        return str(self)
+
+
 @dataclass
 class Schema:
     version: str
@@ -1664,6 +1689,36 @@ def _summarize_detail(code: str, detail: str) -> str:
     return _shorten(detail, limit=220)
 
 
+def hint_code_for_failure(code: str, detail: str = "") -> str | None:
+    if code == "value_not_in_quote":
+        return "PROV_LITERAL"
+    if code in {
+        "missing_source_components",
+        "derived_operand_missing_component",
+        "bad_source_components",
+        "bad_source_component",
+        "duplicate_source_component_label",
+        "source_components_on_nonderived",
+    }:
+        return "DERIVED_COMPONENTS"
+    if code.startswith("source_component_"):
+        return "SOURCE_COMPONENT_LITERAL"
+    if code.startswith("cell_"):
+        return "CELL_ANCHOR"
+    if code in {
+        "quote_not_at_location",
+        "quote_not_in_bundle",
+        "prior_quote_not_in_bundle",
+        "location_not_a_bundle_file",
+    }:
+        return "QUOTE_LOCATION"
+    if code == "shape_error" and "null" in detail.lower():
+        return "NULL_SHAPE"
+    if code in {"abstention_missing_source", "abstention_bad_source"}:
+        return "NULL_SHAPE"
+    return None
+
+
 def _render_failure_group(failures: list[Failure]) -> str:
     first = failures[0]
     field_match = _FIELD_RE.search(first.location)
@@ -1678,18 +1733,48 @@ def _render_failure_group(failures: list[Failure]) -> str:
     ]
     row_part = f"rows[{_compact_ranges(rows)}]" if rows else "rows[n/a]"
     count_part = f"{len(failures)} occurrence(s)"
+    hint = hint_code_for_failure(first.code, first.detail)
+    hint_part = f" hint={hint}" if hint else ""
     return (
         f"[{first.code}] {row_part} field={field} sources[{source}]: "
-        f"{count_part}; {_summarize_detail(first.code, first.detail)}"
+        f"{count_part};{hint_part} {_summarize_detail(first.code, first.detail)}"
     )
 
 
-def render_failures(failures: list[Failure], *, max_shown: int = 12) -> str:
+def _render_report_context(context: dict[str, Any] | None) -> list[str]:
+    if not context:
+        return []
+    lines: list[str] = []
+    label = context.get("label")
+    if label:
+        lines.append(f"Validation target: {label}")
+    rows_path = context.get("rows_path")
+    if rows_path:
+        lines.append(f"Rows file: {rows_path}")
+    report_path = context.get("report_path")
+    if report_path:
+        lines.append(f"Machine report: {report_path}")
+    if rows_path:
+        lines.append("Rows are zero-based indexes within the rows file above.")
+    elif label:
+        lines.append("Rows are zero-based indexes within the submitted rows payload.")
+    return lines
+
+
+def render_failures(
+    failures: list[Failure],
+    *,
+    max_shown: int = 12,
+    context: dict[str, Any] | None = None,
+) -> str:
     if not failures:
         return ""
     lines = [
         f"Extraction write blocked: {len(failures)} validation failure(s)."
     ]
+    context_lines = _render_report_context(context)
+    if context_lines:
+        lines.extend(context_lines)
     by_code: dict[str, int] = {}
     for f in failures:
         by_code[f.code] = by_code.get(f.code, 0) + 1
@@ -1705,8 +1790,7 @@ def render_failures(failures: list[Failure], *, max_shown: int = 12) -> str:
         key=lambda items: (-len(items), items[0].code, items[0].location),
     )
     lines.append(
-        f"Deduplicated clusters: {len(groups)}. Rows are zero-based indexes "
-        "from the submitted rows file."
+        f"Deduplicated clusters: {len(groups)}."
     )
     lines.append("")
     shown = groups[:max_shown]
@@ -1720,16 +1804,19 @@ def render_failures(failures: list[Failure], *, max_shown: int = 12) -> str:
         )
     lines.append("")
     lines.append(
-        "Fix: re-emit the staging files. Each non-null field on each row "
-        "must have {type: 'paper'|'derived', sources: [{quote, location, "
-        "page}, ...]}. Quotes must appear verbatim in the bundle (sections "
-        "or tables). Re-invoke write_extraction.py once the staging files "
-        "are corrected."
+        "Fix: repair by cluster first. Hint-code definitions are in "
+        "docs/extraction-sdk-agent-contract.md. Inspect the machine report or "
+        "staged rows only when the clustered row/field context is insufficient."
     )
     return "\n".join(lines)
 
 
-def failure_report(failures: list[Failure], *, max_groups: int | None = None) -> dict[str, Any]:
+def failure_report(
+    failures: list[Failure],
+    *,
+    max_groups: int | None = None,
+    context: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     """Machine-readable companion to render_failures().
 
     The grouped report intentionally mirrors the compact text rendering so the
@@ -1763,6 +1850,7 @@ def failure_report(failures: list[Failure], *, max_groups: int | None = None) ->
         ]
         out_groups.append({
             "code": first.code,
+            "hint_code": hint_code_for_failure(first.code, first.detail),
             "field": field_match.group(1) if field_match else None,
             "source_index": int(source_match.group(1)) if source_match else None,
             "count": len(group),
@@ -1782,5 +1870,6 @@ def failure_report(failures: list[Failure], *, max_groups: int | None = None) ->
         "failure_count": len(failures),
         "by_code": dict(sorted(by_code.items())),
         "group_count": len(grouped),
+        "context": context or {},
         "groups": out_groups,
     }
