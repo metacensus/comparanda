@@ -69,10 +69,10 @@ subprojects. `cd` into the one you're working in before invoking agents.
 | Path | Role |
 |---|---|
 | `harness/CLAUDE.md` | Outer-loop orchestrator — improvement loop walkthrough. |
-| `harness/.claude/hooks/guard-comparanda.sh` | PreToolUse hook. Prevents the harness from modifying anything in `comparanda/` except the universal instruction sections of `comparanda/.claude/agents/*.md`. |
+| `harness/.claude/hooks/harness-guardrail-comparanda-writes.sh` | PreToolUse hook. Prevents the harness from modifying anything in `comparanda/` except the universal instruction sections of `comparanda/.claude/agents/*.md`. |
 | `harness/src/harness/monitor.py` | Phase-transition monitor used by the `monitor` agent. |
 | `harness/src/harness/eval/{aggregate,prepare_comparison,gold_standard}.py` | Eval pipeline invoked by the `eval` agent. |
-| `harness/benchmark/` | Gold standard (symlink to local DPYD spreadsheet — not committed), `eval_config/paper_pmid_map.json`, `MODIFICATIONS.md`. |
+| `harness/benchmark/` | Optional fork-owned gold standard/config. Canonical does not ship live domain benchmark data. |
 
 The outer loop modifies inner-loop agent prompts in `comparanda/.claude/agents/`. It does **not** modify Python or hook code.
 
@@ -86,7 +86,7 @@ per-domain repo. This repo ships system code only.
 
 ## Bootstrap: from zero to a running extraction
 
-To run Comparanda on a domain (DPYD or new), you coordinate one repo and one
+To run Comparanda on a domain, you coordinate one repo and one
 per-domain application directory tree. The high-level flow:
 
 ```
@@ -106,7 +106,7 @@ The paper-prep preprocessor (Docling extraction + per-table Sonnet first-pass
 (interactive viewer, alternative extractor experiments) but is not required
 to run the pipeline.
 
-Per-domain data lives in a **fork** of canonical (e.g., `<owner>/comparanda-<domain>`).
+Per-domain data lives in a **fork** of canonical (for example, `comparanda-<domain>`).
 The fork adds domain data inside the existing system-code tree — no separate app repo.
 
 ### Prerequisites
@@ -179,7 +179,7 @@ The fork has this tree (everything below the system-code paths is fork-only):
 └── docs/                                        # canonical
 ```
 
-Naming convention for `<paper_id>`: `Author_Year_PMID` (e.g., `Amstutz_2009_19530960`).
+Recommended naming convention for `<paper_id>`: `Author_Year_DocumentID`.
 
 ### Step 3 — seed the domain knowledge files
 
@@ -191,9 +191,8 @@ Two files must exist before running Phase 0:
 - `projects/<domain>/domain/seed_knowledge.md` — a shorter primer that gives
   each agent enough domain footing to start.
 
-> **Gap:** there is no script that generates these. For DPYD they were produced
-> manually via deep research. For a new domain, plan to spend time on this step
-> — agent quality downstream depends on it.
+> **Gap:** there is no script that generates these. For a new domain, plan to
+> spend time on this step — agent quality downstream depends on it.
 
 Drop methodology + prior meta-analysis PDFs into
 `projects/<domain>/data/raw/pdfs/phase0-references/`.
@@ -219,11 +218,11 @@ uv run python -m paper_prep <paper_id> \
     --output-root <workspace>/comparanda-<domain>/comparanda/projects/<domain>/data/processed/
 ```
 
-Build a corpus (uses a subset JSON to map PMID → paper_id):
+Build a corpus (uses a subset JSON to map document IDs to paper IDs):
 
 ```bash
 uv run python -m paper_prep.batch \
-    --subset examples/dpyd_batch_subset.json \
+    --subset examples/example_batch_subset.json \
     --pdfs-dir <workspace>/comparanda-<domain>/comparanda/projects/<domain>/data/raw/pdfs/ \
     --bundle-out <workspace>/comparanda-<domain>/comparanda/projects/<domain>/data/processed/
 ```
@@ -266,9 +265,8 @@ claude
 ```
 
 The harness reads `../comparanda/projects/<domain>/...` and writes to
-`./iterations/`. `harness/benchmark/gold_standard/` is a symlink to
-`../../comparanda/projects/<domain>/data/raw/spreadsheets/` (re-pointed during
-fork setup).
+`./iterations/`. Supply the gold standard and document-id map from the
+per-domain fork when running eval commands.
 
 ### Known gaps to close
 
@@ -276,3 +274,4 @@ These would make the bootstrap turn-key but don't exist yet:
 
 - A scaffolding script that creates the `projects/<domain>/` tree.
 - A documented process (or generator) for `deep_research.md` and `seed_knowledge.md`.
+- A small scaffolding helper for per-domain benchmark config would make one-shot eval setup less manual.

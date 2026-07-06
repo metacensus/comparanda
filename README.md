@@ -56,9 +56,9 @@ generalizable fixes to the agents in `comparanda/`. Lives in
 
 Other harness components:
 - **Orchestrator:** `harness/CLAUDE.md` — improvement loop walkthrough (run Comparanda → monitor → evaluate → diagnose → propose → apply → keep or revert).
-- **Guard hook:** `harness/.claude/hooks/guard-comparanda.sh` — PreToolUse hook that prevents the harness from modifying anything in `comparanda/` except the universal instruction sections of `comparanda/.claude/agents/*.md`.
+- **Guard hook:** `harness/.claude/hooks/harness-guardrail-comparanda-writes.sh` — PreToolUse hook that prevents the harness from modifying anything in `comparanda/` except the universal instruction sections of `comparanda/.claude/agents/*.md`.
 - **Eval scripts:** `harness/src/harness/{monitor.py, eval/aggregate.py, eval/prepare_comparison.py, eval/gold_standard.py}` — invoked by `monitor` and `eval` agents.
-- **Benchmark:** `harness/benchmark/` — DPYD gold standard spreadsheet (symlink to local data; not committed), `eval_config/paper_pmid_map.json`, `MODIFICATIONS.md`.
+- **Benchmark config:** supplied by the per-domain fork or by explicit eval CLI arguments. Canonical does not ship a live domain gold standard.
 
 The outer-loop agents modify the inner-loop agent prompts in
 `comparanda/.claude/agents/`. They do **not** modify Python or hook code.
@@ -66,7 +66,7 @@ The outer-loop agents modify the inner-loop agent prompts in
 ## Companion repos
 
 - **This repo** — System 1 (`comparanda/`, inner loop) and System 2 (`harness/`, outer loop) live here as sibling subdirectories.
-- **Per-domain application repo** — holds the actual schemas, surveys, observation logs, extraction outputs, paper-prep bundles, and domain reference files for a given domain (e.g., DPYD pharmacogenetics). Both System 1 and System 2 read from and write into this repo at runtime; it is intentionally separate so application state can iterate on a different cadence than system code.
+- **Per-domain application repo** — holds the actual schemas, surveys, observation logs, extraction outputs, paper-prep bundles, benchmark config, and domain reference files for a given domain. Both System 1 and System 2 read from and write into this repo at runtime; it is intentionally separate so application state can iterate on a different cadence than system code.
 
 ## Bootstrap
 
@@ -80,7 +80,7 @@ README.md            # This file
 comparanda/          # System 1 — the inner loop
   CLAUDE.md          # Phase-by-phase orchestration
   .claude/agents/    # Agent prompts (extractor, survey, ma-critique, ...)
-  .claude/hooks/     # Validation hooks (provenance quotes)
+  .claude/hooks/     # Extraction write/finalization validation hooks
   .claude/skills/    # Skill definitions
   scripts/
     observation_log.py   # Stdlib CLI invoked by the extractor
@@ -90,7 +90,7 @@ harness/             # System 2 — the outer loop (calibration)
   .claude/agents/    # Agent prompts (monitor, eval, diagnostician, critic)
   .claude/hooks/     # Guard hook protecting comparanda/ from over-broad edits
   src/harness/       # Eval scripts invoked by the harness agents
-  benchmark/         # Gold standard + eval config for DPYD
+  benchmark/         # Optional per-domain gold standard/config in application forks
 docs/                # Architecture, specs, research, paper-prep integration notes
 ```
 
@@ -124,7 +124,7 @@ system code; everything is in one checkout.
 │   │   ├── trajectory.json
 │   │   ├── accuracy_coverage.json
 │   │   └── iter_*/
-│   └── benchmark/gold_standard → ../../comparanda/projects/<domain>/data/raw/spreadsheets/
+│   └── benchmark/                    ← optional fork-owned gold standard/config
 └── docs/                             # System 1+2 (canonical)
 ```
 
@@ -132,6 +132,6 @@ The fork is created via GitHub's fork button. Domain data is committed to the
 fork's `main` branch. Only methodology changes — agent prompts, hooks, eval
 code — are PR'd back to canonical from the fork's `methodology` branch.
 
-Naming convention for `<paper_id>`: `Author_Year_PMID` (e.g., `Amstutz_2009_19530960`).
+Recommended naming convention for `<paper_id>`: `Author_Year_DocumentID`.
 
 See [`CLAUDE.md`](./CLAUDE.md) for the bootstrap walkthrough that populates this tree.

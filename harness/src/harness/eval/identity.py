@@ -1,25 +1,25 @@
-"""Variant identity resolution for eval — a domain-agnostic resolution chain.
+"""Entity identity resolution for eval — a domain-agnostic resolution chain.
 
-Both the extraction and the gold standard carry variant identifiers, but in
+Both the extraction and the gold standard carry entity identifiers, but in
 different namespaces. The extraction is normalized by Comparanda to canonical
-ids (`variant_rsid` / `variant_canonical`) — it is self-describing. The gold
-standard may:
+ids (`entity_canonical_id` / `entity_canonical`) — it is self-describing. The
+gold standard may:
 
-  - carry a canonical id inline in a variant field        (direct match),
+  - carry a canonical id inline in an entity field         (direct match),
   - ship a *crosswalk* mapping its local codes/strings
-    to canonical ids                                       (crosswalk match),
-  - carry neither                                          (unresolved — the
-                                                            caller defers the
-                                                            pairing to the
-                                                            eval agent).
+    to canonical ids                                        (crosswalk match),
+  - carry neither                                           (unresolved — the
+                                                             caller defers the
+                                                             pairing to the
+                                                             eval agent).
 
 The crosswalk, when one exists, is described by a per-domain config file
-(`benchmark/eval_config/variant_crosswalk.json` — domain data). This module
-contains no domain-specific knowledge: which sheet, which columns, and which
-gold/extraction fields to use all come from that config. A domain whose gold
-standard ships no crosswalk simply omits the file; resolution then falls back
-to inline-identifier matching, and anything still unresolved is left for the
-agent.
+(`benchmark/eval_config/entity_crosswalk.json` — a per-domain config the user
+supplies). This module contains no domain-specific knowledge: which sheet,
+which columns, and which gold/extraction fields to use all come from that
+config. A domain whose gold standard ships no crosswalk simply omits the file;
+resolution then falls back to inline-identifier matching, and anything still
+unresolved is left for the agent.
 """
 
 from __future__ import annotations
@@ -31,40 +31,36 @@ from pathlib import Path
 
 import pandas as pd
 
-_RSID_RE = re.compile(r"rs\d+", re.IGNORECASE)
 _NULLISH = {"", "n/a", "na", "none", "nan", "-"}
 
 
 def _canonical_token(value: object) -> str | None:
     """Normalize a value to a canonical comparison token, or None.
 
-    A token is produced only for a *recognizable* canonical identifier:
-    an rs-number, or an HGVS string (c./g./m./n./p.-prefixed, optionally with a
-    gene prefix). Star-alleles, protein-change shorthand, and free text return
-    None — the caller then routes them through the crosswalk. This strictness
-    is what keeps `_resolve_value` from dead-ending on a non-canonical string.
+    Generic identity resolution: a value is reduced to a lowercased,
+    whitespace-collapsed token. If the value carries a recognizable inline
+    canonical id (per the configured crosswalk's canonical convention) it is
+    treated as authoritative; this base implementation simply treats any
+    non-null value as its own token. Domains that need stricter recognition
+    (so that non-canonical free text routes through the crosswalk instead of
+    self-matching) plug their rules in below.
     """
     if value is None:
         return None
     s = str(value).strip()
     if not s or s.lower() in _NULLISH:
         return None
-    m = _RSID_RE.search(s)
-    if m:
-        return m.group(0).lower()
-    s2 = re.sub(r"\s+", "", s).lower()
-    if re.match(r"(?:dpyd)?[cgmnp]\.", s2):
-        return re.sub(r"^dpyd", "", s2)
-    return None
+    # Domain-specific identity rules plug in here.
+    return re.sub(r"\s+", "", s).lower()
 
 
 def _match_key(value: object) -> str | None:
-    """Normalize a messy free-text variant string into a crosswalk lookup key.
+    """Normalize a messy free-text entity string into a crosswalk lookup key.
 
-    Parenthetical annotations and a leading gene prefix are dropped, whitespace
-    is collapsed, and the result is lower-cased. The crosswalk enumerates
-    zygosity variants ("*2A het", "*2A wt", ...) as distinct rows, so zygosity
-    suffixes are intentionally NOT stripped here.
+    Parenthetical annotations are dropped, whitespace is collapsed, and the
+    result is lower-cased. Category qualifiers carried as suffixes are left
+    intact, because a crosswalk may enumerate qualifier variants as distinct
+    rows.
     """
     if value is None:
         return None
@@ -72,18 +68,18 @@ def _match_key(value: object) -> str | None:
     if not s or s in _NULLISH:
         return None
     s = re.sub(r"\([^()]*\)", "", s)        # drop parentheticals
-    s = re.sub(r"^dpyd\s+", "", s)          # drop a leading gene prefix
+    # Domain-specific identity rules plug in here.
     s = re.sub(r"\s+", " ", s).strip()
     return s or None
 
 
 def _split_combination(value: str) -> list[str]:
-    """Split a combination-group variant string into components.
+    """Split a combination-group entity string into components.
 
-    Some papers report effect sizes only for combined multi-variant carrier
-    groups, encoded as `variant_raw="*2A|D949V|I560S (3 consensual SNPs)"` or
-    "DPYD c.1905+1G>A or DPYD c.2846A>T". A trailing group-level parenthetical
-    is stripped before splitting so it doesn't pollute the last component.
+    Some studies report effect sizes only for combined multi-entity groups,
+    encoded as `entity_raw="E1|E2|E3 (3 combined entities)"` or
+    "E1 or E2". A trailing group-level parenthetical is stripped before
+    splitting so it doesn't pollute the last component.
     """
     base = re.sub(r"\s*\([^()]*\)\s*$", "", value).strip()
     parts = re.split(r"\s*\|\s*|\s+or\s+", base)
@@ -105,7 +101,7 @@ def _id_key(value: object) -> str | None:
 
 @dataclass
 class CrosswalkConfig:
-    """Per-domain description of a gold-standard variant crosswalk."""
+    """Per-domain description of a gold-standard entity crosswalk."""
 
     sheet: str
     canonical_column: str
@@ -115,9 +111,9 @@ class CrosswalkConfig:
     gold_text_field: str | None = None
     gold_id_field: str | None = None
     extraction_canonical_fields: tuple[str, ...] = (
-        "variant_rsid",
-        "variant_canonical",
-        "variant_raw",
+        "entity_canonical_id",
+        "entity_canonical",
+        "entity_raw",
     )
 
     @classmethod
@@ -140,34 +136,42 @@ class CrosswalkConfig:
 
 
 def load_crosswalk_config(eval_config_dir: Path) -> CrosswalkConfig | None:
-    """Load the variant crosswalk config for a domain, or None if absent."""
-    path = Path(eval_config_dir) / "variant_crosswalk.json"
+    """Load the entity crosswalk config for a domain, or None if absent."""
+    path = Path(eval_config_dir) / "entity_crosswalk.json"
     if not path.exists():
         return None
     return CrosswalkConfig.from_dict(json.loads(path.read_text()))
 
 
 @dataclass
-class VariantResolver:
+class EntityResolver:
     """Resolves gold and extraction rows to a comparable canonical token.
 
-    Build with `VariantResolver.build(...)`. When no crosswalk config is given
+    Build with `EntityResolver.build(...)`. When no crosswalk config is given
     the resolver still works — it resolves the extraction side from its
-    normalized fields and the gold side from any inline rs-number, leaving the
-    rest unresolved for the agent.
+    normalized fields and the gold side from any inline canonical id, leaving
+    the rest unresolved for the agent.
     """
 
     config: CrosswalkConfig | None = None
     _by_text: dict[str, str] = field(default_factory=dict)
     _by_id: dict[str, str] = field(default_factory=dict)
     conflicts: list[tuple[str, str, str]] = field(default_factory=list)
+    # Gold entity field names tried (in order) for the inline-id / direct-token
+    # fallbacks. Defaults preserve legacy behavior; set per-domain from
+    # gold_config.entity_columns (review note).
+    entity_fields: tuple[str, ...] = ("Entity", "entity", "entity_raw")
+    # R3-13: extraction-side field list override (set from
+    # gold_config.extraction_entity_fields by callers). Precedence:
+    # this attribute > crosswalk config > legacy default.
+    extraction_fields: tuple[str, ...] | None = None
 
     @classmethod
     def build(
         cls,
         gold_spreadsheet_path: Path | None,
         config: CrosswalkConfig | None,
-    ) -> "VariantResolver":
+    ) -> "EntityResolver":
         resolver = cls(config=config)
         if config is not None and gold_spreadsheet_path is not None:
             resolver._load_crosswalk(Path(gold_spreadsheet_path))
@@ -215,30 +219,22 @@ class VariantResolver:
         return bool(self._by_text or self._by_id)
 
     def _resolve_value(self, value: object) -> str | None:
-        """Resolve a single variant string to a token.
+        """Resolve a single entity string to a token.
 
         Resolution order:
-        1. An rs-number is already canonical — use it directly.
-        2. Otherwise consult the crosswalk: try the match-key as-is, then with
-           the HGVS prefix (``c.``/``g.``/``m.``/``n.``/``p.``) stripped. The
-           Comparanda's canonical strings carry it, so a literal text-key match
-           silently fails without the strip.
-        3. Fall back to whatever ``_canonical_token`` recognized (typically a
-           bare HGVS string) — better than ``None`` when the crosswalk has no
-           entry, since two HGVS strings from different papers will still
-           compare equal.
+        1. Reduce the value to a canonical token.
+        2. Consult the crosswalk if loaded: look the match-key up directly.
+        3. Fall back to whatever ``_canonical_token`` recognized — better than
+           ``None`` when the crosswalk has no entry, since two equivalent
+           canonical strings from different studies will still compare equal.
+
+        # Domain-specific identity rules plug in here.
         """
         tok = _canonical_token(value)
-        if tok is not None and tok.startswith("rs"):
-            return tok
         if self._by_text:
             k = _match_key(value)
-            if k:
-                if k in self._by_text:
-                    return self._by_text[k]
-                k2 = re.sub(r"^[cgmnp]\.", "", k)
-                if k2 != k and k2 in self._by_text:
-                    return self._by_text[k2]
+            if k and k in self._by_text:
+                return self._by_text[k]
         return tok
 
     def resolve_extraction(self, row: dict) -> str | None:
@@ -249,16 +245,17 @@ class VariantResolver:
     def resolve_extraction_all(self, row: dict) -> list[str]:
         """All canonical tokens for an extraction row.
 
-        Combination-group variant strings (pipe- or 'or'-delimited) are
+        Combination-group entity strings (pipe- or 'or'-delimited) are
         expanded into components and each component resolved independently, so
-        a multi-variant carrier row participates in matching for every variant
+        a multi-entity group row participates in matching for every entity
         it represents.
         """
-        fields = (
-            self.config.extraction_canonical_fields
-            if self.config is not None
-            else ("variant_rsid", "variant_canonical", "variant_raw")
-        )
+        if self.extraction_fields is not None:
+            fields = self.extraction_fields
+        elif self.config is not None:
+            fields = self.config.extraction_canonical_fields
+        else:
+            fields = ("entity_canonical_id", "entity_canonical", "entity_raw")
         tokens: list[str] = []
         for f in fields:
             val = row.get(f)
@@ -274,7 +271,7 @@ class VariantResolver:
         """Resolve a gold row to a canonical token.
 
         Returns (token, rung) where rung is one of: 'crosswalk_id',
-        'crosswalk_text', 'direct_rsid', 'unresolved'. A None token always
+        'crosswalk_text', 'direct_id', 'unresolved'. A None token always
         pairs with rung 'unresolved' and signals the caller to defer.
         """
         cfg = self.config
@@ -287,11 +284,24 @@ class VariantResolver:
                 k = _match_key(_row_get(row, cfg.gold_text_field))
                 if k and k in self._by_text:
                     return self._by_text[k], "crosswalk_text"
-        # Fallback: an rs-number written inline in a gold variant field.
-        for f in ("Variant", "variant", "variant_raw"):
+        # Fallback: a canonical id written inline in a gold entity field.
+        # Domain-specific identity rules plug in here — without a crosswalk,
+        # a token is only emitted if a gold field actually carries one.
+        for f in self.entity_fields:
             tok = _canonical_token(_row_get(row, f))
-            if tok and tok.startswith("rs"):
-                return tok, "direct_rsid"
+            if tok and cfg is not None and self._by_text and tok in self._by_text.values():
+                return tok, "direct_id"
+        # Symmetric direct-tokenization fallback (review note): when no crosswalk
+        # resolves the gold row, tokenize its entity string the SAME way the
+        # extraction side is tokenized (resolve_extraction_all also falls back to
+        # `_canonical_token`). This lets gold and a normalized extraction match on
+        # equal entity strings without a per-domain crosswalk, instead of
+        # dropping every gold row to 'unresolved'. The eval agent still re-checks
+        # ambiguous pairings in detailed mode.
+        for f in self.entity_fields:
+            tok = _canonical_token(_row_get(row, f))
+            if tok:
+                return tok, "direct_token"
         return None, "unresolved"
 
 

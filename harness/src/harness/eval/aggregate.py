@@ -1,23 +1,84 @@
 """Aggregate evaluation — fast row-level metrics comparing extraction vs gold standard.
 
 This is the primary eval tool. Run after every comparanda iteration.
+Catches completeness issues (e.g. a paper extracted at only 27% of its gold
+rows) immediately without LLM calls.
 """
 
 from __future__ import annotations
 
 import json
+import sys
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 import pandas as pd
 
+from harness.eval.composite import gating_composite
+from harness.eval.gold_config import load_gold_config
 from harness.eval.gold_standard import (
     gold_row_count,
-    gold_variants_for_paper,
+    gold_entities_for_paper,
     load_gold_standard,
-    load_pmid_map,
+    load_document_id_map,
 )
-from harness.eval.identity import VariantResolver, load_crosswalk_config
+from harness.eval.identity import EntityResolver, load_crosswalk_config
+
+
+# High-leverage numeric fields whose uncertainty matters most for pooling.
+# Mirror of comparanda/scripts/review/review_queue.py:32 (HIGH_LEVERAGE) — keep the
+# two sets in sync (review note).
+HIGH_LEVERAGE = {
+    "effect_estimate", "effect_size", "effect_size_value",
+    "ci_lower", "effect_size_ci_lower",
+    "ci_upper", "effect_size_ci_upper",
+    "se", "p_value",
+    "n_total", "total_n", "group_n", "reference_n",
+    "n_events", "group_events", "reference_events", "mean", "sd",
+}
+
+
+def _certainty_profile(rows: list[dict]) -> dict:
+    """Per-paper certainty profile from each row's `provenance` (review note).
+
+    Scans every provenance entry (`{field: {extraction_certainty, ...}}`):
+      - clean / ambiguous: a provenance entry on a non-null field with that tag.
+      - abstained: a provenance entry whose extraction_certainty == "abstained"
+        (these sit on null fields — the explicit "couldn't read" state).
+      - untagged: a provenance entry on a non-null field with no certainty tag.
+      - high_leverage_*: counts restricted to the HIGH_LEVERAGE field set;
+        high_leverage_uncertain = ambiguous + abstained on those fields.
+    """
+    profile = {
+        "clean": 0, "ambiguous": 0, "abstained": 0, "untagged": 0,
+        "high_leverage_uncertain": 0, "high_leverage_total": 0,
+    }
+    for row in rows:
+        prov = row.get("provenance") or {}
+        if not isinstance(prov, dict):
+            continue
+        for field_name, entry in prov.items():
+            if not isinstance(entry, dict):
+                continue
+            certainty = entry.get("extraction_certainty")
+            high_lev = field_name in HIGH_LEVERAGE
+            field_is_null = row.get(field_name) is None
+
+            if certainty == "abstained":
+                profile["abstained"] += 1
+            elif certainty == "clean":
+                profile["clean"] += 1
+            elif certainty == "ambiguous":
+                profile["ambiguous"] += 1
+            elif not field_is_null:
+                # Non-null field with provenance but no certainty tag.
+                profile["untagged"] += 1
+
+            if high_lev:
+                profile["high_leverage_total"] += 1
+                if certainty in ("ambiguous", "abstained"):
+                    profile["high_leverage_uncertain"] += 1
+    return profile
 
 
 @dataclass
@@ -25,19 +86,20 @@ class PaperEval:
     """Evaluation results for a single paper."""
 
     paper_id: str
-    pmid: int | str
+    document_id: int | str
     gold_rows: int
     extracted_rows: int
     row_coverage: float  # extracted / gold
-    gold_variants: list[str]
-    extracted_variants: list[str]
-    matched_variants: list[str]
-    missing_variants: list[str]
-    extra_variants: list[str]
-    variant_coverage: float  # matched / gold
+    gold_entities: list[str]
+    extracted_entities: list[str]
+    matched_entities: list[str]
+    missing_entities: list[str]
+    extra_entities: list[str]
+    entity_coverage: float  # matched / gold
     field_fill_rates: dict[str, float] = field(default_factory=dict)
     identity_dim_completeness: dict[str, float] = field(default_factory=dict)
     normalization: dict = field(default_factory=dict)  # detailed normalization status
+    certainty_profile: dict = field(default_factory=dict)  # review note
     flags: list[str] = field(default_factory=list)
 
 
@@ -47,7 +109,7 @@ class AggregateEval:
 
     papers: list[PaperEval]
     mean_row_coverage: float
-    mean_variant_coverage: float
+    mean_entity_coverage: float
     mean_finding_accuracy: float | None  # None = not evaluated (requires detailed mode)
     total_gold_rows: int
     total_extracted_rows: int
@@ -55,6 +117,7 @@ class AggregateEval:
     papers_below_50pct: list[str]  # paper_ids with < 50% row coverage
     papers_below_70pct: list[str]  # paper_ids with < 70% row coverage
     schema_contradictions: list[dict] = field(default_factory=list)  # required fields with <100% fill
+    certainty_rollup: dict = field(default_factory=dict)  # corpus certainty totals (review note)
     composite_score: float = 0.0
 
 
@@ -75,39 +138,39 @@ def _load_extraction(extraction_path: Path) -> list[dict]:
     return rows
 
 
-def _expand_pipe_delimited(variant: str) -> list[str]:
-    """Split combination-group variant strings (pipe-delimited) into components.
+def _expand_pipe_delimited(entity: str) -> list[str]:
+    """Split combination-group entity strings (pipe-delimited) into components.
 
-    Some papers (e.g., Milano 2016) only report effect sizes for combined
-    multi-variant carrier groups, not per individual variant. Extraction
-    encodes this as `variant_raw="*2A|D949V|I560S (3 consensual SNPs)"`. For
-    matching against per-variant gold rows, each component must participate
-    independently. A group-level trailing parenthetical annotation is stripped
-    before splitting so it doesn't pollute the last component.
+    Some studies only report effect sizes for combined multi-entity groups,
+    not per individual entity. Extraction encodes this as
+    `entity_raw="E1|E2|E3 (3 combined entities)"`. For matching against
+    per-entity gold rows, each component must participate independently. A
+    group-level trailing parenthetical annotation is stripped before splitting
+    so it doesn't pollute the last component.
     """
     import re
-    if "|" not in variant:
-        return [variant]
-    base = re.sub(r"\s*\([^()]*\)\s*$", "", variant).strip()
+    if "|" not in entity:
+        return [entity]
+    base = re.sub(r"\s*\([^()]*\)\s*$", "", entity).strip()
     return [c.strip() for c in base.split("|") if c.strip()]
 
 
-def _extract_variants(rows: list[dict]) -> set[str]:
-    """Extract unique variant identifiers from extraction rows.
+def _extract_entities(rows: list[dict]) -> set[str]:
+    """Extract unique entity identifiers from extraction rows.
 
-    Uses all available variant fields (canonical, rsid, raw) so that
+    Uses all available entity fields (canonical, canonical id, raw) so that
     matching against gold standard works regardless of naming convention.
     Pipe-delimited combination groups are expanded into components.
     """
-    variants = set()
+    entities = set()
     for row in rows:
-        # Prefer canonical (normalizer output), then rsid, then raw
-        for field in ("variant_canonical", "variant_rsid", "variant_raw", "variant"):
+        # Prefer canonical (normalizer output), then canonical id, then raw
+        for field in ("entity_canonical", "entity_canonical_id", "entity_raw", "entity"):
             v = row.get(field)
             if v:
                 for component in _expand_pipe_delimited(str(v)):
-                    variants.add(component)
-    return variants
+                    entities.add(component)
+    return entities
 
 
 def _compute_fill_rates(rows: list[dict]) -> dict[str, float]:
@@ -150,29 +213,29 @@ def _compute_normalization_status(rows: list[dict]) -> dict:
 
     total = len(rows)
     has_canonical = 0
-    has_rsid = 0
+    has_canonical_id = 0
     raw_only = 0
     raw_only_examples: list[str] = []
 
     for row in rows:
-        v_raw = row.get("variant_raw")
-        v_canon = row.get("variant_canonical")
-        v_rsid = row.get("variant_rsid")
+        v_raw = row.get("entity_raw")
+        v_canon = row.get("entity_canonical")
+        v_canon_id = row.get("entity_canonical_id")
 
         if v_canon:
             has_canonical += 1
-        if v_rsid:
-            has_rsid += 1
-        if v_raw and not v_canon and not v_rsid:
+        if v_canon_id:
+            has_canonical_id += 1
+        if v_raw and not v_canon and not v_canon_id:
             raw_only += 1
             if len(raw_only_examples) < 10:
                 raw_only_examples.append(str(v_raw))
 
     return {
         "total_rows": total,
-        "has_variant_canonical": has_canonical,
-        "has_variant_rsid": has_rsid,
-        "raw_only_no_canonical_no_rsid": raw_only,
+        "has_entity_canonical": has_canonical,
+        "has_entity_canonical_id": has_canonical_id,
+        "raw_only_no_canonical_no_canonical_id": raw_only,
         "canonical_rate": round(has_canonical / total, 3) if total else 0.0,
         "unnormalized_rate": round(raw_only / total, 3) if total else 0.0,
         "unnormalized_examples": sorted(set(raw_only_examples)),
@@ -184,11 +247,26 @@ def _load_schema_field_metadata(schema_dir: Path | None = None) -> dict[str, dic
 
     Returns dict of field_name → {"required": bool, "extraction_guidance": str, "removed": bool}.
     Used to split fill rates by required/optional and flag contradictions.
+
+    Without `--schema-dir` there is no domain-agnostic way to locate the schema
+    (the old `<domain>` placeholder path never resolved and silently disabled
+    schema-contradiction detection — review note). Emit a loud warning and
+    return {} rather than guessing.
     """
     if schema_dir is None:
-        schema_dir = Path(__file__).parent.parent.parent.parent.parent / "comparanda" / "projects" / "dpyd" / "schema"
+        print(
+            "WARNING: schema metadata unavailable — pass --schema-dir to enable "
+            "schema-contradiction detection. Skipping (review note).",
+            file=sys.stderr,
+        )
+        return {}
 
     if not schema_dir.exists():
+        print(
+            f"WARNING: schema dir {schema_dir} does not exist — skipping "
+            f"schema-contradiction detection (review note).",
+            file=sys.stderr,
+        )
         return {}
 
     import yaml
@@ -232,85 +310,29 @@ def _compute_schema_contradictions(
     return sorted(contradictions, key=lambda x: x["fill_rate"])
 
 
-def _normalize_variant_name(name: str) -> str:
-    """Normalize variant name for matching between gold standard and extraction.
-
-    Gold standard bundles variant + genotype (e.g., "rs3918290 GA", "IVS14+1G>A het").
-    Extraction separates them (variant_raw + zygosity_group).
-    This strips genotype suffixes and normalizes notation to enable matching.
-    Does NOT use System 1's normalization table — the eval measures what System 1
-    actually produced, not what it could have produced.
-    """
-    import re
-
-    name = name.strip()
-
-    # 1. Extract rsID if present anywhere — strongest match signal
-    rsid_match = re.search(r'(rs\d+)', name, re.IGNORECASE)
-    if rsid_match:
-        return rsid_match.group(1).lower()
-
-    name_lower = name.lower()
-
-    # 2. Strip parenthetical genotype annotations first (before whitespace collapse)
-    # "(HET)", "(WT)", "(heterozygous)", "(homozygous)", "(compound heterozygote)"
-    # Also "MUT (het/ho)"
-    cleaned = re.sub(
-        r'\s*(?:MUT\s*)?\((?:het(?:/ho(?:m)?)?|hom|wt|heterozygous|homozygous|compound heterozygote)\)',
-        '', name_lower, flags=re.IGNORECASE,
-    ).strip()
-
-    # 3. Strip trailing genotype suffixes (non-parenthetical)
-    # "het/hom", "het/ho", "het", "hom", "ho", "WT", "wt"
-    # Diplotype genotypes: "GG", "GA", "AA", "TT", "AT", "AT/TT"
-    cleaned = re.sub(
-        r'\s+(?:het/hom|het/ho|het|hom|ho|wt|[ACGT]{2}(?:/[ACGT]{2,})?)\s*$',
-        '', cleaned, flags=re.IGNORECASE,
-    ).strip()
-
-    # 4. Strip parenthetical protein annotations: "(E412)", "(R357H)", "(S534N)"
-    cleaned = re.sub(r'\s*\([A-Z]\d+[A-Z]?\)', '', cleaned, flags=re.IGNORECASE).strip()
-
-    # 5. Strip leading gene prefix: "DPYD " → keep the rest
-    cleaned = re.sub(r'^dpyd\s+', '', cleaned).strip()
-
-    # 6. Normalize whitespace in HGVS notation: "c.1236 G>A" → "c.1236g>a"
-    cleaned = re.sub(r'\s+', '', cleaned) if re.match(r'[ci]\.', cleaned) else cleaned
-    # Also for IVS notation: "IVS14 + 1G>A" → "ivs14+1g>a"
-    if cleaned.startswith('ivs'):
-        cleaned = re.sub(r'\s+', '', cleaned)
-
-    # 7. Remove trailing whitespace artifacts
-    cleaned = cleaned.strip()
-
-    if not cleaned:
-        return name_lower
-
-    # 8. Try "c." prefix for bare HGVS (e.g., "1236g>a" → "c.1236g>a")
-    if re.match(r'\d', cleaned):
-        return "c." + cleaned
-
-    return cleaned
-
-
 def evaluate_paper(
     paper_id: str,
     extraction_path: Path,
     gold_df: pd.DataFrame,
-    pmid: int | str,
-    resolver: VariantResolver,
+    document_id: int | str,
+    resolver: EntityResolver,
     identity_dimensions: list[str] | None = None,
+    document_id_column: str = "DocumentID",
+    entity_columns: tuple[str, ...] = ("Entity", "entity", "entity_raw"),
 ) -> PaperEval:
     """Evaluate a single paper's extraction against gold standard.
 
-    Variant matching uses the identity-resolution chain: gold rows and
-    extraction rows are each resolved to a canonical token (rs-number via the
-    domain crosswalk, or an inline identifier), and coverage is measured on
+    Entity matching uses the identity-resolution chain: gold rows and
+    extraction rows are each resolved to a canonical token (a canonical id via
+    the domain crosswalk, or an inline identifier), and coverage is measured on
     those tokens rather than on raw-string heuristics.
     """
     rows = _load_extraction(extraction_path)
-    gold_n = gold_row_count(gold_df, pmid)
-    paper_gold = gold_df[gold_df["PMID"] == pmid]
+    gold_n = gold_row_count(gold_df, document_id, document_id_column)
+    paper_gold = gold_df[gold_df[document_id_column] == document_id]
+
+    # First configured entity column present in the spreadsheet — display name.
+    entity_col = next((c for c in entity_columns if c in gold_df.columns), entity_columns[0])
 
     # Resolve gold rows to canonical tokens; keep a representative name per token.
     gold_token_to_name: dict[str, str] = {}
@@ -318,7 +340,7 @@ def evaluate_paper(
     for _, grow in paper_gold.iterrows():
         tok, _rung = resolver.resolve_gold(grow)
         if tok:
-            gold_token_to_name.setdefault(tok, str(grow.get("Variant", "")).strip())
+            gold_token_to_name.setdefault(tok, str(grow.get(entity_col, "")).strip())
         else:
             gold_unresolved += 1
 
@@ -334,7 +356,7 @@ def evaluate_paper(
     extra_keys = ext_tokens - gold_tokens
 
     row_coverage = len(rows) / gold_n if gold_n > 0 else 0.0
-    variant_coverage = len(matched_keys) / len(gold_tokens) if gold_tokens else 0.0
+    entity_coverage = len(matched_keys) / len(gold_tokens) if gold_tokens else 0.0
 
     gold_vars = set(gold_token_to_name.values())
     gold_vars_norm = gold_token_to_name
@@ -348,6 +370,7 @@ def evaluate_paper(
         else {}
     )
     norm_status = _compute_normalization_status(rows)
+    certainty_profile = _certainty_profile(rows)
 
     flags = []
     if row_coverage < 0.5:
@@ -355,37 +378,44 @@ def evaluate_paper(
     elif row_coverage < 0.7:
         flags.append(f"WARNING: row coverage {row_coverage:.0%} < 70%")
     if row_coverage > 1.5:
-        flags.append(f"WARNING: over-extraction {row_coverage:.0%} > 150%")
+        # review note (design decision): richer-than-gold extraction is
+        # acceptable — the gold may be incomplete. Coverage is still capped at
+        # 1.0 for scoring, but this is a neutral review note, not a penalty.
+        flags.append(
+            f"NOTE: extraction is richer than gold ({row_coverage:.0%} of gold rows) "
+            f"— review note, not penalized"
+        )
     if missing_keys:
-        flags.append(f"Missing {len(missing_keys)} gold variants: {sorted(missing_keys)[:5]}")
+        flags.append(f"Missing {len(missing_keys)} gold entities: {sorted(missing_keys)[:5]}")
     if gold_unresolved:
         flags.append(
-            f"VARIANT RESOLUTION: {gold_unresolved} gold row(s) could not be resolved "
+            f"ENTITY RESOLUTION: {gold_unresolved} gold row(s) could not be resolved "
             f"to a canonical token (no crosswalk hit, no inline identifier) — "
-            f"excluded from variant_coverage denominator."
+            f"excluded from entity_coverage denominator."
         )
     if norm_status.get("unnormalized_rate", 0) > 0.2:
         flags.append(
-            f"NORMALIZATION: {norm_status['raw_only_no_canonical_no_rsid']}/{norm_status['total_rows']} rows "
-            f"({norm_status['unnormalized_rate']:.0%}) have variant_raw but no canonical/rsid. "
+            f"NORMALIZATION: {norm_status['raw_only_no_canonical_no_canonical_id']}/{norm_status['total_rows']} rows "
+            f"({norm_status['unnormalized_rate']:.0%}) have entity_raw but no canonical/canonical id. "
             f"Examples: {norm_status['unnormalized_examples'][:5]}"
         )
 
     return PaperEval(
         paper_id=paper_id,
-        pmid=pmid,
+        document_id=document_id,
         gold_rows=gold_n,
         extracted_rows=len(rows),
         row_coverage=round(row_coverage, 3),
-        gold_variants=sorted(gold_vars),
-        extracted_variants=sorted(ext_vars),
-        matched_variants=sorted(gold_vars_norm[k] for k in matched_keys),
-        missing_variants=sorted(gold_vars_norm[k] for k in missing_keys),
-        extra_variants=sorted(ext_vars_norm[k] for k in extra_keys),
-        variant_coverage=round(variant_coverage, 3),
+        gold_entities=sorted(gold_vars),
+        extracted_entities=sorted(ext_vars),
+        matched_entities=sorted(gold_vars_norm[k] for k in matched_keys),
+        missing_entities=sorted(gold_vars_norm[k] for k in missing_keys),
+        extra_entities=sorted(ext_vars_norm[k] for k in extra_keys),
+        entity_coverage=round(entity_coverage, 3),
         field_fill_rates=fill_rates,
         identity_dim_completeness=id_completeness,
         normalization=norm_status,
+        certainty_profile=certainty_profile,
         flags=flags,
     )
 
@@ -393,56 +423,65 @@ def evaluate_paper(
 def evaluate_all(
     extractions_dir: Path,
     gold_standard_path: Path,
-    pmid_map_path: Path,
+    document_id_map_path: Path,
     identity_dimensions: list[str] | None = None,
     schema_dir: Path | None = None,
 ) -> AggregateEval:
     """Evaluate all extracted papers against gold standard."""
-    gold_df = load_gold_standard(gold_standard_path)
-    pmid_map = load_pmid_map(pmid_map_path)
+    # Gold-standard schema config (review note); defaults preserve legacy shape.
+    eval_config_dir = document_id_map_path.parent
+    gold_config = load_gold_config(eval_config_dir)
+    doc_col = gold_config.document_id_column
+
+    gold_df = load_gold_standard(gold_standard_path, gold_config=gold_config)
+    document_id_map = load_document_id_map(document_id_map_path)
     schema_meta = _load_schema_field_metadata(schema_dir)
 
-    # Build the variant identity resolver once. The crosswalk config (if the
-    # domain ships one) lives alongside the pmid map in eval_config/.
-    crosswalk_config = load_crosswalk_config(pmid_map_path.parent)
-    resolver = VariantResolver.build(gold_standard_path, crosswalk_config)
+    # Build the entity identity resolver once. The crosswalk config (if the
+    # domain ships one) lives alongside the document id map in eval_config/.
+    crosswalk_config = load_crosswalk_config(eval_config_dir)
+    resolver = EntityResolver.build(gold_standard_path, crosswalk_config)
+    resolver.entity_fields = tuple(gold_config.entity_columns)
+    resolver.extraction_fields = tuple(gold_config.extraction_entity_fields)  # R3-13
 
-    pmid_values = set(pmid_map.values())
+    document_id_values = set(document_id_map.values())
     papers = []
     for extraction_file in sorted(extractions_dir.glob("*.jsonl")):
         paper_id = extraction_file.stem
-        pmid = pmid_map.get(paper_id)
-        if pmid is None:
-            # The PMID embedded in the filename stem is the most robust key —
-            # it survives hyphen/underscore and casing differences in the
+        document_id = document_id_map.get(paper_id)
+        if document_id is None:
+            # The document id embedded in the filename stem is the most robust
+            # key — it survives hyphen/underscore and casing differences in the
             # author portion of the paper_id.
-            embedded_pmid = None
+            embedded_document_id = None
             for part in paper_id.split("_"):
                 if part.isdigit() and len(part) >= 7:
-                    embedded_pmid = int(part)
+                    embedded_document_id = int(part)
                     break
-            if embedded_pmid is not None and embedded_pmid in pmid_values:
-                pmid = embedded_pmid
-        if pmid is None:
-            # Stem-prefix fallback for paper_ids with no embedded PMID.
-            for map_key, map_pmid in pmid_map.items():
+            if embedded_document_id is not None and embedded_document_id in document_id_values:
+                document_id = embedded_document_id
+        if document_id is None:
+            # Stem-prefix fallback for paper_ids with no embedded document id.
+            for map_key, map_document_id in document_id_map.items():
                 if paper_id.lower().startswith(map_key.lower().split()[0].lower()):
-                    pmid = map_pmid
+                    document_id = map_document_id
                     break
-        if pmid is None:
+        if document_id is None:
             continue
 
         # Check if this paper has gold standard data
-        if gold_row_count(gold_df, pmid) == 0:
+        if gold_row_count(gold_df, document_id, doc_col) == 0:
             continue
 
         paper_eval = evaluate_paper(
             paper_id=paper_id,
             extraction_path=extraction_file,
             gold_df=gold_df,
-            pmid=pmid,
+            document_id=document_id,
             resolver=resolver,
             identity_dimensions=identity_dimensions,
+            document_id_column=doc_col,
+            entity_columns=tuple(gold_config.entity_columns),
         )
         papers.append(paper_eval)
 
@@ -450,13 +489,14 @@ def evaluate_all(
         return AggregateEval(
             papers=[],
             mean_row_coverage=0.0,
-            mean_variant_coverage=0.0,
+            mean_entity_coverage=0.0,
             mean_finding_accuracy=None,
             total_gold_rows=0,
             total_extracted_rows=0,
             overall_row_coverage=0.0,
             papers_below_50pct=[],
             papers_below_70pct=[],
+            certainty_rollup={},
             composite_score=0.0,
         )
 
@@ -464,7 +504,7 @@ def evaluate_all(
     total_ext = sum(p.extracted_rows for p in papers)
     # Cap row coverage at 1.0 per paper for composite (over-extraction shouldn't inflate score)
     mean_row_cov = sum(min(p.row_coverage, 1.0) for p in papers) / len(papers)
-    mean_var_cov = sum(p.variant_coverage for p in papers) / len(papers)
+    mean_var_cov = sum(p.entity_coverage for p in papers) / len(papers)
     mean_fill = sum(
         sum(p.field_fill_rates.values()) / len(p.field_fill_rates)
         for p in papers
@@ -479,15 +519,28 @@ def evaluate_all(
     avg_fill_rates = {f: sum(rates) / len(rates) for f, rates in all_fill_rates.items()}
     schema_contradictions = _compute_schema_contradictions(avg_fill_rates, schema_meta) if schema_meta else []
 
-    # Aggregate mode: completeness metrics only. finding_accuracy requires detailed mode
-    # (the eval agent reasoning about matched rows, not a Python scoring function).
-    # Composite excludes finding_accuracy — max possible is 0.7.
-    composite = 0.4 * mean_row_cov + 0.2 * mean_var_cov + 0.1 * mean_fill
+    # Corpus certainty rollup (review note): sum the per-paper profiles.
+    certainty_rollup = {
+        k: sum(p.certainty_profile.get(k, 0) for p in papers)
+        for k in ("clean", "ambiguous", "abstained", "untagged",
+                  "high_leverage_uncertain", "high_leverage_total")
+    }
+
+    # Aggregate mode: completeness metrics only. finding_accuracy requires detailed
+    # mode (the eval agent reasoning about matched rows). Use the single gating
+    # composite (review note) in aggregate-only mode (finding_accuracy=None) so
+    # this module and the gate never compute different formulas.
+    composite = gating_composite(
+        row_coverage=mean_row_cov,
+        entity_coverage=mean_var_cov,
+        field_fill_rate=mean_fill,
+        finding_accuracy=None,
+    )
 
     return AggregateEval(
         papers=papers,
         mean_row_coverage=round(mean_row_cov, 3),
-        mean_variant_coverage=round(mean_var_cov, 3),
+        mean_entity_coverage=round(mean_var_cov, 3),
         mean_finding_accuracy=None,  # requires eval agent detailed mode
         total_gold_rows=total_gold,
         total_extracted_rows=total_ext,
@@ -495,7 +548,8 @@ def evaluate_all(
         papers_below_50pct=[p.paper_id for p in papers if p.row_coverage < 0.5],
         papers_below_70pct=[p.paper_id for p in papers if p.row_coverage < 0.7],
         schema_contradictions=schema_contradictions,
-        composite_score=round(composite, 3),
+        certainty_rollup=certainty_rollup,
+        composite_score=composite.composite,
     )
 
 
@@ -505,10 +559,28 @@ def format_report(eval_result: AggregateEval) -> str:
     lines.append(f"Papers evaluated: {len(eval_result.papers)}")
     lines.append(f"Total rows: {eval_result.total_extracted_rows} extracted / {eval_result.total_gold_rows} gold ({eval_result.overall_row_coverage:.0%})")
     lines.append(f"Mean row coverage: {eval_result.mean_row_coverage:.0%}")
-    lines.append(f"Mean variant coverage: {eval_result.mean_variant_coverage:.0%}")
+    lines.append(f"Mean identity-match coverage: {eval_result.mean_entity_coverage:.0%}")
     lines.append(f"Finding accuracy: NOT EVALUATED (requires eval agent detailed mode)")
-    lines.append(f"Aggregate composite: {eval_result.composite_score:.3f} (max 0.7 — excludes finding_accuracy)")
+    lines.append(f"Aggregate composite: {eval_result.composite_score:.3f} "
+                 f"(aggregate-only, capped at 0.50 — excludes finding_accuracy)")
     lines.append("")
+
+    # Certainty rollup (review note)
+    cr = eval_result.certainty_rollup
+    if cr:
+        hl_total = cr.get("high_leverage_total", 0)
+        hl_unc = cr.get("high_leverage_uncertain", 0)
+        hl_rate = (hl_unc / hl_total) if hl_total else 0.0
+        lines.append("## Certainty Profile (corpus)")
+        lines.append(
+            f"  clean: {cr.get('clean', 0)}  ambiguous: {cr.get('ambiguous', 0)}  "
+            f"abstained: {cr.get('abstained', 0)}  untagged: {cr.get('untagged', 0)}"
+        )
+        lines.append(
+            f"  high-leverage uncertain: {hl_unc}/{hl_total} ({hl_rate:.0%}) "
+            f"(ambiguous+abstained on {sorted(HIGH_LEVERAGE)})"
+        )
+        lines.append("")
 
     if eval_result.papers_below_50pct:
         lines.append(f"CRITICAL — papers below 50% row coverage: {eval_result.papers_below_50pct}")
@@ -534,13 +606,13 @@ def format_report(eval_result: AggregateEval) -> str:
     if norm_papers:
         lines.append("")
         lines.append("## Normalization Gaps")
-        lines.append("Papers where >10% of rows have variant_raw but no variant_canonical or variant_rsid:")
+        lines.append("Papers where >10% of rows have entity_raw but no entity_canonical or entity_canonical_id:")
         lines.append("(This may indicate normalizer instruction gaps, schema contradictions, or intentionally un-normalizable rows)")
         lines.append("")
         for p in sorted(norm_papers, key=lambda x: x.normalization.get("unnormalized_rate", 0), reverse=True):
             n = p.normalization
             lines.append(
-                f"  {p.paper_id}: {n['raw_only_no_canonical_no_rsid']}/{n['total_rows']} rows "
+                f"  {p.paper_id}: {n['raw_only_no_canonical_no_canonical_id']}/{n['total_rows']} rows "
                 f"({n['unnormalized_rate']:.0%}) unnormalized. "
                 f"Examples: {n['unnormalized_examples'][:5]}"
             )
@@ -550,13 +622,13 @@ def format_report(eval_result: AggregateEval) -> str:
     lines.append("")
     for p in eval_result.papers:
         flag_str = f" {'  '.join(p.flags)}" if p.flags else ""
-        lines.append(f"### {p.paper_id} (PMID {p.pmid}){flag_str}")
+        lines.append(f"### {p.paper_id} (DocumentID {p.document_id}){flag_str}")
         lines.append(f"  Rows: {p.extracted_rows} / {p.gold_rows} ({p.row_coverage:.0%})")
-        lines.append(f"  Variants: {len(p.matched_variants)} matched / {len(p.gold_variants)} gold ({p.variant_coverage:.0%})")
-        if p.missing_variants:
-            lines.append(f"  Missing variants: {p.missing_variants[:10]}")
-        if p.extra_variants:
-            lines.append(f"  Extra variants (not in gold): {p.extra_variants[:10]}")
+        lines.append(f"  Entities: {len(p.matched_entities)} matched / {len(p.gold_entities)} gold ({p.entity_coverage:.0%})")
+        if p.missing_entities:
+            lines.append(f"  Missing entities: {p.missing_entities[:10]}")
+        if p.extra_entities:
+            lines.append(f"  Extra entities (not in gold): {p.extra_entities[:10]}")
         lines.append("")
 
     return "\n".join(lines)
@@ -575,16 +647,18 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Aggregate evaluation of comparanda extractions")
     parser.add_argument("--extractions-dir", required=True, help="Path to extractions directory")
     parser.add_argument("--gold-standard", required=True, help="Path to gold standard spreadsheet")
-    parser.add_argument("--pmid-map", required=True, help="Path to paper_pmid_map.json")
+    parser.add_argument("--document-id-map", required=True, help="Path to document_id_map.json")
     parser.add_argument("--output", help="Output JSON path")
     parser.add_argument("--identity-dims", nargs="*", help="Identity dimension field names")
+    parser.add_argument("--schema-dir", help="Schema directory (enables schema-contradiction detection)")
     args = parser.parse_args()
 
     result = evaluate_all(
         extractions_dir=Path(args.extractions_dir),
         gold_standard_path=Path(args.gold_standard),
-        pmid_map_path=Path(args.pmid_map),
+        document_id_map_path=Path(args.document_id_map),
         identity_dimensions=args.identity_dims,
+        schema_dir=Path(args.schema_dir) if args.schema_dir else None,
     )
 
     print(format_report(result))

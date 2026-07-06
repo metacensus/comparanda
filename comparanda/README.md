@@ -37,11 +37,12 @@ In iteration on the inner-loop + outer-loop architecture.
 
 ```
 CLAUDE.md            # Orchestrator instructions (phase-by-phase inner loop)
+AGENT_INDEX.md       # Agent scopes, file contracts, scripts, resume behavior
 .claude/
   agents/            # Agent prompts (extractor, normalizer, survey, ma-critique, ...)
   hooks/             # Validation hooks (e.g. provenance quote checks)
   skills/            # Skill definitions invoked during orchestration
-scripts/             # Utilities invoked by agents (observation log query, ...)
+scripts/             # Utilities invoked by agents; see scripts/README.md
 ```
 
 System-level docs (architecture, specs, research) live at the repo root in `../docs/`.

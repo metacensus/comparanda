@@ -14,9 +14,16 @@ Format: one JSON object per line (JSONL) at projects/{domain}/observations/log.j
 from __future__ import annotations
 
 import json
+import re
 import time
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
+from typing import Any
+
+try:
+    import fcntl
+except ImportError:  # pragma: no cover - non-Unix fallback
+    fcntl = None
 
 
 VALID_CATEGORIES = {
@@ -27,6 +34,9 @@ VALID_CATEGORIES = {
     "extraction_difficulty",
     "subset_selection",
 }
+
+OBS_ID_RE = re.compile(r"^OBS-(\d+)$")
+ID_PLACEHOLDERS = {"", "OBS-XXX", "OBS-{NNN}", "OBS-{next_id}", "OBS-{next_id}"}
 
 
 @dataclass
@@ -52,19 +62,100 @@ class ObservationEntry:
             self.timestamp = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 
 
-def next_id(log_path: Path) -> str:
-    """Generate the next observation ID (OBS-001, OBS-002, ...)."""
+def _scan_ids(log_path: Path) -> set[str]:
+    ids: set[str] = set()
     if not log_path.exists():
-        return "OBS-001"
-    count = sum(1 for line in open(log_path) if line.strip())
-    return f"OBS-{count + 1:03d}"
+        return ids
+    with open(log_path) as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                payload = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            obs_id = payload.get("id")
+            if isinstance(obs_id, str) and obs_id:
+                ids.add(obs_id)
+    return ids
 
 
-def append(log_path: Path, entry: ObservationEntry) -> None:
-    """Append an entry to the observation log."""
+def next_id(log_path: Path) -> str:
+    """Generate the next observation ID (OBS-001, OBS-002, ...).
+
+    The old implementation used line count, which collides when historical
+    entries already contain duplicate IDs or when a log has comments/bad lines.
+    Allocate from the maximum numeric OBS id instead.
+    """
+    max_seen = 0
+    for obs_id in _scan_ids(log_path):
+        match = OBS_ID_RE.match(obs_id)
+        if match:
+            max_seen = max(max_seen, int(match.group(1)))
+    return f"OBS-{max_seen + 1:03d}"
+
+
+class _LogLock:
+    def __init__(self, log_path: Path):
+        self.lock_path = log_path.with_suffix(log_path.suffix + ".lock")
+        self._fh = None
+
+    def __enter__(self) -> "_LogLock":
+        self.lock_path.parent.mkdir(parents=True, exist_ok=True)
+        self._fh = open(self.lock_path, "a")
+        if fcntl is not None:
+            fcntl.flock(self._fh.fileno(), fcntl.LOCK_EX)
+        return self
+
+    def __exit__(self, exc_type: object, exc: object, tb: object) -> None:
+        if self._fh is not None:
+            if fcntl is not None:
+                fcntl.flock(self._fh.fileno(), fcntl.LOCK_UN)
+            self._fh.close()
+            try:
+                if self.lock_path.exists() and self.lock_path.stat().st_size == 0:
+                    self.lock_path.unlink()
+            except OSError:
+                pass
+
+
+def _entry_from_payload(log_path: Path, payload: dict[str, Any]) -> ObservationEntry:
+    payload = dict(payload)
+    obs_id = str(payload.get("id") or "")
+    if obs_id in ID_PLACEHOLDERS:
+        payload["id"] = next_id(log_path)
+    return ObservationEntry(**payload)
+
+
+def append(log_path: Path, entry: ObservationEntry) -> ObservationEntry:
+    """Append an entry to the observation log, refusing duplicate IDs."""
     log_path.parent.mkdir(parents=True, exist_ok=True)
-    with open(log_path, "a") as f:
-        f.write(json.dumps(asdict(entry), default=str) + "\n")
+    with _LogLock(log_path):
+        existing = _scan_ids(log_path)
+        if entry.id in existing:
+            raise ValueError(
+                f"observation id {entry.id!r} already exists in {log_path}; "
+                f"use {next_id(log_path)!r} or omit the id for auto-allocation"
+            )
+        with open(log_path, "a") as f:
+            f.write(json.dumps(asdict(entry), default=str) + "\n")
+    return entry
+
+
+def append_payload(log_path: Path, payload: dict[str, Any]) -> ObservationEntry:
+    """Append a dict payload, auto-allocating id when omitted/placeholder."""
+    with _LogLock(log_path):
+        entry = _entry_from_payload(log_path, payload)
+        existing = _scan_ids(log_path)
+        if entry.id in existing:
+            raise ValueError(
+                f"observation id {entry.id!r} already exists in {log_path}; "
+                f"use {next_id(log_path)!r} or omit the id for auto-allocation"
+            )
+        with open(log_path, "a") as f:
+            f.write(json.dumps(asdict(entry), default=str) + "\n")
+        return entry
 
 
 def read_all(log_path: Path) -> list[ObservationEntry]:
@@ -214,6 +305,12 @@ def main() -> None:
     s = sub.add_parser("summary", help="Show log summary")
     s.add_argument("--log", required=True, help="Path to log.jsonl")
 
+    a = sub.add_parser("append", help="Append an observation with collision-safe id allocation")
+    a.add_argument("--log", required=True, help="Path to log.jsonl")
+    src = a.add_mutually_exclusive_group()
+    src.add_argument("--entry-json", help="Observation JSON object. Omit id to auto-allocate.")
+    src.add_argument("--entry-file", help="File containing an observation JSON object.")
+
     args = parser.parse_args()
 
     if args.command == "query":
@@ -222,6 +319,19 @@ def main() -> None:
             print(json.dumps(asdict(entry), default=str))
     elif args.command == "summary":
         print(json.dumps(summary(Path(args.log)), indent=2))
+    elif args.command == "append":
+        if args.entry_json:
+            payload = json.loads(args.entry_json)
+        elif args.entry_file:
+            payload = json.loads(Path(args.entry_file).read_text())
+        else:
+            import sys
+
+            payload = json.loads(sys.stdin.read())
+        if not isinstance(payload, dict):
+            raise SystemExit("append payload must be a JSON object")
+        entry = append_payload(Path(args.log), payload)
+        print(json.dumps(asdict(entry), default=str))
     else:
         parser.print_help()
 

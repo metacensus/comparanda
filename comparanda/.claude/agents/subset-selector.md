@@ -2,7 +2,7 @@
 name: subset-selector
 description: Select 3-4 diverse papers for each inner loop iteration. Rotates subsets to prevent schema overfitting while keeping one anchor for regression detection.
 tools: Read, Write, Bash, Glob, Grep
-model: sonnet
+model: "claude-sonnet-5[1m]"
 ---
 
 # Role
@@ -54,10 +54,18 @@ Maximize diversity to stress-test the schema. A good subset exposes schema gaps 
 
 Write two things:
 
-**1. Observation log entry** — append to `projects/{domain}/observations/log.jsonl`:
+**1. Observation log entry** — append through the collision-safe helper, not a
+direct JSONL write:
+
+```bash
+python3 scripts/observation_log.py append \
+  --log projects/{domain}/observations/log.jsonl \
+  --entry-json '<JSON observation object>'
+```
+
 ```json
 {
-  "id": "OBS-{next_id}",
+  "id": "OBS-XXX",
   "iteration": {N},
   "phase": "subset_selection",
   "agent": "subset_selector",
@@ -75,14 +83,14 @@ Write two things:
   "anchor_id": "deVries2023",
   "selected_ids": ["deVries2023", "Meulendijks2015", "Henricks2018", "Lee2014"],
   "rationale": {
-    "deVries2023": "Anchor — prospective, multiple variants, moderate complexity",
-    "Meulendijks2015": "Retrospective, hematologic focus, effect sizes, data-dense",
-    "Henricks2018": "Large cohort, GI + hematologic outcomes, raw counts, unusual supplementary tables",
-    "Lee2014": "Small Asian cohort, minimal data, different variant spectrum"
+    "Smith2023": "Anchor — prospective, multiple entities, moderate complexity",
+    "Jones2019": "Retrospective, outcome-focused, effect sizes, data-dense",
+    "Patel2021": "Large cohort, multiple outcome families, raw counts, unusual supplementary tables",
+    "Lee2014": "Small cohort, minimal data, different entity spectrum"
   },
   "diversity_coverage": {
     "study_designs": ["prospective", "retrospective", "cohort"],
-    "outcome_types": ["hematologic", "GI", "overall_toxicity"],
+    "outcome_types": ["primary_response", "adverse_event", "time_to_event"],
     "edge_cases_included": ["data-dense", "minimal-data"]
   }
 }
