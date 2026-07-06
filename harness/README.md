@@ -2,6 +2,10 @@
 
 System 2 for [Comparanda](../comparanda/) — improves Comparanda's agent instructions by evaluating extractions against a gold standard and applying fixes that generalize across domains.
 
+For the current harness agent scopes, file contracts, eval artifact paths,
+script dependencies, and eval resume behavior, see
+[`AGENT_INDEX.md`](./AGENT_INDEX.md). This README is a high-level overview.
+
 ## Domain Scope
 
 This harness is domain-agnostic methodology. Per-domain forks provide benchmark data and eval config, either under `benchmark/` or through explicit CLI paths.
@@ -32,10 +36,12 @@ comparanda-harness/           (System 2)
 ├── iterations/               trajectory.json, per-iteration archives
 ├── AGENT_INDEX.md            agent scopes, file contracts, scripts, resume behavior
 ├── src/harness/eval/
-│   ├── aggregate.py          Row coverage, identity-match coverage, fill rates, composite score
-│   ├── judge.py              Finding accuracy (deterministic + optional LLM matching)
-│   ├── gold_standard.py      Gold standard loader
-│   └── trajectory.py         Iteration tracking, convergence detection
+│   ├── aggregate.py          Fast deterministic completeness/fill-rate surfaces
+│   ├── claim_faithfulness.py Extracted-claim precision/faithfulness checks
+│   ├── field_coverage*.py    Semantic field-level coverage workspaces/artifacts
+│   ├── score.py              Score/finding-score assembly
+│   ├── render_eval.py        Human-readable eval summaries
+│   └── batch_eval.py         Batched eval planning/merge helpers
 └── CLAUDE.md                 Orchestrator operating manual
 
 ../comparanda/                (System 1 — the system under calibration)
@@ -57,7 +63,7 @@ comparanda-harness/           (System 2)
 ## Eval
 
 ```bash
-# Aggregate metrics + deterministic judge (recommended):
+# Aggregate metrics + deterministic eval surfaces (recommended):
 uv run python -m harness.eval.aggregate \
   --extractions-dir ../comparanda/projects/<domain>/extractions \
   --gold-standard "benchmark/gold_standard/<gold-standard-file>.xlsx" \
@@ -65,8 +71,9 @@ uv run python -m harness.eval.aggregate \
   --with-judge \
   --output iterations/iter_N/eval_report.json
 
-# With LLM semantic matching (costs API, improves unmatched row pairing):
-# Add --with-judge-llm --judge-cwd /path/to/comparanda-harness
+# Field-level semantic coverage and one-shot/outer-loop eval are owned by the
+# eval agent. See harness/CLAUDE.md and AGENT_INDEX.md for the current prompts,
+# artifacts, and resume policy.
 ```
 
 Composite score is emitted by the eval pipeline from row/field coverage, finding accuracy, claim faithfulness, and fill-rate surfaces.
