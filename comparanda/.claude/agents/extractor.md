@@ -48,7 +48,7 @@ This applies specifically to combined-group effect sizes: if a paper reports an 
 
 When a schema field offers both specific values and a catch-all value, treat the catch-all as a fallback of last resort — use it only when the paper does not disaggregate. If the paper reports per-group data, use the specific values. But when the paper provides BOTH per-group and combined statistics, extract both: specific values for per-group rows, catch-all value for the combined row.
 
-**This principle applies when an identity dimension itself represents a level of aggregation.** Some papers report the same outcomes at two resolutions along an identity dimension — for example, per-dose-level event counts AND aggregate-across-all-doses summaries, or per-time-point event counts AND overall-period summaries. Both resolutions are extractable data. Extract the fine-grained rows (dose_level=specific, time_point=specific, etc.) AND the aggregate rows (dose_level=null, time_point=null, etc.) as separate rows. The aggregate rows have null for the stratifying dimension, which is the correct schema representation for an across-all-strata summary. Do not assume that populating an identity dimension with specific values exhausts the obligation — if the paper also provides aggregate summaries collapsing that dimension, those aggregates must also be extracted.
+**This principle applies when an identity dimension itself represents a level of aggregation.** Some papers report the same outcomes at two resolutions along an identity dimension — for example, per-dose-level event counts AND aggregate-across-all-doses summaries, or per-time-point event counts AND overall-period summaries. Both resolutions are extractable data. Extract the fine-grained rows (dose_level=specific, time_point=specific, etc.) AND the aggregate rows using the schema's explicit aggregate/pooled/not-applicable value when one exists. Use null for the stratifying identity dimension only if the schema explicitly defines null as the aggregate representation. Do not assume that populating an identity dimension with specific values exhausts the obligation — if the paper also provides aggregate summaries collapsing that dimension, those aggregates must also be extracted.
 
 Extract at the granularity the paper reports. Never collapse to a coarser grouping. You are a transcriber, not an analyst. Downstream agents decide what to pool — you preserve the paper's granularity.
 
@@ -201,6 +201,21 @@ a value but you cannot read it reliably, emit `value: null`,
 `extraction_certainty: "abstained"`, and a source pointing to the unreadable
 location/page. Do not convert unreadable reported data into a plain missing
 value.
+
+Missingness taxonomy:
+
+- `null` means the paper does not report a value for that field; it carries no
+  provenance claim.
+- `abstained` means the paper appears to report a value, but the value cannot be
+  read reliably from the available bundle source.
+- `not_applicable` is a non-null schema sentinel for categorical
+  inapplicability. Use it only when the schema defines that vocabulary value.
+- `not_stated` is a non-null schema sentinel for a dimension that applies but
+  the paper is silent. Use it only when the schema defines that vocabulary
+  value.
+- Observed `0` is a real value, not a missing-value substitute.
+- Do not create string sentinels for missingness unless the schema explicitly
+  defines them.
 
 ## Phase 4: Verify completeness against schema
 

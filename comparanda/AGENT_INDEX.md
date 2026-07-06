@@ -20,6 +20,7 @@ encoded in the orchestrator and agent instructions.
 | 3.5 | `ma-critique` | Judge meta-analysis readiness and issue structured schema/re-extraction recommendations. | one per loop | Fresh invocation; critique JSON is the checkpoint. |
 | 4 | `schema-proposer` | Apply MA Critique recommendations into a new schema version. | one per schema version | Fresh invocation; prior schema, critique JSON, and observation log are inputs. |
 | 5 | `subset-selector` plus phases 3a-3.5 | Rotate subsets to test schema generalization. | one subset per rotation | Extractor resume still applies for previously seen papers; new papers use fresh extractors. |
+| 6 | `extractor`, `normalizer`, `ma-critique` | Produce the final full-corpus extraction against the converged schema, then normalize and critique the final dataset. | bounded batches, not full-corpus concurrency | Reuse/resume recorded extractor sessions and build scripts before fresh extraction; fresh extractors only for unseen or documented-unrecoverable papers. |
 
 ## Shared Project State (`projects/<domain>/`)
 
@@ -158,6 +159,9 @@ Resume policy:
 - Schema-iteration re-extraction must first resume the recorded extractor when possible.
 - Resume is retried before a replacement extractor is launched.
 - Replacement extractor is the fallback only when recorded-session resume fails.
+- The registry records `current_agent_id`, `original_agent_id`, `sessions[]`,
+  and `resume_attempts[]`. When replacement is required, the replacement must
+  become `current_agent_id`; the original remains in lineage for audit.
 
 ### `extraction-qc`
 

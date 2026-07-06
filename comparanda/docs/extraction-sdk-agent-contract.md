@@ -233,7 +233,9 @@ for high-leverage values.
 - `abstained(reasoning, sources)`: the paper reports a value but it cannot be
   read reliably.
 - `null(reason)`: the paper does not report the value. Plain nulls make no
-  extraction claim and carry no provenance.
+  extraction claim and carry no provenance. The reason helps the build script
+  and validation messages remain readable, but it is not retained as field-level
+  output provenance.
 - `not_applicable(reasoning, sources)`: the schema sentinel is appropriate for
   this row.
 

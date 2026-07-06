@@ -53,6 +53,18 @@ You will receive or locate the following:
 
    **Controlled vocabulary naming principle:** Every value in a controlled vocabulary must be self-describing to a reader who has not internalized domain conventions. Acronyms, abbreviations, and single-letter tokens are not allowed — they hide meaning and make asymmetries, wrong-direction values, and gaps invisible during schema review. When the concept involves direction or magnitude, encode it in the name. WRONG: `ge3`, `le2`, `s`, `h`, `tx`, `chr3`, `het`, `hom`, `r`. RIGHT: `grade3_or_higher`, `grade2_or_lower`, `severe`, `high`, `treatment_arm_a`, `chromosome_3`, `heterozygous`, `homozygous`, `responder`. Apply this to every vocabulary you define — identity dimensions, normalizable fields, comparison groups, outcome categories. A schema reviewer should be able to read a value list and detect missing values, wrong-direction tokens, or ambiguities from the names alone, without consulting external references.
 
+   **Missingness and sentinel design principle:** Nullable fields use JSON
+   `null` when the paper does not report a value. Observed numeric zero is a
+   real value, not missingness. Use controlled vocabulary sentinels only when a
+   downstream distinction is analytically meaningful: `not_applicable` for
+   categorical inapplicability, `not_stated` for a dimension that applies but is
+   not reported, and explicit `pooled_*` / `unstratified_*` / domain-neutral
+   aggregate values for reported rows that collapse a stratifying identity
+   dimension. Do not copy survey-phase sentinels into the extraction schema
+   automatically. Numeric/raw fields should generally use null for unreported
+   values; if missingness status itself matters, add a companion status field
+   rather than overloading the numeric/raw field.
+
 8. **Mark normalizable fields.** Any field where the same concept appears under different names across papers gets `normalization: {table_name}`. Include both a raw text field and a canonical ID field (e.g., `entity_raw` + `entity_id`).
 
 9. **Write the schema** to `projects/{domain}/schema/v001.yaml` in the rich YAML format specified below.
@@ -72,7 +84,12 @@ You will receive or locate the following:
 
 5. **Increment version.** Write to `projects/{domain}/schema/v{NNN+1}.yaml`. Update `schema_version` and `last_modified_iteration`.
 
-6. **Log schema rationale.** For every field added, removed, or modified, append a `schema_rationale` entry through `python3 scripts/observation_log.py append --log projects/{domain}/observations/log.jsonl ...`, explaining the change and linking it to the MA Critique feedback that motivated it. Omit `id` or use `OBS-XXX`; do not write directly to `log.jsonl`.
+6. **Log schema rationale.** For every field added, removed, or modified,
+   append a `schema_rationale` entry through
+   `uv run scripts/observation_log.py append --log projects/{domain}/observations/log.jsonl --entry-json '<JSON observation object>'`,
+   explaining the change and linking it to the MA Critique feedback that
+   motivated it. Omit `id` or use `OBS-XXX`; do not write directly to
+   `log.jsonl`.
 
 # Output Format
 

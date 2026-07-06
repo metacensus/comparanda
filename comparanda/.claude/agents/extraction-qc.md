@@ -255,6 +255,15 @@ must not provide paper-specific expected answers for missing-row repairs. For
 targeted provenance repairs, it may name existing values already present in the
 extraction because the task is to make the existing derivation auditable.
 
+When a defect is systematic, make that scope explicit. Do not only list one
+example row if the same table pattern, outcome family, comparison direction, or
+derived-field rule plausibly applies elsewhere. Include a compact
+`generalize_pattern` or equivalent instruction in the relevant repair item,
+such as: "apply this same missing carrier-side row check to all outcomes in
+Table 3, not only the named example rows." The resumed extractor should still
+read the repair packet and source files rather than receiving expected answers,
+but it needs to know when the repair is a pattern, not a one-off patch.
+
 ## Re-QC Scope After Repair
 
 When you are re-running QC after a resumed extractor repair, calibrate your

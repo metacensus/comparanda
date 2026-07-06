@@ -177,8 +177,8 @@ iterating.
    - If `action_class` is `blocking_reextract` or `targeted_extraction_repair` and `must_fix_before_normalization=true`, look up the original extractor in `projects/<domain>/extractions/.staging/extractor_sessions.json`.
    - You MUST first resume the original extractor with `SendMessage` to the recorded extractor agent ID. Pass file paths only: extraction JSONL, QC report, repair packet, current schema, bundle path, SDK contract, and existing staging script path. Do not paste the QC findings into the prompt except by giving the file paths; the resumed extractor reads the repair packet.
    - Wait for the resumed extractor's completion/notification before deciding the repair is done. `SendMessage` may return before the resumed subagent finishes in the background.
-   - If resume fails, retry resume up to 2 more times with the same file-path-only packet and record each failed attempt in `extractor_sessions.json` or the observation log.
-   - If all resume attempts fail, instantiate a NEW extractor for that paper with the same file-path-only repair inputs and a new staging script path. Record the new extractor agent/subagent ID and mark that the original session could not be resumed. Do not use `continue` as the repair fallback.
+   - If resume fails, retry resume up to 2 more times with the same file-path-only packet and record each failed attempt in `extractor_sessions.json` using `scripts/extraction/extractor_session_registry.py record-resume-attempt`. Include the tool error and whether the local transcript/meta files exist.
+   - If all resume attempts fail, instantiate a NEW extractor for that paper with the same file-path-only repair inputs and the existing staging script path unless it is corrupt. Record the replacement as the current extractor with `extractor_session_registry.py upsert`, preserving the original extractor in lineage. Do not use `continue` as the repair fallback.
    - Rerun @extraction-qc for the affected paper after repair.
    - For `schema_or_normalization_note` and `nonblocking_note`, do not mutate extraction rows; carry the note forward.
 
@@ -224,11 +224,17 @@ iterating.
      schema. Resume each original extractor from `extractor_sessions.json` when
      possible and have it patch its existing `.staging/<paper_id>/scripts/build.py`
      using the schema diff. If resume fails after the required retries, launch a
-     replacement extractor and record the new session metadata.
+     replacement extractor and record the new session metadata. After any
+     finalized JSONL is rewritten, rerun extraction QC and then rerun
+     normalization apply before MA Critique or readiness decisions, because
+     extraction rewrites reset normalizer-owned canonical fields.
    - `minor_guidance_update`: apply the updated vocabulary/extraction guidance
      to the schema, then re-extract only `papers_to_reextract`. Resume the
      recorded extractor first; if resume fails after retries, launch a new
-     extractor for the affected paper. Keep other extractions.
+     extractor for the affected paper. Keep other extractions. After any
+     finalized JSONL is rewritten, rerun extraction QC and then rerun
+     normalization apply before MA Critique or readiness decisions, because
+     extraction rewrites reset normalizer-owned canonical fields.
    - `rotate_subset`: rotate subset with @subset-selector for new 3-4 papers and
      return to Phase 3a with new papers + current schema. This tests whether the
      schema generalizes beyond the current subset.
@@ -281,19 +287,38 @@ final output. Only the final full-corpus extraction (Phase 6) is the deliverable
 
 Once the schema is validated across multiple rotated subsets:
 
-1. **Clear all extraction cache.** Start fresh with the final schema.
+1. **Prepare the final extraction queue.** Include every in-scope paper that
+   should appear in the final corpus. Exclude papers only when the observation
+   log records a corpus-curation or substrate/paper-prep reason.
 
-2. **Extract ALL papers** using the final schema. One extractor agent per paper.
+2. **Reuse before fresh extraction.** For each paper, look up
+   `projects/<domain>/extractions/.staging/extractor_sessions.json` and any
+   existing staging script. If the paper was extracted during schema
+   development, resume the recorded extractor when possible and have it patch
+   the existing build script against the final schema diff. If the recorded
+   extractor cannot be resumed after the required retries, launch a replacement
+   extractor against the same staging script and record the fallback reason.
+   Launch a fresh extractor only for papers that have no prior extraction state
+   or whose prior state is explicitly unrecoverable.
 
-3. **Normalize** the full corpus.
+3. **Run bounded batches.** Do not launch the full corpus concurrently. Use
+   small batches of a few extractor agents at a time, with smaller batches for
+   known hard papers, image/table-heavy papers, or papers with prior validator
+   repair churn. Before moving to the next batch, verify every paper in the
+   current batch has either a validated final JSONL or a documented exclusion /
+   confirmed-empty outcome.
 
-4. **Validate extractions.** For each paper, cross-check:
+4. **Normalize** the full corpus. Any finalized JSONL rewritten by extraction
+   resets normalizer-owned canonical fields, so normalization apply must run
+   after each Phase 6 extraction batch or at minimum before final critique/eval.
+
+5. **Validate extractions.** For each paper, cross-check:
    - All identity dimensions are populated
    - Flag papers with large row count discrepancies for human review
 
-5. **Final MA Critique** on the full dataset.
+6. **Final MA Critique** on the full dataset.
 
-6. **Commit final output.** This is the deliverable.
+7. **Commit final output.** This is the deliverable.
 
 ---
 
@@ -301,7 +326,9 @@ Once the schema is validated across multiple rotated subsets:
 
 1. **Schema changes ONLY after MA Critique** (Phase 4)
 2. **Extract raw, never normalize during extraction** — strict phase separation
-3. **Use null for missing data** — never empty string, 0, "N/A", or "unknown"
+3. **Use null for missing data** — never empty string, `0`, "N/A", or
+   "unknown" as a missing-value substitute. Observed numeric zero is a real
+   value when the paper reports zero.
 4. **Commit after every phase** — git history is the audit trail
 5. **Read observation log before each phase** — maintain context across iterations
 6. **One row = one finding** — Cartesian expansion: paper × entities × outcomes × grade levels × groups
@@ -309,6 +336,23 @@ Once the schema is validated across multiple rotated subsets:
 8. **Provenance on everything** — tag as `paper`, `derived`, or `external`
 9. **Always delegate to agents** — never perform extraction, normalization, survey, or critique yourself. Invoke the appropriate @agent. Each agent has specialized instructions that the orchestrator does not replicate. This applies to re-extraction as well as initial extraction.
 10. **Neutral agent prompts** — when invoking any agent, pass file paths to its inputs only. Do not summarize, interpret, or pre-digest file content in the prompt. Do not embed MA Critique findings, survey conclusions, or your own analysis into agent prompts. Each agent reads its own inputs and makes its own decisions — that is what we are testing. If the prompt tells the agent what to do, you are testing prompt compliance, not instruction quality.
+
+## Missingness Taxonomy
+
+- `null` means the paper does not report a value for that field. Plain nulls
+  carry no provenance claim.
+- `abstained` means the paper appears to report a value, but the value cannot be
+  read reliably from the available bundle source.
+- `not_applicable` is a non-null schema sentinel for categorical
+  inapplicability. Use it only when the schema defines that vocabulary value.
+- `not_stated` is a non-null schema sentinel for a dimension that applies but
+  the paper is silent. Use it only when the schema defines that vocabulary
+  value.
+- Observed `0` is a value, not missingness.
+- For identity dimensions, prefer explicit schema values for pooled,
+  unstratified, not-applicable, or not-stated surfaces. Use null for an identity
+  dimension only when the schema explicitly defines null as the aggregate or
+  absent representation.
 
 ## Architecture Reference
 

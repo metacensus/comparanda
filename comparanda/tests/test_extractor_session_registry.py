@@ -32,8 +32,12 @@ def test_registry_upsert_and_get(tmp_path: Path) -> None:
 
     assert entry["paper_id"] == "paper_1"
     assert entry["extractor_agent_id"] == "agent123"
+    assert entry["current_agent_id"] == "agent123"
+    assert entry["original_agent_id"] == "agent123"
     assert entry["parent_session_id"] == "parent456"
     assert entry["schema_version"] == "v002"
+    assert entry["sessions"][0]["agent_id"] == "agent123"
+    assert entry["sessions"][0]["role"] == "extractor"
     assert entry["staging_script_path"].endswith(
         "projects/example_domain/extractions/.staging/paper_1/scripts/build.py"
     )
@@ -58,8 +62,41 @@ def test_registry_upsert_preserves_existing_fields(tmp_path: Path) -> None:
     )
 
     assert entry["extractor_agent_id"] == "agent123"
+    assert entry["current_agent_id"] == "agent123"
+    assert entry["original_agent_id"] == "agent123"
     assert entry["schema_version"] == "v002"
     assert entry["notes"] == "schema iteration"
+
+
+def test_registry_tracks_replacement_lineage(tmp_path: Path) -> None:
+    project = tmp_path / "projects" / "example_domain"
+
+    upsert_session(
+        project,
+        paper_id="paper_1",
+        extractor_agent_id="original",
+        parent_session_id="parent1",
+        tool_use_id="tool1",
+        local_transcript_path="/tmp/original.jsonl",
+    )
+    entry = upsert_session(
+        project,
+        paper_id="paper_1",
+        extractor_agent_id="replacement",
+        parent_session_id="parent1",
+        tool_use_id="tool2",
+        local_transcript_path="/tmp/replacement.jsonl",
+        session_role="replacement_after_resume_failure",
+        resume_status="replacement_current",
+        notes="original SendMessage failed: No transcript found",
+    )
+
+    assert entry["original_agent_id"] == "original"
+    assert entry["current_agent_id"] == "replacement"
+    assert entry["extractor_agent_id"] == "replacement"
+    assert [s["agent_id"] for s in entry["sessions"]] == ["original", "replacement"]
+    assert entry["sessions"][1]["role"] == "replacement_after_resume_failure"
+    assert entry["sessions"][1]["local_transcript_path"] == "/tmp/replacement.jsonl"
 
 
 def test_hydrate_manifest_handles_missing_legacy_manifest(tmp_path: Path) -> None:

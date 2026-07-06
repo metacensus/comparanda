@@ -8,8 +8,9 @@ transcripts live at:
   <parent_dir>/<parent_session_id>/subagents/agent-<id>.jsonl
 
 with a sibling `agent-<id>.meta.json` carrying `agentType` (e.g.
-"extractor"). We scope to the most-recently-modified extractor subagent
-transcript and check for the script's success marker:
+"extractor"). We scope to a recently-touched extractor transcript that appears
+to be at a stopping/final-answer boundary and check for the script's success
+marker:
 
   1. Find the just-stopped extractor subagent transcript.
   2. If none found → not an extractor stop, allow.
@@ -42,15 +43,18 @@ HOOK_DIR = Path(__file__).resolve().parent
 EXTRACTOR_AGENT_TYPE = "extractor"
 
 # How long ago (seconds) the subagent transcript must have been touched to
-# count as the just-stopped one. Generous window because extraction runs can
+# count as a just-stopped candidate. Generous window because extraction runs can
 # pause for many minutes on Bash subprocesses (large staging writes, slow
 # validator runs) — a too-small window silently DISARMS the hook for exactly
 # the long extractions that most need it (review note). Overridable via env.
 RECENT_WINDOW_SECONDS = int(os.environ.get("COMPARANDA_FINALIZE_WINDOW_SECONDS", "1800"))
 
-# Success marker emitted by scripts/extraction/write_extraction.py on a clean write.
-SUCCESS_MARKER = re.compile(
+# Success markers emitted by sanctioned finalizers on a clean write.
+WRITE_SUCCESS_MARKER = re.compile(
     r"\[write_extraction (iter1|itern)\] wrote \d+ rows? to "
+)
+RUNNER_VALIDATION_SUCCESS_MARKER = re.compile(
+    r"\[run_extraction_build\] final_validation_ok=True failure_count=0"
 )
 
 # Silent escape hatch — after this many blocked stops for the same transcript,
@@ -59,15 +63,17 @@ MAX_ATTEMPTS = 3
 
 BLOCK_REASON = (
     "Extractor cannot stop without producing a validated JSONL via "
-    "scripts/extraction/write_extraction.py. Either:\n"
-    "  (a) invoke scripts/extraction/write_extraction.py iter1|itern and observe a "
+    "the sanctioned extraction finalizer. Either:\n"
+    "  (a) invoke scripts/extraction/run_extraction_build.py and observe "
+    "`[run_extraction_build] final_validation_ok=True failure_count=0`, or\n"
+    "  (b) invoke scripts/extraction/write_extraction.py iter1|itern and observe a "
     "`[write_extraction ...] wrote N rows to <path>` result in stderr, or\n"
-    "  (b) for an iter-n with zero field/row changes, invoke "
+    "  (c) for an iter-n with zero field/row changes, invoke "
     "scripts/extraction/write_extraction.py itern with a rows-file containing "
     '{"schema_version": "...", "identity_dimensions": [...], "rows": [], '
     '"removed_fields": [], "removed_rows": []} to confirm the no-op '
     "explicitly.\n"
-    "The script is the sole gate — do not write the JSONL manually."
+    "The finalizer is the sole gate — do not write the JSONL manually."
 )
 
 
@@ -99,10 +105,70 @@ def fire_trace(payload: dict) -> None:
 import time
 
 
+def _last_json_record(path: Path) -> dict | None:
+    """Return the last parseable JSONL record from a transcript."""
+    try:
+        with path.open() as f:
+            lines = f.readlines()
+    except OSError:
+        return None
+    for line in reversed(lines):
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            record = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(record, dict):
+            return record
+    return None
+
+
+def _assistant_content_items(record: dict) -> list[dict]:
+    message = record.get("message")
+    if not isinstance(message, dict):
+        return []
+    content = message.get("content")
+    if isinstance(content, list):
+        return [item for item in content if isinstance(item, dict)]
+    return []
+
+
+def transcript_looks_stopping(transcript_path: Path) -> bool:
+    """Heuristic for the subagent currently attempting to stop.
+
+    Claude Code's SubagentStop input exposes only the parent transcript path.
+    Under high concurrency, the newest extractor transcript may belong to an
+    active sibling that just emitted a tool result or tool call. Blocking that
+    sibling is the observed race. Prefer transcripts whose final record is an
+    assistant final-answer/synthetic stop boundary; ignore transcripts still
+    ending in a user tool_result or assistant tool_use.
+    """
+
+    record = _last_json_record(transcript_path)
+    if not record:
+        return False
+    message = record.get("message")
+    if not isinstance(message, dict):
+        return False
+    if message.get("role") != "assistant":
+        return False
+    if message.get("model") == "<synthetic>":
+        return True
+
+    items = _assistant_content_items(record)
+    if not items:
+        return False
+    if any(item.get("type") == "tool_use" for item in items):
+        return False
+    return any(item.get("type") == "text" for item in items)
+
+
 def find_extractor_subagent_transcript(parent_transcript: Path) -> Path | None:
-    """Find the most-recently-modified extractor subagent transcript adjacent
-    to the parent session's transcript. Returns None if no extractor stopped
-    recently (treat as "not an extractor stop")."""
+    """Find the just-stopped extractor subagent transcript adjacent to the
+    parent session's transcript. Returns None if no extractor stopped recently
+    (treat as "not an extractor stop")."""
     # Parent transcript is at <dir>/<session_id>.jsonl; subagent dir is
     # <dir>/<session_id>/subagents/.
     session_dir = parent_transcript.parent / parent_transcript.stem
@@ -129,6 +195,8 @@ def find_extractor_subagent_transcript(parent_transcript: Path) -> Path | None:
             continue
         if now - m > RECENT_WINDOW_SECONDS:
             continue
+        if not transcript_looks_stopping(log):
+            continue
         if m > best_mtime:
             best_mtime = m
             best = log
@@ -141,7 +209,9 @@ def transcript_has_success(transcript_path: Path) -> bool:
     try:
         with transcript_path.open() as f:
             for line in f:
-                if SUCCESS_MARKER.search(line):
+                if WRITE_SUCCESS_MARKER.search(line):
+                    return True
+                if RUNNER_VALIDATION_SUCCESS_MARKER.search(line):
                     return True
     except OSError:
         return False

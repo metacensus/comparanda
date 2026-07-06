@@ -49,75 +49,52 @@ Read the domain reference file before processing the paper. It contains entity n
     - Write out the multiplication so it is auditable
 11. Flag page numbers containing complex tables, figures with embedded data, or supplementary material references that may require vision-based extraction.
 12. Write structured JSON output to `projects/{domain}/surveys/{paper_id}.json`.
-13. Append an observation through `python3 scripts/observation_log.py append --log projects/{domain}/observations/log.jsonl ...` noting paper-specific terminology, surprises, or quality concerns. Omit `id` or use `OBS-XXX`; do not write directly to `log.jsonl`.
+13. Append an observation through
+    `uv run scripts/observation_log.py append --log projects/{domain}/observations/log.jsonl --entry-json '<JSON observation object>'`
+    noting paper-specific terminology, surprises, or quality concerns. Omit
+    `id` or use `OBS-XXX`; do not write directly to `log.jsonl`.
 
 # Output Format
 
-Write a single JSON object. The example below is generic — adapt field values to whatever domain you are surveying. Type annotations shown as comments:
+Write a single JSON object that follows the active
+`projects/{domain}/schema/survey_schema.json`. The survey schema is the output
+contract. Do not fall back to generic keys such as `tables`,
+`outcomes_reported`, `entities_studied`, `has_direct_effect_sizes`, or
+`has_raw_counts` unless those exact keys are present in the generated survey
+schema.
 
-```json
-{
-  "paper_id": "author_year_pmid",       // string, unique identifier
-  "pmid": 12345678,                      // integer or null
-  "doi": "10.1234/example",             // string or null
-  "title": "Full paper title",          // string
-  "first_author": "Smith",              // string
-  "year": 2023,                          // integer
-  "journal": "Journal Name",            // string
-  "study_design": "cohort",             // string: rct|cohort|case-control|case-series|meta-analysis|other
-  "total_n": 150,                        // integer or null
-  "follow_up": "median 24 months",      // string or null, as reported
+At a minimum, inspect the survey schema's top-level properties and required
+fields before writing. Use the schema's field names exactly. If a domain's
+survey schema contains a table inventory field, write table information there;
+do not invent a parallel `tables` array.
 
-  "tables": [
-    {
-      "number": 1,
-      "title": "Patient characteristics",
-      "rows": 12,
-      "cols": 5,
-      "complexity": "simple",            // simple|moderate|complex
-      "has_quantitative_data": true,
-      "notes": null                      // string or null
-    }
-  ],
+Recommended schema-driven workflow:
 
-  "outcomes_reported": ["response", "progression", "adverse_event"],
-  "grading_scales": ["domain scale as reported"],     // list of strings
-  "has_direct_effect_sizes": false,       // boolean: OR, HR, RR with CI present?
-  "has_raw_counts": true,                 // boolean: 2x2 table derivation possible?
-
-  "entities_studied": ["Treatment A", "Biomarker X"],
-  "entity_nomenclature": "paper-specific labels and abbreviations",
-
-  "demographics": ["cancer_type", "sex", "age", "ancestry"],
-  "subgroup_analyses": ["by cancer type"],
-
-  "therapies": ["Treatment A", "Treatment B"],
-  "therapy_details": "interventions, doses, timing, and context as reported",
-
-  "estimated_atomic_rows": 24,
-  "row_count_calculation": "3 entities x 2 outcomes x 2 grade_levels x 2 groups = 24",
-
-  "pages_needing_vision": [4, 7],
-  "vision_reasons": ["Table 2 has merged cells", "Figure 1 contains survival curve data"],
-
-  "_meta_commentary": {
-    "tables_processed": 4,
-    "tables_skipped": 0,
-    "ambiguities": ["Unclear if Table 3 reports above-threshold or threshold-band values"],
-    "estimated_completeness": 0.9,       // float 0-1
-    "confidence_concerns": ["Supplementary data referenced but not available"],
-    "paper_terminology_notes": ["Uses local abbreviations that may need normalization"]
-  }
-}
+```bash
+python3 - <<'PY'
+import json
+schema = json.load(open("projects/{domain}/schema/survey_schema.json"))
+print("required:", schema.get("required", []))
+print("properties:", list(schema.get("properties", {})))
+PY
 ```
+
+Then write exactly those properties. If the schema uses nested objects, arrays,
+or enum values, follow those shapes. If you genuinely cannot populate a
+schema-required field after reading the paper, set it to `null` and explain why
+in the schema-defined commentary/concerns field.
 
 # Rules
 
-- Use null for missing or unknown values. Never use empty string, 0, "N/A", or "unknown".
+- Use null for missing or unknown values. Never use empty string, `0`, "N/A",
+  or "unknown" as a missing-value substitute. Observed numeric zero remains
+  valid when the paper reports zero.
 - Record terminology exactly as the paper uses it. Do not map to canonical names.
 - List every table, even if it contains no quantitative data. Mark non-quantitative tables accordingly.
 - Include the row count calculation as an explicit string showing the multiplication.
-- Write one observation log entry per paper via `scripts/observation_log.py append`. Format: `{"id": "OBS-XXX", "iteration": 1, "phase": "1_survey", "agent": "survey", "category": "paper_flag", "content": "...", "related_fields": [], "timestamp": "..."}`. The helper allocates the real ID.
+- Write one observation log entry per paper via
+  `uv run scripts/observation_log.py append --log projects/{domain}/observations/log.jsonl --entry-json '<JSON observation object>'`.
+  The helper allocates the real ID.
 - Do not skip supplementary material references — note them even if you cannot read them.
 - Do not guess sample sizes from subgroup totals. If total N is not stated, use null.
 - Keep your processing time proportional to paper complexity. Simple papers need simple surveys.
@@ -126,12 +103,13 @@ Write a single JSON object. The example below is generic — adapt field values 
 
 Before writing output, verify:
 
-1. Every table in the paper is listed in the `tables` array.
-2. The `row_count_calculation` string matches `estimated_atomic_rows`.
-3. `_meta_commentary` has all five required fields populated.
+1. Every table in the paper is listed in the schema-defined table inventory field.
+2. Any schema-defined row-count calculation field matches the schema-defined
+   estimated row-count field.
+3. Any schema-defined meta-commentary/quality field is populated honestly.
 4. No empty strings exist anywhere in the output — only null or populated values.
 5. The `paper_id` follows the pattern `firstauthor_year_pmid` (or `firstauthor_year_doi` if no PMID).
-6. Pages flagged for vision have corresponding entries in `vision_reasons`.
+6. Any pages flagged for vision have corresponding schema-defined reasons.
 
 # Meta-Commentary
 
