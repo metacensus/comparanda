@@ -31,6 +31,13 @@ _ALLOWED_FINALIZERS = (
     "scripts/extraction/extraction_builder.py",
     "scripts/extraction/run_extraction_build.py",
 )
+_REDIRECT_TARGET = re.compile(
+    r"(?:^|[\s;&|])(?:1>>|1>|>>|>)\s*(?P<path>[^\s'\";]+)"
+)
+_TEE_TARGET = re.compile(r"\btee\b(?:\s+-a)?\s+(?P<path>[^\s'\";]+)")
+_SIMPLE_ARCHIVE_MOVE = re.compile(
+    r"^(?:git\s+mv|mv)\s+(?P<src>[^\s;&|]+)\s+(?P<dst>[^\s;&|]+)\s*$"
+)
 
 
 def _is_final_extraction_jsonl(path: str) -> bool:
@@ -38,6 +45,22 @@ def _is_final_extraction_jsonl(path: str) -> bool:
     if "/extractions/.staging/" in normalized or normalized.startswith("extractions/.staging/"):
         return False
     return _EXTRACTION_JSONL.search(normalized) is not None
+
+
+def _is_archive_move(command: str) -> bool:
+    """Allow a single archive/exclusion move of an already-finalized JSONL.
+
+    Phase rotation and substrate-defect handling sometimes rename a finalized
+    extraction into `extractions/archived/` or `extractions/excluded/`. That is
+    not JSONL materialization and should not require the write gate. The whole
+    command must be a simple unchained move so another mutation cannot ride
+    along next to the archive operation.
+    """
+    match = _SIMPLE_ARCHIVE_MOVE.match(command.strip())
+    if not match:
+        return False
+    dst = match.group("dst").replace("\\", "/")
+    return "extractions/archived/" in dst or "extractions/excluded/" in dst
 
 
 def _paths(tool_input: dict) -> list[str]:
@@ -64,6 +87,8 @@ def _bash_direct_target(tool_input: dict) -> str | None:
         return None
     if any(path in command for path in _ALLOWED_FINALIZERS):
         return None
+    if _is_archive_move(command):
+        return None
 
     targets = [
         match.group("path")
@@ -77,10 +102,14 @@ def _bash_direct_target(tool_input: dict) -> str | None:
     # (`wc -l`, `head`, `tail`, `rg`, Python open(..., "r"), etc.). Deny only
     # shell shapes that create, overwrite, append to, remove, or mutate final
     # extraction JSONL files.
-    if re.search(r"(?:^|[\s;&|])(?:>|>>|1>|1>>)\s*[^\s'\";]*extractions/", command):
-        return targets[0]
-    if re.search(r"\btee\b(?:\s+-a)?[^\n;]*extractions/", command):
-        return targets[0]
+    for match in _REDIRECT_TARGET.finditer(command):
+        path = match.group("path")
+        if _is_final_extraction_jsonl(path):
+            return path
+    for match in _TEE_TARGET.finditer(command):
+        path = match.group("path")
+        if _is_final_extraction_jsonl(path):
+            return path
     if re.search(r"\b(?:cp|mv|rm|touch|install|truncate)\b[^\n;]*extractions/", command):
         return targets[0]
     if re.search(r"\b(?:sed\s+-i|perl\s+-pi)\b[^\n;]*extractions/", command):
@@ -110,7 +139,8 @@ def _deny(path: str) -> int:
     msg = (
         "BLOCKED: extraction JSONL must be produced by "
         "scripts/extraction/write_extraction.py (iter1|itern) or "
-        "scripts/extraction/extraction_builder.py finalize, never written directly. "
+        "scripts/extraction/extraction_builder.py finalize, or "
+        "scripts/extraction/run_extraction_build.py, never written directly. "
         "Direct writes bypass provenance + value validation "
         "(quote-at-location, value-in-quote, derivation arithmetic). "
         f"Attempted direct write to: {path}. Emit rows.json/meta.json staging "

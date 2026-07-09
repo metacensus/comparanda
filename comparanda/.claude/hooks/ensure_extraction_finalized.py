@@ -14,7 +14,9 @@ marker:
 
   1. Find the just-stopped extractor subagent transcript.
   2. If none found → not an extractor stop, allow.
-  3. Scan that transcript for `[write_extraction iter1|itern] wrote N rows`.
+  3. Scan that transcript for a sanctioned finalizer success marker:
+     either `[write_extraction iter1|itern] wrote N rows` or a successful
+     staged builder runner finalization.
   4. If found → allow the stop.
   5. If not found → block with a structured reason instructing the agent to
      invoke the script (or use an empty-diff itern invocation for legitimate
