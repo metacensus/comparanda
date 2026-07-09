@@ -73,6 +73,36 @@ def test_blocks_bash_mutations_to_final_extraction_jsonl() -> None:
         assert proc.returncode == 2, command
 
 
+def test_allows_simple_archive_or_exclusion_moves() -> None:
+    for command in (
+        "mv projects/example_domain/extractions/paper_1.jsonl projects/example_domain/extractions/archived/iter_1/paper_1.jsonl",
+        "git mv projects/example_domain/extractions/paper_1.jsonl projects/example_domain/extractions/excluded/paper_1/paper_1.jsonl",
+    ):
+        proc = run_hook("Bash", {"command": command})
+        assert proc.returncode == 0, command
+
+
+def test_blocks_chained_archive_move_with_final_jsonl_mutation() -> None:
+    command = (
+        "mv projects/example_domain/extractions/paper_1.jsonl "
+        "projects/example_domain/extractions/archived/iter_1/paper_1.jsonl && "
+        "printf '{}' > projects/example_domain/extractions/paper_1.jsonl"
+    )
+
+    proc = run_hook("Bash", {"command": command})
+
+    assert proc.returncode == 2
+
+
+def test_allows_redirect_or_tee_to_non_final_extraction_paths() -> None:
+    for command in (
+        "printf '{}' > projects/example_domain/extractions/.staging/paper_1/debug.jsonl",
+        "printf '{}' | tee projects/example_domain/extractions/.staging/paper_1/debug.jsonl",
+    ):
+        proc = run_hook("Bash", {"command": command})
+        assert proc.returncode == 0, command
+
+
 def test_allows_sanctioned_finalizers_and_runner() -> None:
     for command in (
         "uv run scripts/extraction/write_extraction.py iter1 --out projects/example_domain/extractions/paper_1.jsonl",
