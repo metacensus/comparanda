@@ -11,9 +11,13 @@ This file covers two things:
 
 - **"Run the system" / "extract from these papers" / "iterate the schema"** →
   `cd comparanda/` and follow `comparanda/CLAUDE.md` (phase-by-phase orchestrator).
+  Use `comparanda/AGENT_INDEX.md` as the quick reference for agent scopes,
+  file contracts, scripts, hooks, and resume behavior.
 
 - **"Improve the agents" / "calibrate against gold standard" / "diagnose what failed"** →
   `cd harness/` and follow `harness/CLAUDE.md` (improvement loop).
+  Use `harness/AGENT_INDEX.md` as the quick reference for harness agents,
+  eval artifacts, script dependencies, and eval resume policy.
 
 - **"How is the system put together" / "what's the spec"** → read `docs/specs/`
   and `docs/presentation/system-architecture-v1/`.
@@ -49,10 +53,13 @@ subprojects. `cd` into the one you're working in before invoking agents.
 | Path | Role |
 |---|---|
 | `comparanda/CLAUDE.md` | Orchestrator — phase-by-phase instructions for the inner loop. The orchestrator delegates to agents; it does not extract directly. |
-| `comparanda/.claude/hooks/validate_provenance_quotes.py` | PostToolUse hook. Validates every provenance quote in an extraction JSONL appears verbatim in the paper-prep bundle. Fires on both `Write` and `Bash` paths. |
+| `comparanda/AGENT_INDEX.md` | Operator reference for inner-loop agents, file contracts, script dependencies, hooks, and resume behavior. |
+| `comparanda/.claude/hooks/validate_extraction_write.py` | PreToolUse hook that blocks direct extraction JSONL writes outside sanctioned materialization scripts. |
+| `comparanda/.claude/hooks/ensure_extraction_finalized.py` | SubagentStop hook that requires extractor agents to finish with a sanctioned finalizer success marker or explicit no-op. |
 | `comparanda/.claude/skills/comparanda/SKILL.md` | Cross-phase pipeline-knowledge skill surfaced to agents that need it. |
 | `comparanda/.claude/settings.json` | Agent-level configuration. |
-| `comparanda/scripts/observation_log.py` | Stdlib CLI used by the extractor to query the observation log for entries relevant to a specific paper. |
+| `comparanda/scripts/README.md` | Script index for extraction, normalization, review, observation logging, and paper-prep helper APIs. |
+| `comparanda/scripts/observation_log.py` | Structured observation-log append/query helper used by all inner-loop agents. |
 | `comparanda/scripts/paper_prep/` | PDF → bundle preprocessor (Docling + per-table Sonnet + Stage-2 arbiter + bundle assembly). Self-contained uv workspace; run via `python -m paper_prep` or `python -m paper_prep.batch`. Bootstrap Step 4. |
 
 ### Outer-loop agents (`harness/.claude/agents/`)
@@ -60,7 +67,7 @@ subprojects. `cd` into the one you're working in before invoking agents.
 | File | Role |
 |---|---|
 | `harness/.claude/agents/monitor.md` | Reads inner-loop state (observation log, phase artifacts) and produces a structured status summary. |
-| `harness/.claude/agents/eval.md` | Compares Comparanda extractions against the gold standard. Aggregate-mode (completeness) and detailed-mode (semantic accuracy). |
+| `harness/.claude/agents/eval.md` | Compares Comparanda extractions against the gold standard. Produces aggregate metrics plus semantic field-level coverage and rationale artifacts. |
 | `harness/.claude/agents/diagnostician.md` | Traces eval findings to instruction root causes. Identifies which agent file needs changes. |
 | `harness/.claude/agents/critic.md` | Proposes one specific, domain-independent instruction change per iteration. The only agent that modifies inner-loop agent files. |
 
@@ -69,9 +76,10 @@ subprojects. `cd` into the one you're working in before invoking agents.
 | Path | Role |
 |---|---|
 | `harness/CLAUDE.md` | Outer-loop orchestrator — improvement loop walkthrough. |
+| `harness/AGENT_INDEX.md` | Operator reference for harness agents, eval artifacts, script dependencies, and eval resume policy. |
 | `harness/.claude/hooks/harness-guardrail-comparanda-writes.sh` | PreToolUse hook. Prevents the harness from modifying anything in `comparanda/` except the universal instruction sections of `comparanda/.claude/agents/*.md`. |
 | `harness/src/harness/monitor.py` | Phase-transition monitor used by the `monitor` agent. |
-| `harness/src/harness/eval/{aggregate,prepare_comparison,gold_standard}.py` | Eval pipeline invoked by the `eval` agent. |
+| `harness/src/harness/eval/` | Eval helpers for aggregate metrics, claim faithfulness, semantic field coverage, scoring, rendering, batching, and workbench setup. See `harness/AGENT_INDEX.md#eval` for the current script inventory. |
 | `harness/benchmark/` | Optional fork-owned gold standard/config. Canonical does not ship live domain benchmark data. |
 
 The outer loop modifies inner-loop agent prompts in `comparanda/.claude/agents/`. It does **not** modify Python or hook code.
