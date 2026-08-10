@@ -22,17 +22,17 @@ instructions.
 
 | Path | Owner / Writers | Readers |
 |---|---|---|
-| `iterations/trajectory.json` | orchestrator, eval/trajectory scripts | all harness agents |
-| `iterations/accuracy_coverage.json` | eval agent / eval scripts | eval, diagnostician, orchestrator |
-| `iterations/iter_{N}/eval_report.json` | eval aggregate mode | diagnostician, orchestrator |
-| `iterations/iter_{N}/claim_faithfulness.json` | eval aggregate mode via script | eval, diagnostician, portal/export consumers |
-| `iterations/iter_{N}/comparisons/{paper_id}.json` | eval detailed setup | eval detailed workspace |
-| `iterations/iter_{N}/field_coverage/{paper_id}/` | eval detailed mode | eval validation, orchestrator, diagnostician |
-| `iterations/iter_{N}/field_coverage_eval_sessions.json` | eval detailed outer-loop mode | orchestrator, resumed eval agent |
-| `iterations/iter_{N}/diagnoses/{slug}.json` | diagnostician | critic, orchestrator |
-| `iterations/iter_{N}/proposals/{slug}.json` | critic | orchestrator |
-| `benchmark/gold_standard/` | application/domain fork | eval, diagnostician |
-| `benchmark/eval_config/` | application/domain fork | eval, diagnostician |
+| `<iterations-dir>/trajectory.json` | orchestrator, eval/trajectory scripts | all harness agents |
+| `<iterations-dir>/accuracy_coverage.json` | eval agent / eval scripts | eval, diagnostician, orchestrator |
+| `<iterations-dir>/iter_{N}/eval_report.json` | eval aggregate mode | diagnostician, orchestrator |
+| `<iterations-dir>/iter_{N}/claim_faithfulness.json` | eval aggregate mode via script | eval, diagnostician, portal/export consumers |
+| `<iterations-dir>/iter_{N}/comparisons/{paper_id}.json` | eval detailed setup | eval detailed workspace |
+| `<iterations-dir>/iter_{N}/field_coverage/{paper_id}/` | eval detailed mode | eval validation, orchestrator, diagnostician |
+| `<iterations-dir>/iter_{N}/field_coverage_eval_sessions.json` | eval detailed outer-loop mode | orchestrator, resumed eval agent |
+| `<iterations-dir>/iter_{N}/diagnoses/{slug}.json` | diagnostician | critic, orchestrator |
+| `<iterations-dir>/iter_{N}/proposals/{slug}.json` | critic | orchestrator |
+| `<gold-standard-dir>/` | application/domain fork | eval, diagnostician |
+| `<eval-config-dir>/` | application/domain fork | eval, diagnostician |
 | `../comparanda/.claude/agents/*.md` | critic proposal, orchestrator applies approved changes | all harness agents |
 
 ## Agents
@@ -44,10 +44,10 @@ Scope: cheap read-only status scanner for Comparanda project state. Determines w
 Model: `haiku`
 
 Inputs:
-- `../comparanda/projects/<domain>/observations/log.jsonl`
-- `../comparanda/projects/<domain>/extractions/*.jsonl`
-- `../comparanda/projects/<domain>/schema/v*.yaml`
-- `../comparanda/projects/<domain>/critiques/iter_*.json`
+- `<project-root>/observations/log.jsonl`
+- `<project-root>/extractions/*.jsonl`
+- `<project-root>/schema/v*.yaml`
+- `<project-root>/critiques/iter_*.json`
 - recent Comparanda git log
 
 Outputs:
@@ -73,26 +73,26 @@ Scope: measurement layer. Runs aggregate completeness/faithfulness surfaces and 
 Model: `opus` for strongest adjudication; deterministic scripts run locally.
 
 Inputs:
-- `../comparanda/projects/<domain>/extractions/`
-- `../comparanda/projects/<domain>/schema/v*.yaml`
-- `../comparanda/projects/<domain>/normalization/`
-- `../comparanda/projects/<domain>/observations/log.jsonl`
-- `../comparanda/projects/<domain>/domain/`
-- `benchmark/gold_standard/*`
-- `benchmark/eval_config/document_id_map.json`
-- optional `benchmark/eval_config/gold_config.json`
+- `<project-root>/extractions/`
+- `<project-root>/schema/v*.yaml`
+- `<project-root>/normalization/`
+- `<project-root>/observations/log.jsonl`
+- `<project-root>/domain/`
+- `<gold-standard-dir>/*`
+- `<eval-config-dir>/document_id_map.json`
+- optional `<eval-config-dir>/gold_config.json`
 - iteration id
 - mode: `aggregate`, `detailed`, `outer-loop`, or `one-shot` as directed by orchestrator
 - paper list for detailed runs
 
 Outputs:
-- `iterations/iter_{N}/eval_report.json`
-- `iterations/iter_{N}/claim_faithfulness.json`
-- `iterations/iter_{N}/comparisons/{paper_id}.json`
-- `iterations/iter_{N}/field_coverage/{paper_id}/output/field_coverage.json`
-- `iterations/iter_{N}/field_coverage/{paper_id}/output/field_coverage_validation.json`
-- optional `iterations/iter_{N}/field_coverage/{paper_id}/output/field_coverage_delta.json`
-- updated `iterations/accuracy_coverage.json`
+- `<iterations-dir>/iter_{N}/eval_report.json`
+- `<iterations-dir>/iter_{N}/claim_faithfulness.json`
+- `<iterations-dir>/iter_{N}/comparisons/{paper_id}.json`
+- `<iterations-dir>/iter_{N}/field_coverage/{paper_id}/output/field_coverage.json`
+- `<iterations-dir>/iter_{N}/field_coverage/{paper_id}/output/field_coverage_validation.json`
+- optional `<iterations-dir>/iter_{N}/field_coverage/{paper_id}/output/field_coverage_delta.json`
+- updated `<iterations-dir>/accuracy_coverage.json`
 - portal-compatible artifacts when invoked for export-style runs: `score.json`, `finding_scores.json`, `gold_adjudications.json`, `bundle_status.json`, `eval_explainer.md`
 
 Scripts:
@@ -114,7 +114,7 @@ Scripts:
 - `harness.eval.workbench`
 
 Resume policy:
-- Outer-loop detailed eval should resume the prior eval session when `iterations/iter_{N}/field_coverage_eval_sessions.json` has a session for that paper/run mode.
+- Outer-loop detailed eval should resume the prior eval session when `<iterations-dir>/iter_{N}/field_coverage_eval_sessions.json` has a session for that paper/run mode.
 - If session resume is unavailable, the eval workspace still provides checklist/progress/output artifacts for deterministic continuation.
 - One-shot mode may use a fresh isolated workspace.
 - Aggregate mode is deterministic and rerun fresh.
@@ -127,18 +127,18 @@ Model: `sonnet`
 
 Inputs:
 - `../docs/specs/system2-lessons.md`
-- `iterations/iter_{N}/eval_report.json`
-- detailed eval artifacts under `iterations/iter_{N}/field_coverage/`
+- `<iterations-dir>/iter_{N}/eval_report.json`
+- detailed eval artifacts under `<iterations-dir>/iter_{N}/field_coverage/`
 - `../comparanda/.claude/agents/*.md`
-- `../comparanda/projects/<domain>/observations/log.jsonl`
-- `../comparanda/projects/<domain>/schema/v*.yaml`
-- `benchmark/gold_standard/`
-- latest `../comparanda/projects/<domain>/critiques/iter_*.json`
-- `../comparanda/projects/<domain>/surveys/*.json`
+- `<project-root>/observations/log.jsonl`
+- `<project-root>/schema/v*.yaml`
+- `<gold-standard-dir>/`
+- latest `<project-root>/critiques/iter_*.json`
+- `<project-root>/surveys/*.json`
 - normalization tables when relevant
 
 Outputs:
-- `iterations/iter_{N}/diagnoses/{slug}.json`
+- `<iterations-dir>/iter_{N}/diagnoses/{slug}.json`
 - structured recommendation: `invoke_critic`, `run_inner_loop`, `no_instruction_fix_needed`, or `investigate_further`
 
 Scripts:
@@ -156,14 +156,14 @@ Scope: proposes exactly one domain-independent instruction change for one Compar
 Model: `sonnet`
 
 Inputs:
-- one `iterations/iter_{N}/diagnoses/{slug}.json`
+- one `<iterations-dir>/iter_{N}/diagnoses/{slug}.json`
 - target file under `../comparanda/.claude/agents/`
-- `iterations/trajectory.json`
+- `<iterations-dir>/trajectory.json`
 - `../docs/specs/system2-lessons.md`
 - `../docs/research/prompt-engineering-reference.md`
 
 Outputs:
-- `iterations/iter_{N}/proposals/{slug}.json`
+- `<iterations-dir>/iter_{N}/proposals/{slug}.json`
 - exact `current_text` / `proposed_text` or insertion point
 - rationale, expected impact, instruction-size delta, and overfitting-test result
 

@@ -30,7 +30,7 @@ state only.
 Verbose reconciliation rationale belongs in:
 
 ```bash
-projects/{domain}/normalization/reconciliation/decisions_iter_{N}.jsonl
+{project_root}/normalization/reconciliation/decisions_iter_{N}.jsonl
 ```
 
 ## Required Workflow
@@ -41,11 +41,11 @@ projects/{domain}/normalization/reconciliation/decisions_iter_{N}.jsonl
 
    ```bash
    uv run scripts/normalization/normalization_reconcile.py \
-     --project projects/{domain} \
+     --project {project_root} \
      --iteration {N}
    ```
 
-3. Review `projects/{domain}/normalization/reconciliation_candidates_iter_{N}.json`.
+3. Review `{project_root}/normalization/reconciliation_candidates_iter_{N}.json`.
    The top-level `candidates` list is the primary schema-reconciliation queue.
    `appendix_candidates` are low-confidence/null/catch-all entries from
    schema-unaffected tables; review them only when explicitly instructed or when
@@ -64,7 +64,7 @@ projects/{domain}/normalization/reconciliation/decisions_iter_{N}.jsonl
 
 ```bash
 uv run scripts/normalization/normalization_api.py reconcile \
-  --project projects/{domain} \
+  --project {project_root} \
   --iteration {N} \
   --table {table_name} \
   --raw '{raw value}' \
@@ -72,7 +72,7 @@ uv run scripts/normalization/normalization_api.py reconcile \
   --canonical-id '{canonical id}' \
   --confidence 0.92 \
   --reason 'Short semantic reason.' \
-  --evidence 'projects/{domain}/data/processed/{paper}/sections/results.md'
+  --evidence '{project_root}/data/processed/{paper}/sections/results.md'
 ```
 
 Valid dispositions:
@@ -94,7 +94,7 @@ be null/unresolved.
 
 ```bash
 uv run scripts/normalization/normalization_api.py apply \
-  --project projects/{domain} \
+  --project {project_root} \
   --threshold 0.9
 ```
 
@@ -103,7 +103,7 @@ only be used for explicitly reviewed medium-confidence reconciliation decisions:
 
 ```bash
 uv run scripts/normalization/normalization_api.py apply \
-  --project projects/{domain} \
+  --project {project_root} \
   --tables {table_name} \
   --raw '{raw value}' \
   --threshold 0.85 \
@@ -114,7 +114,7 @@ Optional narrowing:
 
 ```bash
 uv run scripts/normalization/normalization_api.py apply \
-  --project projects/{domain} \
+  --project {project_root} \
   --tables comparison_groups \
   --raw 'wild-type'
 ```
@@ -127,7 +127,7 @@ single-domain rules or assumptions about one naming convention.
 
 ```bash
 uv run scripts/normalization/normalization_api.py validate \
-  --project projects/{domain} \
+  --project {project_root} \
   --base-ref HEAD
 ```
 
@@ -147,7 +147,7 @@ into normalization tables:
 
 ```bash
 uv run scripts/normalization/normalization_api.py clean-audit-metadata \
-  --project projects/{domain} \
+  --project {project_root} \
   --iteration {N}
 ```
 

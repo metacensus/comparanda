@@ -18,7 +18,7 @@ harness/                      (you are here)
 ├── benchmark/                optional per-domain files in application forks
 │   ├── gold_standard/        configured gold-standard source
 │   └── eval_config/          document_id_map.json, gold_config.json, ...
-├── iterations/               trajectory, per-iteration archives (created at runtime; gitignored)
+├── iterations/               legacy in-repo run state (gitignored)
 └── src/harness/              eval scripts, utilities
 
 ../comparanda/                (the system under calibration)
@@ -29,10 +29,27 @@ harness/                      (you are here)
 ├── specs/system2-lessons.md  read before each diagnostician/critic run
 └── research/                 prompt-engineering reference, etc.
 
-projects/<domain>/            (per-domain application data — NOT in this monorepo;
-                              path used in agent prompts assumes a sibling app repo
-                              mounted at ../comparanda/projects/<domain>/ for now)
+<project-root>/               single-domain application repository (external)
+├── comparanda/               this repository, when used as a submodule
+├── benchmark/eval_config/    domain evaluation configuration
+└── iterations/                domain run state
 ```
+
+## External Path Contract
+
+Resolve these absolute paths before running the loop:
+
+- `<project-root>` from `COMPARANDA_PROJECT_DIR` or an explicit invocation path.
+- `<iterations-dir>` from `COMPARANDA_ITERATIONS_DIR`, defaulting to
+  `<project-root>/iterations`.
+- `<eval-config-dir>` from `COMPARANDA_EVAL_CONFIG_DIR`, defaulting to
+  `<project-root>/benchmark/eval_config`.
+- `<gold-standard-dir>` from `COMPARANDA_GOLD_STANDARD_DIR`, defaulting to
+  `<project-root>/benchmark/gold_standard`.
+
+The legacy layout remains supported only when its paths are passed explicitly.
+Never infer that application data lives inside the canonical Comparanda Git
+checkout. Pass resolved paths to agents and CLI tools.
 
 ## The Improvement Loop
 
@@ -68,12 +85,12 @@ observation log growing, critique written).
 
 ```bash
 # CORRECT — run in background, no timeout, will be notified on completion
-cd ../comparanda && claude -p "Run 1 inner loop iteration on projects/<domain>" \
+cd ../comparanda && claude -p "Run 1 inner loop iteration on <project-root>" \
   --permission-mode bypassPermissions
 # (use run_in_background: true on the Bash tool call)
 
 # WRONG — will timeout and kill the process mid-run
-cd ../comparanda && claude -p "Run 1 inner loop iteration on projects/<domain>" \
+cd ../comparanda && claude -p "Run 1 inner loop iteration on <project-root>" \
   --permission-mode bypassPermissions \
   2>&1 | tail -30
 ```
@@ -91,8 +108,8 @@ smoke test to verify the fix landed. This is subject to strict bounds:
   verification paper and rationale for why that paper tests the fix
 - One paper, one re-extraction — never multiple papers
 - The prompt must be neutral — file paths only, no description of the fix
-- Output goes to `iterations/iter_{N}/verification/{paper_id}.jsonl`, NOT to
-  `../comparanda/projects/<domain>/extractions/`. It is a diagnostic artifact,
+- Output goes to `<iterations-dir>/iter_{N}/verification/{paper_id}.jsonl`, NOT to
+  `<project-root>/extractions/`. It is a diagnostic artifact,
   not Comparanda state
 - After verification, you must still run a full inner loop to test
   generalization. The smoke test does not replace the loop
@@ -103,17 +120,17 @@ smoke test to verify the fix landed. This is subject to strict bounds:
 # Verification smoke test — output to harness iterations, not comparanda
 cd ../comparanda && claude -p \
   "Invoke @extractor to extract {paper_id}. \
-  Input file paths: Paper: projects/<domain>/data/{pdf_name}, \
-  Schema: projects/<domain>/schema/v{NNN}.yaml, \
-  Survey: projects/<domain>/surveys/{paper_id}.json, \
-  Domain ref: projects/<domain>/domain/extraction_ref.md, \
-  Observation log: projects/<domain>/observations/log.jsonl. \
+  Input file paths: Paper: <project-root>/data/{pdf_name}, \
+  Schema: <project-root>/schema/v{NNN}.yaml, \
+  Survey: <project-root>/surveys/{paper_id}.json, \
+  Domain ref: <project-root>/domain/extraction_ref.md, \
+  Observation log: <project-root>/observations/log.jsonl. \
   Write output to /tmp/verification_{paper_id}.jsonl." \
   --permission-mode bypassPermissions \
   2>&1 | tail -30
 
 # Then copy to harness iterations for comparison
-cp /tmp/verification_{paper_id}.jsonl iterations/iter_{N}/verification/
+cp /tmp/verification_{paper_id}.jsonl <iterations-dir>/iter_{N}/verification/
 ```
 
 ### Interactive (for debugging)
@@ -140,7 +157,7 @@ and where to investigate.
 
 ```bash
 uv run python -m harness.monitor \
-  --project-dir ../comparanda/projects/<domain> \
+  --project-dir <project-root> \
   --session-dir ~/.claude/projects/<comparanda-session-dir> \
   --output /tmp/comparanda_monitor.log
 # (use run_in_background: true — monitor runs until you stop it)
@@ -166,7 +183,7 @@ When you see these events, use the session and subagent log paths to investigate
 behavior. You know what correct behavior looks like — read the logs and verify.
 
 ### File-based monitoring (manual)
-If the monitor is not running, check these directly from `../comparanda/projects/<domain>/`:
+If the monitor is not running, check these directly from `<project-root>/`:
 - `extractions/*.jsonl` — extraction output (row counts, field coverage)
 - `normalization/*.json` — normalization tables
 - `critiques/iter_*.json` — MA Critique assessments
@@ -177,7 +194,7 @@ If the monitor is not running, check these directly from `../comparanda/projects
 ```bash
 git -C ../comparanda log --oneline -10
 git -C ../comparanda diff HEAD~1 -- .claude/agents/   # did instructions change?
-git -C ../comparanda diff HEAD~1 -- projects/<domain>/schema/  # did schema change?
+git -C <project-root> diff HEAD~1 -- schema/  # did schema change?
 ```
 
 ### Behavior alignment verification (required after every run)
@@ -253,14 +270,14 @@ determine whether it's an instruction problem or a one-time issue, and re-run if
 
 Before running Comparanda, read the current state to understand where it is:
 
-- **Latest critique** (`../comparanda/projects/<domain>/critiques/iter_*.json`) — what did
+- **Latest critique** (`<project-root>/critiques/iter_*.json`) — what did
   MA Critique last recommend? Is it "ready" or "not ready"? What action type?
-- **Schema version** (`../comparanda/projects/<domain>/schema/v*.yaml`) — has the schema
+- **Schema version** (`<project-root>/schema/v*.yaml`) — has the schema
   been updated since the latest critique? If not and the critique recommended schema
   changes, Comparanda needs to start at Phase 4.
-- **Extractions** (`../comparanda/projects/<domain>/extractions/`) — which papers have been
+- **Extractions** (`<project-root>/extractions/`) — which papers have been
   extracted? If empty, Comparanda starts at Phase 3a with subset selection.
-- **Observation log tail** (`../comparanda/projects/<domain>/observations/log.jsonl`) — what
+- **Observation log tail** (`<project-root>/observations/log.jsonl`) — what
   was the last phase and iteration? Any reset markers?
 
 This informs your prompt. If Comparanda is mid-loop (critique exists but Phase 4 hasn't
@@ -329,7 +346,7 @@ field adjudication schema, or validation repair.
 Field-level semantic eval is expensive. On subsequent iterations for a paper
 that already has a field-level eval session:
 
-1. Check `iterations/*/field_coverage_eval_sessions.json` for the latest entry
+1. Check `<iterations-dir>/*/field_coverage_eval_sessions.json` for the latest entry
    for that paper.
 2. If the original eval agent is resumable in the current Claude Code session,
    resume it with `SendMessage` and pass only the new iteration id, paper id,
@@ -348,7 +365,7 @@ accuracy at least once before convergence — but not all at once. Prioritize
 flagged papers, then fill in the rest over subsequent iterations.
 
 ### Accuracy coverage tracking
-The eval agent maintains `iterations/accuracy_coverage.json` — a running log of
+The eval agent maintains `<iterations-dir>/accuracy_coverage.json` — a running log of
 which papers have been evaluated for accuracy, when (which iteration), and with
 what finding_accuracy score. After each detailed mode pass, the eval agent updates
 this file. Check it before convergence decisions.
@@ -461,19 +478,18 @@ agent .md files. The overfitting test ensures those modifications generalize.
 
 ## Step 7: Apply Fix + Re-run
 
-1. **Snapshot current agent .md files** to `iterations/iter_{N}/agent_snapshots/`
+1. **Snapshot current agent .md files** to `<iterations-dir>/iter_{N}/agent_snapshots/`
 2. **Apply the proposed change** to the target agent .md file
-3. **Commit** the agent .md change using `harness-commit`:
+3. **Commit** the agent change in the canonical Comparanda submodule. Confirm
+   that the submodule is already on the intended methodology feature branch:
    ```bash
-   git add ../comparanda/.claude/agents/<file>.md
-   uv run harness-commit -m "Harness iter {N}: {change description}"
+   git -C .. status --short --branch
+   git -C .. add comparanda/.claude/agents/<file>.md
+   git -C .. commit -m "Harness iter {N}: {change description}"
    ```
-   `harness-commit` (defined in `harness/src/harness/git_wrapper/commit.py`) inspects
-   staged paths, classifies them as methodology vs domain, and routes the commit to
-   the right branch in the fork (methodology change → `methodology` branch + merge
-   forward to `main`; domain change → `main` only). Required for the 2-branch model
-   to hold. Default mode is `strict` — mixed-path commits are rejected with a clear
-   error. See `docs/specs/harness-commit-wrapper.md` for the spec.
+   Never stage external domain or iteration state in the engine repository.
+   `harness-commit` remains only for legacy two-branch forks and must not be used
+   for a composed superproject.
 4. **Re-run Comparanda** with the modified instructions
 5. **Re-evaluate** (Step 3) with the same gold standard
 
@@ -483,13 +499,13 @@ After applying a fix:
 
 1. **Optional: verification smoke test.** If the diagnostician specified a verification
    paper with `fix_instruction`, re-extract that ONE paper with a neutral prompt. Output
-   goes to `iterations/iter_{N}/verification/` (not Comparanda state). Compare against the
+   goes to `<iterations-dir>/iter_{N}/verification/` (not Comparanda state). Compare against the
    previous extraction to confirm the instruction change produced different output. This
    is a quick check — not an evaluation, not a replacement for the inner loop.
 
 2. **Required: full inner loop.** Run Comparanda for 1 full inner loop iteration:
    ```bash
-   cd ../comparanda && claude -p "Run 1 inner loop iteration on projects/<domain>" \
+   cd ../comparanda && claude -p "Run 1 inner loop iteration on <project-root>" \
      --permission-mode bypassPermissions
    ```
    Comparanda's own loop logic (subset selection, Phase 4 schema refinement, MA Critique)
@@ -529,7 +545,7 @@ Never: fix → re-extract problem paper → re-extract more papers → skip norm
 }
 ```
 
-Append to `iterations/trajectory.json`.
+Append to `<iterations-dir>/trajectory.json`.
 
 ---
 
@@ -546,7 +562,7 @@ Append to `iterations/trajectory.json`.
 - Row coverage is below 70% for any gold standard paper
 - A known instruction-level fix hasn't been tried yet
 - The last change was reverted (try a different approach first)
-- **Any gold standard paper has not been evaluated for accuracy** (check `iterations/accuracy_coverage.json` — every paper needs at least one detailed mode pass)
+- **Any gold standard paper has not been evaluated for accuracy** (check `<iterations-dir>/accuracy_coverage.json` — every paper needs at least one detailed mode pass)
 - **Finding accuracy is below 50%** on papers where it has been measured
 
 ---
@@ -577,7 +593,7 @@ When proposing changes, the critic should classify as:
 
 1. **Only modify universal instruction sections** of `../comparanda/.claude/agents/*.md`
 2. **Never modify** agent frontmatter (model, tools, description, name)
-3. **Never modify** domain reference files (`../comparanda/projects/*/domain/`)
+3. **Never modify** domain reference files (`<project-root>/domain/`)
 4. **Never modify** schema files, extraction output, observation log, or any project data
 5. **One change per iteration** — multiple simultaneous changes prevent attribution
 6. **Every change must pass the overfitting test** — domain-independent or rejected
@@ -611,5 +627,5 @@ See `.claude/agents/` for definitions.
 
 - Comparanda v2 spec: `../docs/specs/comparanda-v2-spec.md`
 - Harness lessons: `../docs/specs/system2-lessons.md`
-- Gold standard: supplied by the per-domain fork or explicit eval CLI path
-- Eval config: supplied by the per-domain fork or explicit eval CLI path
+- Gold standard: supplied by `<gold-standard-dir>` or an explicit eval CLI path
+- Eval config: supplied by `<eval-config-dir>` or an explicit eval CLI path

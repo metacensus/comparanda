@@ -7,7 +7,7 @@ so System 2 can investigate behavior alignment.
 
 Usage:
     uv run python -m harness.monitor \
-        --project-dir ../comparanda/projects/<domain> \
+        --project-dir <project-root> \
         --session-dir ~/.claude/projects/<encoded-project-dir>
 
 Prints timestamped events to stdout as phases complete. System 2 reads these

@@ -17,7 +17,7 @@ Agentic system for scientific paper schema extraction. The schema IS the product
 
 | Phase | Agent | Input | Output |
 |-------|-------|-------|--------|
-| 0 | (manual / reference generation) | Domain seed | `projects/<domain>/domain/*.md` |
+| 0 | (manual / reference generation) | Domain seed | `<project-root>/domain/*.md` |
 | 0.5 | schema-proposer | Domain context | `schema/survey_schema.json` |
 | 1 | survey (per paper) | Paper-prep bundle + survey schema | `surveys/{paper_id}.json` |
 | 1.5 | subset-selector | All surveys | Selected representative papers |

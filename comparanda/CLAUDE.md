@@ -4,32 +4,45 @@ Scientific paper schema extraction system. Given a domain and a corpus of papers
 
 ## How This Works
 
-You are the orchestrator. Follow the phases below. Agents are in `.claude/agents/`. Invoke them with @agent-name. All project state for a given domain lives in `projects/<domain>/` (e.g. `projects/<domain>/`).
+You are the orchestrator. Follow the phases below. Agents are in `.claude/agents/`. Invoke them with @agent-name. All project state for a given domain lives under one explicit `<project-root>`.
+
+### Project Root Contract
+
+Resolve `<project-root>` before doing any work. Prefer the absolute path in
+`COMPARANDA_PROJECT_DIR`; otherwise use the exact project path supplied in the
+invocation. A legacy in-repository `projects/<domain>` directory remains
+supported when it is explicitly supplied, but must never be assumed. The
+project root may be outside this Git checkout—for example, the root of a domain
+superproject that embeds this repository as a submodule.
+
+Pass the resolved path to every subagent and script. In this document and agent
+instructions, `<project-root>` and `{project_root}` both mean that resolved
+directory, not a literal directory name.
 
 For a concise map of every agent's scope, inputs, outputs, scripts, hooks, and
 resume behavior, see `AGENT_INDEX.md`.
 
 ### Key Files
-- **Schema:** `projects/<domain>/schema/` — rich YAML, versioned (v001.yaml, v002.yaml, ...)
-- **Observations:** `projects/<domain>/observations/log.jsonl` — append-only structured log
-- **Domain refs:** `projects/<domain>/domain/` — per-agent domain knowledge
-- **Surveys:** `projects/<domain>/surveys/{paper_id}.json`
-- **Extractions:** `projects/<domain>/extractions/{paper_id}.jsonl`
-- **Normalization:** `projects/<domain>/normalization/{table}.json`
-- **Critiques:** `projects/<domain>/critiques/iter_{NNN}.json`
-- **Bundles:** `projects/<domain>/data/processed/<paper_id>/` (manifest.json + paper.md + tables/)
-- **Source PDFs (gitignored):** `projects/<domain>/data/raw/pdfs/`
-- **Phase 0 papers:** `projects/<domain>/data/raw/pdfs/phase0-references/`
+- **Schema:** `<project-root>/schema/` — rich YAML, versioned (v001.yaml, v002.yaml, ...)
+- **Observations:** `<project-root>/observations/log.jsonl` — append-only structured log
+- **Domain refs:** `<project-root>/domain/` — per-agent domain knowledge
+- **Surveys:** `<project-root>/surveys/{paper_id}.json`
+- **Extractions:** `<project-root>/extractions/{paper_id}.jsonl`
+- **Normalization:** `<project-root>/normalization/{table}.json`
+- **Critiques:** `<project-root>/critiques/iter_{NNN}.json`
+- **Bundles:** `<project-root>/data/processed/<paper_id>/` (manifest.json + paper.md + tables/)
+- **Source PDFs (gitignored):** `<project-root>/data/raw/pdfs/`
+- **Phase 0 papers:** `<project-root>/data/raw/pdfs/phase0-references/`
 
 ### Observation Log Format
-Append one JSON object per line to `projects/<domain>/observations/log.jsonl`:
+Append one JSON object per line to `<project-root>/observations/log.jsonl`:
 ```json
 {"id": "OBS-001", "iteration": 1, "phase": "3.5_ma_critique", "agent": "ma_critique", "category": "schema_rationale", "content": "...", "related_fields": [], "timestamp": "2026-04-03T14:00:00Z"}
 ```
 Categories: `schema_rationale`, `domain_pattern`, `paper_flag`, `normalization_note`, `extraction_difficulty`
 
 ### Rich Schema Format
-Schema files are YAML at `projects/<domain>/schema/v{NNN}.yaml`:
+Schema files are YAML at `<project-root>/schema/v{NNN}.yaml`:
 ```yaml
 schema_version: "v001"
 domain: "<domain>"
@@ -68,8 +81,8 @@ Commit after each phase completes. Message format: `"Phase {N}: {what changed}"`
 
 ### Prerequisites
 Check that these exist:
-- `projects/<domain>/domain/deep_research.md` — deep research report
-- `projects/<domain>/domain/seed_knowledge.md` — seed domain knowledge
+- `<project-root>/domain/deep_research.md` — deep research report
+- `<project-root>/domain/seed_knowledge.md` — seed domain knowledge
 - `data/raw/pdfs/phase0-references/` — methodology + prior MA papers
 
 ### Steps
@@ -81,11 +94,11 @@ Check that these exist:
    REFERENCE GENERATION MODE
 
    Read the following materials and extract what is relevant to your role:
-   - Deep research: projects/<domain>/domain/deep_research.md
-   - Seed knowledge: projects/<domain>/domain/seed_knowledge.md
+   - Deep research: <project-root>/domain/deep_research.md
+   - Seed knowledge: <project-root>/domain/seed_knowledge.md
    - Phase 0 papers: [list relevant PDFs from data/raw/pdfs/phase0-references/]
 
-   Write your domain reference file to: projects/<domain>/domain/{agent}_ref.md
+   Write your domain reference file to: <project-root>/domain/{agent}_ref.md
 
    Include domain-specific knowledge that will help you perform your operational
    role: patterns, terminology, pitfalls, examples, normalization needs.
@@ -110,8 +123,8 @@ Check that these exist:
 1. Invoke @schema-proposer in survey schema mode:
    ```
    Generate a survey schema (not extraction schema) for the <domain>.
-   Read: projects/<domain>/domain/deep_research.md
-   Write: projects/<domain>/schema/survey_schema.json
+   Read: <project-root>/domain/deep_research.md
+   Write: <project-root>/schema/survey_schema.json
 
    The survey schema defines what the survey agent catalogs in each paper.
    Layer 1: universal fields (study ID, design, sample size, tables).
@@ -124,9 +137,9 @@ Check that these exist:
 
 ## Phase 1 — Paper Survey
 
-1. **Survey all papers.** For each bundle in `projects/<domain>/data/processed/<paper_id>/`:
+1. **Survey all papers.** For each bundle in `<project-root>/data/processed/<paper_id>/`:
    - Invoke @survey with file paths only (bundle dir + survey schema). Do not pre-digest content; the agent reads `manifest.json` and processes assets per its own instructions.
-   - Agent writes `projects/<domain>/surveys/{paper_id}.json`
+   - Agent writes `<project-root>/surveys/{paper_id}.json`
    - Can run multiple surveys in sequence (or note for parallelism)
 
 2. **Select subset.** Invoke @subset-selector:
@@ -151,16 +164,16 @@ iterating.
 
 1. Invoke @schema-proposer:
    - Reads: all surveys, domain reference (`domain/schema_ref.md`), observation log
-   - Writes: `projects/<domain>/schema/v001.yaml` (rich schema with extraction guidance per field)
+   - Writes: `<project-root>/schema/v001.yaml` (rich schema with extraction guidance per field)
 
 2. **Commit:** `"Phase 2: Propose schema v001 — {N} fields"`
 
 ### Phase 3a — Extraction
 
 1. For each paper in current subset:
-   - Invoke @extractor with file paths to: bundle (`projects/<domain>/data/processed/{paper_id}/`), rich schema, domain reference. Pass file paths only — do not summarize, interpret, or pre-digest content. The extractor reads `manifest.json` and processes bundle assets per its own instructions.
-   - Agent writes: `projects/<domain>/extractions/{paper_id}.jsonl`
-   - Record the returned extractor agent/subagent ID, the parent session ID if available, schema version, staging script path, and finalized JSONL path in `projects/<domain>/extractions/.staging/extractor_sessions.json` using `uv run scripts/extraction/extractor_session_registry.py upsert ...`. This registry is required for QC repair and later schema-iteration re-extraction.
+   - Invoke @extractor with file paths to: bundle (`<project-root>/data/processed/{paper_id}/`), rich schema, domain reference. Pass file paths only — do not summarize, interpret, or pre-digest content. The extractor reads `manifest.json` and processes bundle assets per its own instructions.
+   - Agent writes: `<project-root>/extractions/{paper_id}.jsonl`
+   - Record the returned extractor agent/subagent ID, the parent session ID if available, schema version, staging script path, and finalized JSONL path in `<project-root>/extractions/.staging/extractor_sessions.json` using `uv run scripts/extraction/extractor_session_registry.py upsert ...`. This registry is required for QC repair and later schema-iteration re-extraction.
    - Agent writes paper flags to observation log
 
 2. **Commit:** `"Phase 3a: Extract {N} papers ({total_rows} rows)"`
@@ -168,13 +181,13 @@ iterating.
 ### Phase 3a-QC — Extraction QC
 
 1. For each paper in current subset:
-   - Invoke @extraction-qc with file paths to: extraction (`projects/<domain>/extractions/{paper_id}.jsonl`), survey (`projects/<domain>/surveys/{paper_id}.json`), schema (current version), observation log. Pass file paths only — do not summarize or interpret content.
-   - Agent writes: `projects/<domain>/extractions/{paper_id}_qc.json`
+   - Invoke @extraction-qc with file paths to: extraction (`<project-root>/extractions/{paper_id}.jsonl`), survey (`<project-root>/surveys/{paper_id}.json`), schema (current version), observation log. Pass file paths only — do not summarize or interpret content.
+   - Agent writes: `<project-root>/extractions/{paper_id}_qc.json`
    - Agent writes QC summary to observation log
 
 2. **Parse each QC report's structured action fields only.** Each QC report must include `action_class`, `must_fix_before_normalization`, and `repair_packet`. Do not read or interpret the full QC prose to decide what to do; the QC agent owns that judgment. The current action classes are exactly: `blocking_reextract`, `targeted_extraction_repair`, `schema_or_normalization_note`, and `nonblocking_note`.
 
-   - If `action_class` is `blocking_reextract` or `targeted_extraction_repair` and `must_fix_before_normalization=true`, look up the original extractor in `projects/<domain>/extractions/.staging/extractor_sessions.json`.
+   - If `action_class` is `blocking_reextract` or `targeted_extraction_repair` and `must_fix_before_normalization=true`, look up the original extractor in `<project-root>/extractions/.staging/extractor_sessions.json`.
    - You MUST first resume the original extractor with `SendMessage` to the recorded extractor agent ID. Pass file paths only: extraction JSONL, QC report, repair packet, current schema, bundle path, SDK contract, and existing staging script path. Do not paste the QC findings into the prompt except by giving the file paths; the resumed extractor reads the repair packet.
    - Wait for the resumed extractor's completion/notification before deciding the repair is done. `SendMessage` may return before the resumed subagent finishes in the background.
    - If resume fails, retry resume up to 2 more times with the same file-path-only packet and record each failed attempt in `extractor_sessions.json` using `scripts/extraction/extractor_session_registry.py record-resume-attempt`. Include the tool error and whether the local transcript/meta files exist.
@@ -292,7 +305,7 @@ Once the schema is validated across multiple rotated subsets:
    log records a corpus-curation or substrate/paper-prep reason.
 
 2. **Reuse before fresh extraction.** For each paper, look up
-   `projects/<domain>/extractions/.staging/extractor_sessions.json` and any
+   `<project-root>/extractions/.staging/extractor_sessions.json` and any
    existing staging script. If the paper was extracted during schema
    development, resume the recorded extractor when possible and have it patch
    the existing build script against the final schema diff. If the recorded

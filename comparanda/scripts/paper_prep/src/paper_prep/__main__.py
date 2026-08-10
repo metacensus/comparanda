@@ -9,7 +9,7 @@ session are slow and broken.
 Usage:
     uv run python -m paper_prep <paper_id> \\
         --pdf /path/to/paper.pdf \\
-        --output-root /path/to/projects/<domain>/data/processed/ \\
+        --output-root "$COMPARANDA_PROJECT_DIR/data/processed/" \\
         [--run-root /tmp/paper_prep_<ts>] \\
         [--per-table-budget-usd 1.50] \\
         [--table-batch-size 4] \\

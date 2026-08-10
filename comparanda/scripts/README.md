@@ -40,11 +40,13 @@ Path: `scripts/review/`
 | `review_queue.py` | Builds a queue of high-leverage extracted claims needing human review. | reviewer workflow |
 | `render_review_packet.py` | Renders a compact paper/review packet from extraction rows and bundle evidence. | reviewer workflow |
 | `apply_review.py` | Applies human review decisions back to extraction provenance in an audited form. | reviewer workflow |
+| `portal_export.py` | Builds an immutable reviewer snapshot in a domain data repository; resolves external project/config/output paths through `project_layout.py`. | reviewer release workflow |
 
 ## Shared Utility
 
 | Script | Purpose | Primary caller |
 |---|---|---|
+| `project_layout.py` | Resolves a flattened external domain root plus iteration, benchmark, and export paths from config/environment. | orchestration and exporters |
 | `observation_log.py` | Append/query helper for structured observation logs. Agents use it instead of editing `log.jsonl` directly. | all inner-loop agents |
 
 ## Paper Prep
@@ -58,9 +60,11 @@ keeps its own `pyproject.toml`, lockfile, modules, and examples.
 
 Do not commit runtime state produced by these tools:
 
-- `projects/<domain>/extractions/.staging/`
-- `projects/<domain>/extractions/*.provenance-failed.json`
-- run logs, stream logs, and generated review/eval artifacts
+- `<project-root>/extractions/.staging/`
+- `<project-root>/extractions/*.provenance-failed.json`
+- transient run logs and stream logs. Curated run/eval artifacts belong in the
+  domain superproject; published reviewer snapshots belong in its export
+  submodule.
 
 ## Compatibility
 

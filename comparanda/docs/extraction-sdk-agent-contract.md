@@ -8,14 +8,14 @@ in your final extraction summary.
 
 ## Goal
 
-Produce `projects/<domain>/extractions/<paper_id>.jsonl` only through the
+Produce `<project-root>/extractions/<paper_id>.jsonl` only through the
 staged Extraction Builder SDK or `scripts/extraction/write_extraction.py`. Never write the
 final JSONL directly.
 
 Use one build script per paper:
 
 ```text
-projects/<domain>/extractions/.staging/<paper_id>/scripts/build.py
+<project-root>/extractions/.staging/<paper_id>/scripts/build.py
 ```
 
 On later schema iterations or QC repairs, modify that existing build script
@@ -29,8 +29,8 @@ Run build scripts from the repository root through:
 ```bash
 uv run scripts/extraction/run_extraction_build.py \
   --paper-id <paper_id> \
-  --project projects/<domain> \
-  --script projects/<domain>/extractions/.staging/<paper_id>/scripts/build.py
+  --project <project-root> \
+  --script <project-root>/extractions/.staging/<paper_id>/scripts/build.py
 ```
 
 The runner sets the import path, working directory, and useful environment
@@ -61,10 +61,10 @@ from scripts.extraction.extraction_sdk import (
 
 paper_id = "paper_1"
 b = ExtractionBuilder(
-    project_dir="projects/<domain>",
+    project_dir="<project-root>",
     paper_id=paper_id,
-    schema_path="projects/<domain>/schema/v001.yaml",
-    bundle_dir=f"projects/<domain>/data/processed/{paper_id}",
+    schema_path="<project-root>/schema/v001.yaml",
+    bundle_dir=f"<project-root>/data/processed/{paper_id}",
 )
 E = b.evidence
 
@@ -92,7 +92,7 @@ b.meta({
     "identity_dimension_values": {"entity_raw": ["Treatment group A"]},
 })
 
-b.finalize(f"projects/<domain>/extractions/{paper_id}.jsonl")
+b.finalize(f"<project-root>/extractions/{paper_id}.jsonl")
 ```
 
 ## Common Examples
@@ -368,7 +368,7 @@ Show grouped validation failures:
 ```bash
 python3 - <<'PY'
 import json
-d = json.load(open("projects/<domain>/extractions/.staging/<paper>/validation/<name>.validate.json"))
+d = json.load(open("<project-root>/extractions/.staging/<paper>/validation/<name>.validate.json"))
 print(d["failure_count"], d["by_code"])
 for g in d["groups"][:10]:
     print(g["code"], g.get("hint_code"), g["field"], g["row_ranges"], g["summary"])
@@ -380,7 +380,7 @@ Show staged rows by index:
 ```bash
 python3 - <<'PY'
 import json
-rows = json.load(open("projects/<domain>/extractions/.staging/<paper>/chunks/<chunk>.rows.json"))["rows"]
+rows = json.load(open("<project-root>/extractions/.staging/<paper>/chunks/<chunk>.rows.json"))["rows"]
 for i in [0, 1, 2]:
     print("ROW", i)
     for entry in rows[i]["fields"]:
@@ -392,8 +392,8 @@ PY
 Find the relevant build-script region:
 
 ```bash
-grep -n "with b.chunk(\"<chunk_name>\")" projects/<domain>/extractions/.staging/<paper>/scripts/build.py
-grep -n "\"<field_name>\"" projects/<domain>/extractions/.staging/<paper>/scripts/build.py
+grep -n "with b.chunk(\"<chunk_name>\")" <project-root>/extractions/.staging/<paper>/scripts/build.py
+grep -n "\"<field_name>\"" <project-root>/extractions/.staging/<paper>/scripts/build.py
 ```
 
 ## Repair Or Re-Extraction Scope
@@ -415,7 +415,7 @@ rerun validation through the same staged path.
 A successful finalization prints:
 
 ```text
-[write_extraction iter1] wrote <N> rows to projects/<domain>/extractions/<paper_id>.jsonl (schema vNNN)
+[write_extraction iter1] wrote <N> rows to <project-root>/extractions/<paper_id>.jsonl (schema vNNN)
 ```
 
 Report this marker and the staged validation report path. Do not rerun

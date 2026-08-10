@@ -20,8 +20,8 @@ carrying `reviewed_by`/`reviewed_at`; write_extraction.py then protects that fie
 from being overwritten on the next iteration (F17 durability).
 
 Usage:
-  python3 scripts/review/review_queue.py --extractions-dir projects/<d>/extractions \
-      --bundles-dir projects/<d>/data/processed --output projects/<d>/review_queue.json
+  python3 scripts/review/review_queue.py --extractions-dir <project-root>/extractions \
+      --bundles-dir <project-root>/data/processed --output <project-root>/review_queue.json
 """
 from __future__ import annotations
 
@@ -245,7 +245,7 @@ def main() -> None:
     ap.add_argument("--extractions-dir", required=True)
     ap.add_argument("--bundles-dir", default=None)
     ap.add_argument("--normalization-dir", default=None,
-                    help="projects/<domain>/normalization — enables the "
+                    help="<project-root>/normalization — enables the "
                          "normalizer_dispute tier")
     ap.add_argument("--output", default=None)
     ap.add_argument(

@@ -24,15 +24,15 @@ Record what you see. Do not interpret, normalize, or infer. If something is ambi
 # Inputs
 
 1. **Paper text** — markdown converted from PDF, provided as a file path
-2. **Survey schema** — `projects/{domain}/schema/survey_schema.json`, defines what fields to catalog
-3. **Domain reference** — `projects/{domain}/domain/survey_ref.md`, provides domain-specific patterns and terminology to watch for
+2. **Survey schema** — `{project_root}/schema/survey_schema.json`, defines what fields to catalog
+3. **Domain reference** — `{project_root}/domain/survey_ref.md`, provides domain-specific patterns and terminology to watch for
 
 Read the domain reference file before processing the paper. It contains entity naming patterns, expected study designs, and terminology you should recognize.
 
 # Procedure
 
-1. Read the domain reference file at `projects/{domain}/domain/survey_ref.md`.
-2. Read the survey schema at `projects/{domain}/schema/survey_schema.json`.
+1. Read the domain reference file at `{project_root}/domain/survey_ref.md`.
+2. Read the survey schema at `{project_root}/schema/survey_schema.json`.
 3. Read the paper text from the provided file path.
 4. Scan the full paper to identify study metadata: title, authors, year, journal, DOI, PMID, study design, sample size, follow-up duration.
 5. Catalog every table: number, title, row count, column count, whether it has complex formatting (merged cells, multi-row headers, footnotes with data), whether it contains quantitative data.
@@ -48,16 +48,16 @@ Read the domain reference file before processing the paper. It contains entity n
     - Multiply: `entities x outcomes x grade_levels x groups`
     - Write out the multiplication so it is auditable
 11. Flag page numbers containing complex tables, figures with embedded data, or supplementary material references that may require vision-based extraction.
-12. Write structured JSON output to `projects/{domain}/surveys/{paper_id}.json`.
+12. Write structured JSON output to `{project_root}/surveys/{paper_id}.json`.
 13. Append an observation through
-    `uv run scripts/observation_log.py append --log projects/{domain}/observations/log.jsonl --entry-json '<JSON observation object>'`
+    `uv run scripts/observation_log.py append --log {project_root}/observations/log.jsonl --entry-json '<JSON observation object>'`
     noting paper-specific terminology, surprises, or quality concerns. Omit
     `id` or use `OBS-XXX`; do not write directly to `log.jsonl`.
 
 # Output Format
 
 Write a single JSON object that follows the active
-`projects/{domain}/schema/survey_schema.json`. The survey schema is the output
+`{project_root}/schema/survey_schema.json`. The survey schema is the output
 contract. Do not fall back to generic keys such as `tables`,
 `outcomes_reported`, `entities_studied`, `has_direct_effect_sizes`, or
 `has_raw_counts` unless those exact keys are present in the generated survey
@@ -73,7 +73,7 @@ Recommended schema-driven workflow:
 ```bash
 python3 - <<'PY'
 import json
-schema = json.load(open("projects/{domain}/schema/survey_schema.json"))
+schema = json.load(open("{project_root}/schema/survey_schema.json"))
 print("required:", schema.get("required", []))
 print("properties:", list(schema.get("properties", {})))
 PY
@@ -93,7 +93,7 @@ in the schema-defined commentary/concerns field.
 - List every table, even if it contains no quantitative data. Mark non-quantitative tables accordingly.
 - Include the row count calculation as an explicit string showing the multiplication.
 - Write one observation log entry per paper via
-  `uv run scripts/observation_log.py append --log projects/{domain}/observations/log.jsonl --entry-json '<JSON observation object>'`.
+  `uv run scripts/observation_log.py append --log {project_root}/observations/log.jsonl --entry-json '<JSON observation object>'`.
   The helper allocates the real ID.
 - Do not skip supplementary material references — note them even if you cannot read them.
 - Do not guess sample sizes from subgroup totals. If total N is not stated, use null.
@@ -133,6 +133,6 @@ When invoked with the prefix **REFERENCE GENERATION MODE**, switch to this proce
    - Terminology variations across research groups
    - Known data quality issues in this literature
    - Table structures commonly seen in this domain
-3. Write a domain reference file to `projects/{domain}/domain/survey_ref.md`.
+3. Write a domain reference file to `{project_root}/domain/survey_ref.md`.
 4. The reference file should be concise (under 800 words) and organized by category.
 5. Focus on recognition patterns — what should the survey agent look for and flag? Do not include extraction logic or normalization mappings.

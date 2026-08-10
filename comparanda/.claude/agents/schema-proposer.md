@@ -23,11 +23,11 @@ You produce the central artifact — the rich schema — that all downstream age
 
 You will receive or locate the following:
 
-1. **Survey outputs** — one JSON per paper in `projects/{domain}/surveys/`. Each catalogs what extractable data exists in that paper: entities, outcomes, table structures, terminology.
-2. **Domain reference** — `projects/{domain}/domain/schema_ref.md`. Contains prior meta-analysis field inventories, granularity decisions, and schemas others have used in this domain.
-3. **Observation log** — `projects/{domain}/observations/log.jsonl`. Append-only structured log. You MUST read entries with `category: "schema_rationale"` before proposing. These include removal rationales from prior iterations.
+1. **Survey outputs** — one JSON per paper in `{project_root}/surveys/`. Each catalogs what extractable data exists in that paper: entities, outcomes, table structures, terminology.
+2. **Domain reference** — `{project_root}/domain/schema_ref.md`. Contains prior meta-analysis field inventories, granularity decisions, and schemas others have used in this domain.
+3. **Observation log** — `{project_root}/observations/log.jsonl`. Append-only structured log. You MUST read entries with `category: "schema_rationale"` before proposing. These include removal rationales from prior iterations.
 4. **MA Critique feedback** (iterations 2+) — in the observation log, entries from the `ma_critique` agent describing what is missing, redundant, or at wrong granularity.
-5. **Current schema** (iterations 2+) — the previous version at `projects/{domain}/schema/v{NNN}.yaml`.
+5. **Current schema** (iterations 2+) — the previous version at `{project_root}/schema/v{NNN}.yaml`.
 
 # Procedure
 
@@ -67,7 +67,7 @@ You will receive or locate the following:
 
 8. **Mark normalizable fields.** Any field where the same concept appears under different names across papers gets `normalization: {table_name}`. Include both a raw text field and a canonical ID field (e.g., `entity_raw` + `entity_id`).
 
-9. **Write the schema** to `projects/{domain}/schema/v001.yaml` in the rich YAML format specified below.
+9. **Write the schema** to `{project_root}/schema/v001.yaml` in the rich YAML format specified below.
 
 ## Subsequent Iterations
 
@@ -82,11 +82,11 @@ You will receive or locate the following:
    - Removing a field: set `removal_rationale` to a specific explanation; log a `schema_rationale` observation
    - Modifying extraction_guidance: update in place, bump `last_modified_iteration`
 
-5. **Increment version.** Write to `projects/{domain}/schema/v{NNN+1}.yaml`. Update `schema_version` and `last_modified_iteration`.
+5. **Increment version.** Write to `{project_root}/schema/v{NNN+1}.yaml`. Update `schema_version` and `last_modified_iteration`.
 
 6. **Log schema rationale.** For every field added, removed, or modified,
    append a `schema_rationale` entry through
-   `uv run scripts/observation_log.py append --log projects/{domain}/observations/log.jsonl --entry-json '<JSON observation object>'`,
+   `uv run scripts/observation_log.py append --log {project_root}/observations/log.jsonl --entry-json '<JSON observation object>'`,
    explaining the change and linking it to the MA Critique feedback that
    motivated it. Omit `id` or use `OBS-XXX`; do not write directly to
    `log.jsonl`.
@@ -197,7 +197,7 @@ This commentary helps the critique agent understand your reasoning and provide t
 When invoked with the prefix **"REFERENCE GENERATION MODE"**, switch to domain knowledge synthesis:
 
 1. Read all provided materials: deep research report, seed knowledge document, Phase 0 reference papers.
-2. Write `projects/{domain}/domain/schema_ref.md` containing:
+2. Write `{project_root}/domain/schema_ref.md` containing:
    - **Prior meta-analysis field inventories**: What fields did published meta-analyses in this domain extract? What was their row granularity?
    - **Granularity decisions**: How did prior work handle multi-group comparisons, dose-response data, subgroup analyses? What did they collapse or expand?
    - **Schema patterns**: Common schema structures for this domain. What is standard, what is contested.

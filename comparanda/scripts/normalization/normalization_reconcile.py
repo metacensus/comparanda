@@ -316,7 +316,7 @@ def default_output_path(project: Path, iteration: int) -> Path:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--project", required=True, help="Project directory, e.g. projects/<domain>")
+    parser.add_argument("--project", required=True, help="Project directory, e.g. <project-root>")
     parser.add_argument("--iteration", type=int, required=True, help="Current inner-loop iteration")
     parser.add_argument("--schema", default=None, help="Current schema filename, defaults to latest v*.yaml")
     parser.add_argument(
