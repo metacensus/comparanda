@@ -5,6 +5,26 @@ This file covers two things:
 1. **Routing** — when working inside this repo, which subdirectory owns the task.
 2. **Bootstrap** — how to stand up a fresh extraction run from zero.
 
+## Responsibility boundary
+
+Before changing system scope, agent responsibilities, readiness claims, or
+evaluation targets, read
+[`README.md#responsibility-boundary`](./README.md#responsibility-boundary).
+That section is the authoritative product boundary.
+
+In brief, Comparanda discovers schemas and extracts, normalizes, represents, and
+surfaces the prerequisite evidence substrate. It does not select the final
+research question, make analysis-specific eligibility decisions, choose a
+statistical model, execute the meta-analysis, or make guideline or policy
+recommendations. Those are user and downstream MetaCensus platform
+responsibilities. Comparanda must nevertheless provide the prerequisite
+information needed to (1) explore and select research questions, (2) determine
+inclusion and exclusion, (3) determine a suitable statistical model, and (4)
+construct the required inputs and run that model. Do not turn the resulting
+downstream analyst decision into a required Comparanda output; use it to test
+whether the substrate preserved the evidence and context needed for those four
+tasks.
+
 ---
 
 ## Routing
@@ -20,7 +40,8 @@ This file covers two things:
   eval artifacts, script dependencies, and eval resume policy.
 
 - **"How is the system put together" / "what's the spec"** → read `docs/specs/`
-  and `docs/presentation/system-architecture-v1/`.
+  and `docs/presentation/system-architecture-v1/`, after reading the responsibility
+  boundary in `README.md`.
 
 - **"How do bundles work" / "what's paper-prep"** → read
   `docs/paper-prep-integration.md`. The preprocessor itself lives in-tree at
@@ -46,7 +67,7 @@ subprojects. `cd` into the one you're working in before invoking agents.
 | `extractor.md` | 3a | Workhorse. Reads a paper-prep bundle and emits atomic-row JSONL. Most token spend happens here. |
 | `extraction-qc.md` | 3a (post) | Reviews extractions for completeness vs survey, schema compliance, internal consistency. Runs after extraction and before normalization. |
 | `normalizer.md` | 3b | Two-stage (deterministic + LLM) normalization of raw values to canonical IDs. |
-| `ma-critique.md` | 3.5 | Decides whether the extracted data is sufficient for meta-analysis; proposes the minimum schema changes to reach convergence. |
+| `ma-critique.md` | 3.5 | Assesses whether the extracted substrate preserves evidence needed downstream; proposes the minimum schema changes to reach convergence. |
 
 ### Other inner-loop components
 
@@ -98,7 +119,7 @@ To run Comparanda on a domain, you coordinate one repo and one
 per-domain application directory tree. The high-level flow:
 
 ```
-PDFs → paper-prep bundles → comparanda inner loop → extracted atomic rows
+PDFs → paper-prep bundles → comparanda inner loop → reusable evidence substrate
 ```
 
 ### The repo

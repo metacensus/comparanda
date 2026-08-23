@@ -4,6 +4,10 @@
 
 
 
+The schema describes a source-grounded evidence substrate. Schema convergence means that the system can preserve and retrieve the material evidence encountered in the corpus; it does not mean that one downstream synthesis question, inclusion set, arm construction, or model has been chosen correctly.
+
+The substrate must nevertheless be sufficient to inform exploration and selection of research questions, inclusion/exclusion review, statistical-model selection, and construction of the inputs needed to run the selected model. Comparanda represents the evidence and constraints for those tasks; downstream analysis makes the choices and executes the model.
+
 ## Schema Layers
 
 ### Universal Data Primitives
@@ -34,6 +38,20 @@ Defined per topic/channel. For the DPYD pharmacogenetics pilot:
 ### Raw Columns vs Calculated Results
 - **Raw columns**: Data pulled directly from papers. Expected to be sparse — not every paper reports every variable (the "domain expansion problem").
 - **Calculated results**: Universal datasets generated through defined transformations of raw data. These are what meta-analysis tools actually consume.
+
+Calculated or inferred values must remain distinguishable from reported values and retain their source inputs and derivation. A transformation may expose a candidate residual group, compatible integer range, or common effect representation; it must not overwrite the atomic source evidence or silently turn an analytical preference into a reported fact.
+
+### Evidence Relationships and Unknown States
+
+Atomic rows are necessary but not always sufficient. Downstream usability can depend on relationships that span rows or papers, including:
+
+- `same_as`, `subset_of`, `possibly_overlaps`, and `disjoint_from`;
+- shared participants, controls, datasets, measures, or observation waves;
+- marginal groups whose joint distribution is unknown;
+- variable, asymmetric, or indeterminate observation windows; and
+- treatment or exposure changes occurring inside an outcome window.
+
+These relationships may initially be represented as traceable views or sidecar issue records rather than new columns on every atomic row. The physical storage design should be driven by repeated cross-domain need. Unknown and non-identifiable states are valid evidence outputs and must not be coerced into precise values for schema completeness.
 
 ## The Rosetta Stone
 
@@ -66,6 +84,18 @@ Schema definition and extraction are **tightly iterative** — they "blend toget
 5. Handle temporal nomenclature shifts via Rosetta Stone patch-ins
 
 The AI assists in this loop by suggesting data types and identifying which papers contain specific outcomes.
+
+The loop should refine schemas when source evidence is being lost or materially misrepresented. It should not add fields merely because one downstream analysis selected a particular comparator, likelihood, or sensitivity. Domain-specific analytical choices can be expressed in query or transformation definitions while the underlying evidence remains reusable for other questions.
+
+## Evaluation Boundary
+
+Schema evaluation should report separate layers:
+
+- field and claim recovery/faithfulness;
+- relationship, timing, and uncertainty representation; and
+- issue surfacing and sufficiency for downstream review.
+
+A field-value benchmark cannot establish synthesis-decision accuracy. Conversely, failure to reproduce one analyst's final inclusion or model choice is not a schema defect when the source evidence, material relationships, and uncertainty were preserved and surfaced adequately.
 
 ## Backend Storage
 

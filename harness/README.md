@@ -6,6 +6,20 @@ For the current harness agent scopes, file contracts, eval artifact paths,
 script dependencies, and eval resume behavior, see
 [`AGENT_INDEX.md`](./AGENT_INDEX.md). This README is a high-level overview.
 
+## Evaluation Claim Boundary
+
+The implemented harness primarily evaluates evidence recovery and faithfulness: whether source-supported fields and findings are represented in Comparanda output. Its aggregate and detailed field-coverage artifacts do **not** establish that Comparanda chose the correct synthesis question, inclusion set, comparator, arm partition, likelihood, or statistical model.
+
+Evaluation should distinguish three claim layers:
+
+1. **Recovery and faithfulness** — current aggregate, claim-faithfulness, and semantic field-coverage surfaces.
+2. **Representation and relationships** — whether material identity, dependence, timing, boundedness, and unknown states can be expressed without lossy collapse.
+3. **Surfacing and downstream usability** — whether consequential issues are foregrounded with traceable evidence and sufficient context for analyst review.
+
+Layers 2 and 3 require explicit benchmark fixtures and outputs; they must not be inferred from a strong field micro-average. They should be reported alongside the current benchmark rather than silently changing the meaning of its historical scores. Final synthesis decisions and model fitting remain downstream analysis responsibilities unless a future benchmark and system component explicitly scope them in.
+
+The downstream-usability layer should test whether Comparanda output is sufficient to **inform**, but not perform: (1) research-question exploration and selection, (2) inclusion/exclusion determination, (3) suitable statistical-model determination, and (4) construction of all inputs needed to run the selected model. It should score missing or unsafe evidence constraints, not exact agreement with one analyst's ultimate choices.
+
 ## Domain Scope
 
 This harness is domain-agnostic methodology. Per-domain forks provide benchmark data and eval config, either under `benchmark/` or through explicit CLI paths.
@@ -77,6 +91,10 @@ uv run python -m harness.eval.aggregate \
 ```
 
 Composite score is emitted by the eval pipeline from row/field coverage, finding accuracy, claim faithfulness, and fill-rate surfaces.
+
+That composite score is an evidence-recovery calibration signal. It should not be labeled synthesis accuracy or decision accuracy. Corpus-absent, inaccessible, or unmatched papers should be reported as coverage status rather than scored as if the extractor had read them and failed.
+
+Future relationship/surfacing evaluation should use open-ended evidence-issue probes with hidden, source-anchored constraints. It should score issue recognition, provenance, uncertainty fidelity, and downstream input sufficiency without requiring exact agreement with one analyst's final model choice.
 
 ## Guard Hooks
 

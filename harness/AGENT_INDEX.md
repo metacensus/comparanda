@@ -6,6 +6,22 @@ summarizes each harness agent's scope, file contracts, script dependencies, and
 the resume behavior currently encoded in the orchestrator and agent
 instructions.
 
+## Evaluation Scope
+
+The current harness agents calibrate Comparanda's evidence substrate. Their implemented metrics primarily cover row/field recovery, claim faithfulness, semantic field coverage, and fill-rate behavior. A good score means the configured source evidence was represented faithfully under the benchmark mappings; it does not mean the system selected a correct meta-analysis question, inclusion set, comparator, partition, or statistical model.
+
+Use the following claim layers when interpreting or extending the harness:
+
+| Layer | Question | Current status |
+|---|---|---|
+| Recovery / faithfulness | Were source-supported fields and findings recovered with adequate provenance? | Implemented by aggregate, claim-faithfulness, and detailed field-coverage workflows |
+| Representation / relationships | Were identity, dependence, timing, boundedness, and unknown states preserved without material collapse? | Only indirectly observed today; requires explicit fixtures and metrics |
+| Surfacing / downstream usability | Did the system foreground consequential issues and provide enough traceable context for analyst review? | Not established by current composite score; requires a separate issue-surfacing evaluation |
+
+Final study inclusion, arm construction, likelihood selection, model fitting, and interpretation are downstream analytical responsibilities. A diagnostician should not classify failure to reproduce one analyst's preferred action as an instruction defect unless an approved benchmark explicitly tests the underlying evidence, relationship, or surfacing requirement.
+
+The surfacing/downstream-usability layer must ask whether Comparanda output can inform four tasks: research-question exploration and selection, inclusion/exclusion determination, suitable-model determination, and construction of all information required to run that model. Comparanda supplies traceable evidence and constraints for these tasks; it does not perform the final selections or execute the analysis.
+
 ## Phase Map
 
 | Phase | Agent / Actor | What Happens | Cardinality | Resume Policy |
@@ -70,6 +86,8 @@ Resume policy:
 
 Scope: measurement layer. Runs aggregate completeness/faithfulness surfaces and detailed semantic field-level coverage against gold. Produces machine-readable artifacts with audit rationale.
 
+Claim boundary: this agent evaluates configured evidence-recovery targets. It may identify missing relationship or surfacing coverage when an explicit fixture supports that conclusion, but it does not adjudicate the uniquely correct downstream synthesis or model. Gold-absent papers must be distinguished from source-present extraction failures.
+
 Model: `opus` for strongest adjudication; deterministic scripts run locally.
 
 Inputs:
@@ -123,6 +141,16 @@ Resume policy:
 
 Scope: explains why eval failed and classifies whether the failure is instruction-fixable, already handled by System 1, domain-specific, or needs more investigation. Does not edit instructions.
 
+The diagnosis must separate:
+
+- corpus/source coverage gaps;
+- source-present recovery failures;
+- representation or relationship failures;
+- surfacing/provenance failures; and
+- downstream analytical choices that are not Comparanda extraction requirements.
+
+Only the first four can justify a Comparanda instruction change, and a corpus/source coverage gap normally calls for an input or coverage-status fix rather than an extraction-prompt change.
+
 Model: `sonnet`
 
 Inputs:
@@ -152,6 +180,8 @@ Resume policy:
 ### `critic`
 
 Scope: proposes exactly one domain-independent instruction change for one Comparanda agent file, or a no-change proposal. Conservative bridge from diagnosis to implementation.
+
+The critic must not encode one domain's preferred comparator, inclusion decision, partition, or model as universal extraction methodology. Changes should improve faithful recovery, relationship representation, uncertainty/provenance, or issue surfacing across domains.
 
 Model: `sonnet`
 

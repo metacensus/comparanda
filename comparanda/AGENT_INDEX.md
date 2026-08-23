@@ -17,7 +17,7 @@ encoded in the orchestrator and agent instructions.
 | 3a | `extractor` | Extract one paper into atomic rows with provenance through the sanctioned SDK/write flow. | one per paper | Resumed for QC repair and schema-iteration patches when a recorded session exists. Replacement extractor is only a fallback after resume retries fail. |
 | 3a-QC | `extraction-qc` | Verify one extraction against survey, schema, source evidence, and selection-error risks. | one per paper QC pass | Fresh invocation for each QC or re-QC pass. |
 | 3b | `normalizer` | Reconcile normalization tables and apply canonical mappings to extraction rows. | one per loop, project-wide | Fresh invocation in the current orchestrator; normalization files and reconciliation candidates are checkpoints. |
-| 3.5 | `ma-critique` | Judge meta-analysis readiness and issue structured schema/re-extraction recommendations. | one per loop | Fresh invocation; critique JSON is the checkpoint. |
+| 3.5 | `ma-critique` | Judge evidence-substrate readiness for downstream synthesis use and issue structured schema/re-extraction recommendations. | one per loop | Fresh invocation; critique JSON is the checkpoint. |
 | 4 | `schema-proposer` | Apply MA Critique recommendations into a new schema version. | one per schema version | Fresh invocation; prior schema, critique JSON, and observation log are inputs. |
 | 5 | `subset-selector` plus phases 3a-3.5 | Rotate subsets to test schema generalization. | one subset per rotation | Extractor resume still applies for previously seen papers; new papers use fresh extractors. |
 | 6 | `extractor`, `normalizer`, `ma-critique` | Produce the final full-corpus extraction against the converged schema, then normalize and critique the final dataset. | bounded batches, not full-corpus concurrency | Reuse/resume recorded extractor sessions and build scripts before fresh extraction; fresh extractors only for unseen or documented-unrecoverable papers. |
@@ -237,7 +237,16 @@ Resume policy:
 
 ### `ma-critique`
 
-Scope: meta-analysis readiness judge and convergence signal. Determines whether current schema/extractions are sufficient for pooling and originates schema-change recommendations.
+Scope: evidence-substrate readiness judge and convergence signal. Determines
+whether the current schema and extractions preserve sufficiently complete,
+grounded, reusable evidence and decision-relevant context for downstream
+synthesis work, and originates schema-change recommendations. It does not
+choose a research question, make inclusion/exclusion decisions, select a
+statistical model, or run an analysis. Its output must nevertheless preserve
+and surface the prerequisite information needed for a downstream user or agent
+to (1) explore and select research questions, (2) determine inclusion and
+exclusion, (3) determine a suitable statistical model, and (4) construct the
+required inputs and run that model.
 
 Model: `claude-sonnet-5[1m]`
 

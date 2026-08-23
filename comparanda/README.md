@@ -8,6 +8,15 @@ Agentic system for scientific paper schema extraction and structured data encodi
 
 The bottleneck is the first step: turning a collection of papers into structured, comparable data. Today this is grueling manual work, repeated independently across institutions. Existing tools (Covidence, Elicit, etc.) can help with extraction — but they all assume a schema already exists. Someone still has to decide *what fields to extract* and *how to reconcile terminology* that has evolved across decades of literature. That schema design work is the hard part, and nobody automates it.
 
+Comparanda is the evidence-preparation engine for MetaCensus. It treats the schema as the product: given a domain and a collection of papers, the system discovers what structured data should be extracted, builds normalization tables (Rosetta Stones) to reconcile cross-era terminology, and produces a grounded, reusable evidence substrate for downstream evidence synthesis.
+
+Comparanda does not choose the research question, define eligibility, include
+or exclude studies, select an estimand or model, or run a meta-analysis. It
+preserves and surfaces the evidence, context, relations, dependencies,
+uncertainties, and missing information that a downstream user or platform needs
+to: (1) explore and select research questions, (2) determine inclusion and
+exclusion, (3) determine a suitable statistical model, and (4) construct the
+required inputs and run that model.
 
 ## How it works
 
@@ -18,7 +27,7 @@ Two-system architecture:
 - Synthesize surveys into a proposed schema
 - Extract a test subset, refine the schema iteratively
 - Expand to full extraction once the schema stabilizes
-- Validate: can you run the meta-analysis from this data?
+- Validate: is the evidence substrate complete, grounded, and sufficiently contextualized for downstream question exploration and synthesis decisions?
 
 **System 2 (Outer Loop)** — improves how the work is done:
 - Observes System 1 outputs, metrics, and agent reflections
