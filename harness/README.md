@@ -10,14 +10,28 @@ script dependencies, and eval resume behavior, see
 
 The implemented harness primarily evaluates evidence recovery and faithfulness: whether source-supported fields and findings are represented in Comparanda output. Its aggregate and detailed field-coverage artifacts do **not** establish that Comparanda chose the correct synthesis question, inclusion set, comparator, arm partition, likelihood, or statistical model.
 
-Phase 1 adds two separately reported questions for paper-level prerequisite information:
+Phase 1 evolves the current benchmark rather than creating a parallel
+evaluator. Original workbooks remain immutable indexed sources. Their curated
+data are translated into normalized, entity-aware gold with lineage
+references, and a legacy view must reproduce the historical result before the
+gold is expanded.
 
-1. **Schema accommodation** — can the discovered schema represent each required per-paper prerequisite fact at the correct scope and granularity?
-2. **Prerequisite-fact recovery** — did extraction recover and ground that fact correctly, particularly when the schema could accommodate it?
+Its load-bearing metrics are:
 
-These require a separate paper-level fixture and report beside the current field benchmark; they must not be inferred from a strong field micro-average or silently change the meaning of historical scores. The fixture is semantic and schema-agnostic: it defines prerequisite concepts and acceptable meanings, not required DPYD field names.
+1. **Coverage** — whether each expected source-backed fact is fully, partially,
+   or not represented.
+2. **Reproducibility** — whether the fact or entity-bound record can be
+   faithfully reconstructed at the required meaning, granularity, scope,
+   associations, uncertainty, and provenance.
 
-Current `field_coverage` output can support semantic prerequisite-fact recovery adjudication, but it is not a headline composite input for the Phase 1 report. Schema accommodation and recovery must remain visible as separate results.
+Reproducibility here extends current full-representation reasoning; it does not
+mean run-to-run model stability. Current `field_coverage` remains reusable
+semantic adjudication machinery and is not itself a headline composite input.
+
+Partial and missing adjudications require one primary failure reason:
+`source_absent`, `gold_ambiguous`, `extraction_miss`, `representation_loss`,
+`schema_limitation`, or `unsupported_extraction`. Schema limitation is a
+diagnostic cause rather than another scored surface.
 
 Cross-paper overlap conclusions and analyst actions may be stored in the fixture as contextual gold explaining why per-paper facts matter. They are unscored as Comparanda outputs. Phase 1 does not require a relationship graph, issue-surfacing benchmark, or native cross-paper inference.
 
@@ -100,12 +114,11 @@ The historical composite score is emitted from aggregate row/field, finding-accu
 
 That composite score is an evidence-recovery calibration signal. It should not be labeled synthesis accuracy or decision accuracy. Corpus-absent, inaccessible, or unmatched papers should be reported as coverage status rather than scored as if the extractor had read them and failed.
 
-The separate Phase 1 paper-level result should be reported alongside, not
-folded into, that historical composite. Its exact fixture, artifact, and runner
-contract remain to be chosen after the current evaluation abstractions are
-reviewed. It should report schema accommodation, prerequisite-fact recovery,
-conditional recovery, provenance/uncertainty correctness, and
-schema/extraction/source/gold-ambiguity attribution.
+The normalized legacy view must preserve the historical result before the the domain expert
+prerequisite slice is added. The exact normalized tables, identity keys,
+grouped-completeness rules, weighting, report presentation, and any future
+effect on convergence are collaborative design gates; they should not be
+predeclared in this architecture overview.
 
 Native cross-paper inference is a conditional later capability. Consider it only if a downstream-use experiment shows that high-quality granular paper outputs are consistently insufficient; do not predeclare relationship or issue-surfacing metrics as current Comparanda requirements.
 

@@ -43,7 +43,7 @@ Calculated or inferred values must remain distinguishable from reported values a
 
 ### Per-Paper Prerequisite Context and Unknown States
 
-Phase 1 tests whether the discovered schema can accommodate the paper-level facts that downstream users need to compare reports. For duplicate or overlapping cohorts and subgroups, these may include recruitment dates and sites, parent study or dataset identifiers, sample sizes, eligibility criteria, analysis-population and subgroup definitions, and explicit subset, follow-up, extension, or reuse language reported by the paper.
+Phase 1 tests whether Comparanda output represents the paper-level facts that downstream users need to compare reports. For duplicate or overlapping cohorts and subgroups, these may include recruitment dates and sites, parent study or dataset identifiers, sample sizes, eligibility criteria, analysis-population and subgroup definitions, and explicit subset, follow-up, extension, or reuse language reported by the paper.
 
 The schema should preserve these facts at their reported scope and granularity, along with explicit ambiguity, missingness, and provenance. It should not encode a cross-paper overlap conclusion as if the source paper reported it.
 
@@ -85,14 +85,28 @@ The loop should refine schemas when source evidence is being lost or materially 
 
 ## Evaluation Boundary
 
-Phase 1 schema evaluation should report two separate results:
+Phase 1 translates the existing gold into normalized, entity-aware benchmark
+records. Original workbooks remain immutable indexed sources; each translated
+fact retains a reference to its workbook and source-paper lineage rather than
+embedding workbook rows in the benchmark contract. Logical facts may attach to
+a paper/report, study/cohort, analysis population/subgroup, or outcome/finding.
+These are minimum benchmark identities, not a universal evidence ontology.
 
-- **schema accommodation:** whether the discovered schema can faithfully represent each required per-paper prerequisite concept at the right scope and granularity; and
-- **prerequisite-fact recovery:** whether extraction recovered and grounded the fact, particularly when the schema could accommodate it.
+The load-bearing results are coverage and reproducibility. Coverage records
+full, partial, or missing representation. Reproducibility asks whether a fact
+or entity-bound record can be reconstructed faithfully at the required scope,
+associations, uncertainty, and provenance. Run-to-run model stability is a
+different future measure.
 
-The evaluation is semantic and schema-agnostic: it judges field meaning, type, scope, and guidance rather than requiring one field name. A separate paper-level fixture and report should sit beside the current field benchmark. Current `field_coverage` output can support semantic recovery adjudication, but it is not a headline composite input for this Phase 1 report.
+Partial and missing adjudications carry a failure reason: source absence, gold
+ambiguity, extraction miss, representation loss, schema limitation, or
+unsupported extraction. Schema limitation is diagnostic, not a parallel score.
 
-Cross-paper overlap conclusions and analyst actions may be retained as contextual gold explaining materiality, but they are unscored as Comparanda outputs. A field-value benchmark cannot establish synthesis-decision accuracy, and failure to reproduce one analyst's final inclusion or model choice is not a Phase 1 schema defect.
+The evaluation remains semantic and schema-agnostic. Entity boundaries,
+normalization tables, identity keys, grouped-completeness rules, and weighting
+are collaborative design gates. Cross-paper overlap conclusions and analyst
+actions may be retained as contextual gold explaining materiality, but they
+are unscored as Comparanda outputs.
 
 ## Backend Storage
 

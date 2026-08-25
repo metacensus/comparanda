@@ -15,8 +15,9 @@ Use the following Phase 1 claim layers when interpreting or extending the harnes
 | Layer | Question | Current status |
 |---|---|---|
 | Recovery / faithfulness | Were source-supported fields and findings recovered with adequate provenance? | Implemented by aggregate, claim-faithfulness, and detailed field-coverage workflows |
-| Schema accommodation | Can the discovered schema represent each required per-paper prerequisite fact at the right scope and granularity? | Requires a separate paper-level semantic fixture and report |
-| Prerequisite-fact recovery | Did extraction recover and ground that fact, particularly when the schema could accommodate it? | Current `field_coverage` can support semantic adjudication, but the result belongs in the separate Phase 1 report |
+| Coverage | Is each expected source-backed fact fully, partially, or not represented? | Existing semantic field coverage is reusable; gold must be normalized and expanded |
+| Reproducibility | Can a fact or entity-bound record be faithfully reconstructed at the required scope, associations, uncertainty, and provenance? | Extends current full-representation reasoning; entity-aware rules remain a design checkpoint |
+| Failure attribution | Why is an item partial or missing? | Add a required diagnostic reason; schema limitation is not a separate score |
 
 Final study inclusion, arm construction, likelihood selection, model fitting, and interpretation are downstream analytical responsibilities. A diagnostician should not classify failure to reproduce one analyst's cross-paper conclusion or preferred action as an instruction defect.
 
@@ -92,9 +93,10 @@ Resume policy:
 Scope: measurement layer. Runs aggregate completeness/faithfulness surfaces and detailed semantic field-level coverage against gold. Produces machine-readable artifacts with audit rationale.
 
 Claim boundary: this agent currently evaluates configured evidence-recovery
-targets. Phase 1 will extend evaluation to separate schema accommodation from
-per-paper prerequisite-fact recovery, but the artifact and runner contract are
-not yet chosen. It does not score cross-paper overlap conclusions, analyst
+targets. Phase 1 will translate gold into normalized entity-aware records,
+preserve a reproducible legacy view, add the domain expert prerequisite facts, and extend
+failure attribution. The artifact and runner contract are not yet chosen. It
+does not score cross-paper overlap conclusions, analyst
 actions, the uniquely correct downstream synthesis, or a statistical model.
 Gold-absent papers must be distinguished from source-present extraction
 failures.
@@ -155,13 +157,20 @@ Scope: explains why eval failed and classifies whether the failure is instructio
 The diagnosis must separate:
 
 - corpus/source coverage gaps;
-- schema-accommodation failures;
 - source-present recovery failures;
+- representation or schema limitations;
 - provenance or uncertainty failures;
-- gold ambiguity; and
+- gold ambiguity;
+- unsupported extraction; and
 - downstream analytical choices that are not Comparanda extraction requirements.
 
-Only demonstrated paper-level accommodation, recovery, or grounding failures can justify a Comparanda instruction change. A corpus/source coverage gap normally calls for an input or coverage-status fix rather than an extraction-prompt change; a cross-paper inference or analyst-action mismatch does not justify a Phase 1 instruction change.
+Only demonstrated paper-level coverage, reproducibility, or grounding failures
+can justify a Comparanda instruction change. The locked failure attribution
+must distinguish schema limitation from extraction miss without turning it into
+a parallel metric. A corpus/source coverage gap normally calls for an input or
+coverage-status fix rather than an extraction-prompt change; a cross-paper
+inference or analyst-action mismatch does not justify a Phase 1 instruction
+change.
 
 Model: `sonnet`
 
@@ -193,7 +202,7 @@ Resume policy:
 
 Scope: proposes exactly one domain-independent instruction change for one Comparanda agent file, or a no-change proposal. Conservative bridge from diagnosis to implementation.
 
-The critic must not encode one domain's preferred field name, cross-paper conclusion, comparator, inclusion decision, partition, or model as universal extraction methodology. Phase 1 changes should improve general schema accommodation or faithful per-paper prerequisite-fact recovery, uncertainty, and provenance across domains. Direct domain-schema edits are not harness instruction fixes.
+The critic must not encode one domain's preferred field name, cross-paper conclusion, comparator, inclusion decision, partition, or model as universal extraction methodology. Phase 1 changes should improve general coverage or reproducibility of per-paper prerequisite facts, uncertainty, and provenance across domains. Direct domain-schema edits are not harness instruction fixes. Any proposed universal abstraction or SDK change is a collaborative design gate.
 
 Model: `sonnet`
 
