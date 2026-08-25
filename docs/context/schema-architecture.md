@@ -6,7 +6,7 @@
 
 The schema describes a source-grounded evidence substrate. Schema convergence means that the system can preserve and retrieve the material evidence encountered in the corpus; it does not mean that one downstream synthesis question, inclusion set, arm construction, or model has been chosen correctly.
 
-The substrate must nevertheless be sufficient to inform exploration and selection of research questions, inclusion/exclusion review, statistical-model selection, and construction of the inputs needed to run the selected model. Comparanda represents the evidence and constraints for those tasks; downstream analysis makes the choices and executes the model.
+The substrate must nevertheless provide granular per-paper prerequisite information for four downstream tasks: research-question exploration, inclusion and exclusion, model selection, and analysis execution. Downstream analysis compares papers, infers cross-paper relationships, makes the choices, and executes the model.
 
 ## Schema Layers
 
@@ -41,17 +41,13 @@ Defined per topic/channel. For the DPYD pharmacogenetics pilot:
 
 Calculated or inferred values must remain distinguishable from reported values and retain their source inputs and derivation. A transformation may expose a candidate residual group, compatible integer range, or common effect representation; it must not overwrite the atomic source evidence or silently turn an analytical preference into a reported fact.
 
-### Evidence Relationships and Unknown States
+### Per-Paper Prerequisite Context and Unknown States
 
-Atomic rows are necessary but not always sufficient. Downstream usability can depend on relationships that span rows or papers, including:
+Phase 1 tests whether the discovered schema can accommodate the paper-level facts that downstream users need to compare reports. For duplicate or overlapping cohorts and subgroups, these may include recruitment dates and sites, parent study or dataset identifiers, sample sizes, eligibility criteria, analysis-population and subgroup definitions, and explicit subset, follow-up, extension, or reuse language reported by the paper.
 
-- `same_as`, `subset_of`, `possibly_overlaps`, and `disjoint_from`;
-- shared participants, controls, datasets, measures, or observation waves;
-- marginal groups whose joint distribution is unknown;
-- variable, asymmetric, or indeterminate observation windows; and
-- treatment or exposure changes occurring inside an outcome window.
+The schema should preserve these facts at their reported scope and granularity, along with explicit ambiguity, missingness, and provenance. It should not encode a cross-paper overlap conclusion as if the source paper reported it.
 
-These relationships may initially be represented as traceable views or sidecar issue records rather than new columns on every atomic row. The physical storage design should be driven by repeated cross-domain need. Unknown and non-identifiable states are valid evidence outputs and must not be coerced into precise values for schema completeness.
+Phase 1 does not add a relationship graph, cohort linker, issue record, sidecar, or post-normalization surfacing pass. A downstream user or platform agent compares granular paper outputs and reaches cross-paper conclusions. Native cross-paper inference should be reconsidered only if a later downstream-use experiment shows that well-recovered paper-level information is consistently insufficient.
 
 ## The Rosetta Stone
 
@@ -89,13 +85,14 @@ The loop should refine schemas when source evidence is being lost or materially 
 
 ## Evaluation Boundary
 
-Schema evaluation should report separate layers:
+Phase 1 schema evaluation should report two separate results:
 
-- field and claim recovery/faithfulness;
-- relationship, timing, and uncertainty representation; and
-- issue surfacing and sufficiency for downstream review.
+- **schema accommodation:** whether the discovered schema can faithfully represent each required per-paper prerequisite concept at the right scope and granularity; and
+- **prerequisite-fact recovery:** whether extraction recovered and grounded the fact, particularly when the schema could accommodate it.
 
-A field-value benchmark cannot establish synthesis-decision accuracy. Conversely, failure to reproduce one analyst's final inclusion or model choice is not a schema defect when the source evidence, material relationships, and uncertainty were preserved and surfaced adequately.
+The evaluation is semantic and schema-agnostic: it judges field meaning, type, scope, and guidance rather than requiring one field name. A separate paper-level fixture and report should sit beside the current field benchmark. Current `field_coverage` output can support semantic recovery adjudication, but it is not a headline composite input for this Phase 1 report.
+
+Cross-paper overlap conclusions and analyst actions may be retained as contextual gold explaining materiality, but they are unscored as Comparanda outputs. A field-value benchmark cannot establish synthesis-decision accuracy, and failure to reproduce one analyst's final inclusion or model choice is not a Phase 1 schema defect.
 
 ## Backend Storage
 

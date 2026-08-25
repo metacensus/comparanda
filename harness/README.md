@@ -10,15 +10,21 @@ script dependencies, and eval resume behavior, see
 
 The implemented harness primarily evaluates evidence recovery and faithfulness: whether source-supported fields and findings are represented in Comparanda output. Its aggregate and detailed field-coverage artifacts do **not** establish that Comparanda chose the correct synthesis question, inclusion set, comparator, arm partition, likelihood, or statistical model.
 
-Evaluation should distinguish three claim layers:
+Phase 1 adds two separately reported questions for paper-level prerequisite information:
 
-1. **Recovery and faithfulness** — current aggregate, claim-faithfulness, and semantic field-coverage surfaces.
-2. **Representation and relationships** — whether material identity, dependence, timing, boundedness, and unknown states can be expressed without lossy collapse.
-3. **Surfacing and downstream usability** — whether consequential issues are foregrounded with traceable evidence and sufficient context for analyst review.
+1. **Schema accommodation** — can the discovered schema represent each required per-paper prerequisite fact at the correct scope and granularity?
+2. **Prerequisite-fact recovery** — did extraction recover and ground that fact correctly, particularly when the schema could accommodate it?
 
-Layers 2 and 3 require explicit benchmark fixtures and outputs; they must not be inferred from a strong field micro-average. They should be reported alongside the current benchmark rather than silently changing the meaning of its historical scores. Final synthesis decisions and model fitting remain downstream analysis responsibilities unless a future benchmark and system component explicitly scope them in.
+These require a separate paper-level fixture and report beside the current field benchmark; they must not be inferred from a strong field micro-average or silently change the meaning of historical scores. The fixture is semantic and schema-agnostic: it defines prerequisite concepts and acceptable meanings, not required DPYD field names.
 
-The downstream-usability layer should test whether Comparanda output is sufficient to **inform**, but not perform: (1) research-question exploration and selection, (2) inclusion/exclusion determination, (3) suitable statistical-model determination, and (4) construction of all inputs needed to run the selected model. It should score missing or unsafe evidence constraints, not exact agreement with one analyst's ultimate choices.
+Current `field_coverage` output can support semantic prerequisite-fact recovery adjudication, but it is not a headline composite input for the Phase 1 report. Schema accommodation and recovery must remain visible as separate results.
+
+Cross-paper overlap conclusions and analyst actions may be stored in the fixture as contextual gold explaining why per-paper facts matter. They are unscored as Comparanda outputs. Phase 1 does not require a relationship graph, issue-surfacing benchmark, or native cross-paper inference.
+
+Comparanda output should inform, but not perform, four downstream tasks: (1)
+explore and select research questions, (2) determine analysis-specific
+inclusion and exclusion, (3) select a suitable statistical model, and (4)
+construct the inputs needed to execute that analysis.
 
 ## Domain Scope
 
@@ -90,11 +96,18 @@ uv run python -m harness.eval.aggregate \
 # artifacts, and resume policy.
 ```
 
-Composite score is emitted by the eval pipeline from row/field coverage, finding accuracy, claim faithfulness, and fill-rate surfaces.
+The historical composite score is emitted from aggregate row/field, finding-accuracy, claim-faithfulness, and fill-rate surfaces. Detailed semantic `field_coverage` is a supporting adjudication artifact, not a headline composite input.
 
 That composite score is an evidence-recovery calibration signal. It should not be labeled synthesis accuracy or decision accuracy. Corpus-absent, inaccessible, or unmatched papers should be reported as coverage status rather than scored as if the extractor had read them and failed.
 
-Future relationship/surfacing evaluation should use open-ended evidence-issue probes with hidden, source-anchored constraints. It should score issue recognition, provenance, uncertainty fidelity, and downstream input sufficiency without requiring exact agreement with one analyst's final model choice.
+The separate Phase 1 paper-level result should be reported alongside, not
+folded into, that historical composite. Its exact fixture, artifact, and runner
+contract remain to be chosen after the current evaluation abstractions are
+reviewed. It should report schema accommodation, prerequisite-fact recovery,
+conditional recovery, provenance/uncertainty correctness, and
+schema/extraction/source/gold-ambiguity attribution.
+
+Native cross-paper inference is a conditional later capability. Consider it only if a downstream-use experiment shows that high-quality granular paper outputs are consistently insufficient; do not predeclare relationship or issue-surfacing metrics as current Comparanda requirements.
 
 ## Guard Hooks
 
