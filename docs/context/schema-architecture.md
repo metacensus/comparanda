@@ -86,11 +86,13 @@ The loop should refine schemas when source evidence is being lost or materially 
 ## Evaluation Boundary
 
 Phase 1 translates the existing gold into normalized, entity-aware benchmark
-records. Original workbooks remain immutable indexed sources; each translated
-fact retains a reference to its workbook and source-paper lineage rather than
-embedding workbook rows in the benchmark contract. Logical facts may attach to
-a paper/report, study/cohort, analysis population/subgroup, or outcome/finding.
-These are minimum benchmark identities, not a universal evidence ontology.
+records. Original workbooks remain immutable indexed sources. Each benchmark
+slice identifies its contributing workbook and benchmark version. Sheet-,
+field-, or cell-level workbook lineage is optional when useful rather than
+required for every fact. Scored gold remains grounded in source-paper evidence.
+Logical facts may attach to a paper/report, study/cohort, analysis
+population/subgroup, or outcome/finding. These are minimum benchmark
+identities, not a universal evidence ontology.
 
 The load-bearing results are coverage and reproducibility. Coverage records
 full, partial, or missing representation. Reproducibility asks whether a fact
@@ -105,8 +107,8 @@ unsupported extraction. Schema limitation is diagnostic, not a parallel score.
 The evaluation remains semantic and schema-agnostic. Entity boundaries,
 normalization tables, identity keys, grouped-completeness rules, and weighting
 are collaborative design gates. Cross-paper overlap conclusions and analyst
-actions may be retained as contextual gold explaining materiality, but they
-are unscored as Comparanda outputs.
+actions may be retained as explanatory benchmark metadata showing why the
+per-paper facts matter, but they are unscored and not expected from Comparanda.
 
 ## Backend Storage
 

@@ -12,9 +12,11 @@ The implemented harness primarily evaluates evidence recovery and faithfulness: 
 
 Phase 1 evolves the current benchmark rather than creating a parallel
 evaluator. Original workbooks remain immutable indexed sources. Their curated
-data are translated into normalized, entity-aware gold with lineage
-references, and a legacy view must reproduce the historical result before the
-gold is expanded.
+data are translated into normalized, entity-aware gold. Each benchmark slice
+records its contributing workbook and benchmark version. Sheet-, field-, or
+cell-level workbook lineage is optional when useful. Scored gold remains
+grounded in source-paper evidence, and a legacy view must reproduce the
+historical result before the gold is expanded.
 
 Its load-bearing metrics are:
 
@@ -33,7 +35,10 @@ Partial and missing adjudications require one primary failure reason:
 `schema_limitation`, or `unsupported_extraction`. Schema limitation is a
 diagnostic cause rather than another scored surface.
 
-Cross-paper overlap conclusions and analyst actions may be stored in the fixture as contextual gold explaining why per-paper facts matter. They are unscored as Comparanda outputs. Phase 1 does not require a relationship graph, issue-surfacing benchmark, or native cross-paper inference.
+Cross-paper overlap conclusions and analyst actions may be stored as
+explanatory benchmark metadata showing why per-paper facts matter. They are
+unscored and not expected from Comparanda. Phase 1 does not require a
+relationship graph, issue-surfacing benchmark, or native cross-paper inference.
 
 Comparanda output should inform, but not perform, four downstream tasks: (1)
 explore and select research questions, (2) determine analysis-specific
