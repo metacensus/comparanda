@@ -303,13 +303,15 @@ class FieldClaim:
     derivation: str | None = None
     derivation_kind: str | None = None
     extraction_certainty: str | None = None
+    missing_reason: str | None = None
     reasoning: str | None = None
     source_components: list[dict[str, Any]] = field(default_factory=list)
 
     def to_entry(self, name: str) -> dict[str, Any]:
         entry: dict[str, Any] = {"name": name, "value": self.value}
-        if self.value is None and self.extraction_certainty != "abstained":
-            return entry
+        if self.value is None and (self.reasoning is not None or self.missing_reason is not None):
+            entry["missing_reason"] = self.missing_reason
+            entry["sources"] = self.sources
         if self.type is not None:
             entry["type"] = self.type
         if self.sources:
@@ -432,24 +434,29 @@ def inferred(
     )
 
 
-def abstained(reasoning: str, sources: Any | None = None) -> FieldClaim:
+def missing(
+    reason: str | None,
+    explanation: str,
+    sources: Any | None = None,
+) -> FieldClaim:
+    """An absent scientific value with a reason; None is the audited fallback."""
+    if reason is not None and (not isinstance(reason, str) or reason not in ev.MISSING_REASONS):
+        raise ValueError(f"Unknown missing reason {reason!r}; choose from {sorted(ev.MISSING_REASONS)}")
+    if not isinstance(explanation, str) or not explanation.strip():
+        raise ValueError("Every missing value requires a nonempty explanation")
     return FieldClaim(
         value=None,
+        missing_reason=reason,
+        reasoning=explanation,
         sources=_source_dicts(sources),
-        extraction_certainty="abstained",
-        reasoning=reasoning,
     )
-
-
-def null(reason: str | None = None) -> FieldClaim:
-    return FieldClaim(value=None, reasoning=reason)
 
 
 def not_applicable(reasoning: str, sources: Any, *, derivation: str | None = None) -> FieldClaim:
     return derived(
         "not_applicable",
         sources,
-        derivation=derivation or "'not_applicable' is the schema sentinel for this field in the cited context.",
+        derivation=derivation or "This field does not apply in the cited context.",
         reasoning=reasoning,
         derivation_kind="inferred",
     )
@@ -681,12 +688,14 @@ class ExtractionBuilder:
         context = self._validation_report_context(chunks=chunks)
         context["report_path"] = str(report_path)
         report = ev.failure_report(failures, context=context)
+        report.update(ev.missingness_report(self._rows_payload_for_chunks(chunks), self.schema))
         report_path.write_text(
             json.dumps(report, indent=2, ensure_ascii=False)
         )
         if isinstance(failures, ev.FailureList):
             failures.report_context = context
         text = ev.render_failures(failures, context=context) if failures else "ok\n"
+        text += "\n" + ev.render_missingness_summary(report)
         (validation_dir / f"{safe_label}.validate.txt").write_text(text)
 
     def finalize(self, out_path: str | Path) -> core.FinalizationResult:
