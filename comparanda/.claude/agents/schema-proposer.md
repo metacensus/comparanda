@@ -47,7 +47,7 @@ You will receive or locate the following:
 
 6. **Draft universal fields.** These are invariant across domains: `pmid`, `doi`, `author`, `year`, `journal`, `study_design`, `total_n`. Additional sample size fields (e.g., number assayed, number evaluable for outcome) are domain-specific — discover them from surveys.
 
-7. **Draft domain-specific fields.** For each field: decide name (short, conventional), type, whether it is an identity dimension, write extraction_guidance, and flag normalization needs. Err toward inclusion — easier to drop a field later than add one and re-extract.
+7. **Draft domain-specific fields.** For each field: decide name (short, conventional), type, whether it is an identity dimension, write extraction_guidance, and flag normalization needs. Use the field-necessity rule below when deciding whether to add a field.
 
    **Field cardinality must match data cardinality.** For every field you propose, ask: "in a single extraction row, does this field's value reference one entity or many?" When extraction rows represent analytical units that bundle multiple entities for a given attribute — a combined exposure group, a multi-component intervention, a composite outcome category, a pooled subgroup analysis — that attribute MUST be a vector-typed field (e.g., `type: array` of canonical IDs or controlled-vocabulary values), not a scalar. A scalar field for an inherently multi-valued attribute forces lossy encoding — pick one and drop the rest, concatenate into an unparseable delimited string, or null the field — and breaks downstream normalization, identity matching, and meta-analytic aggregation. When a paper reports both per-entity rows AND combined-group rows in the same corpus, the schema needs both: a scalar `<entity>_canonical` for the per-entity rows AND a vector `<entity>_components` for the combined rows. Keep the raw text field (`<entity>_raw`) scalar — it carries the paper's literal label including any descriptive annotation (e.g., "3-item panel", "any-of-panel").
 
@@ -65,6 +65,39 @@ You will receive or locate the following:
    values; if missingness status itself matters, add a companion status field
    rather than overloading the numeric/raw field.
 
+   **Reported groups and their relationships.** Check surveys for cohort/trial
+   identifiers, shared or nested participants, and compound groups. A marginal
+   count includes all members of a named group, even if some also belong to
+   another group.
+   - Let the schema preserve reported counts and their stated relationships.
+     Do not force those counts into mutually exclusive groups.
+   - Try existing raw/group fields and notes first. Add/refine a field only
+     when source-backed cases demonstrate loss that guidance cannot
+     resolve; test the proposed meaning against a contrasting case as well. Do not invent a domain-specific relationship vocabulary.
+   - Preserve the source's certainty. Equal counts do not establish shared
+     people; absent overlap information does not establish independence.
+
+   | Illustrative survey evidence | Schema must permit | Reject |
+   |---|---|---|
+   | X=12 includes 2 people also in Y | Reported X count and stated overlap together | X must always mean X-only |
+   | X and Y counts, overlap unstated | Unknown relationship | A required assertion that X and Y are independent |
+
+   **Coherent field meaning.** Write a plain-language meaning before the
+   extraction instructions. Check that the name, guidance and allowed values
+   refer to the same measurement, comparison, population and time period.
+   - Keep a measured increase/decrease distinct from benefit/harm or risk.
+   - Keep the number enrolled distinct from the number measured for an outcome.
+   - Try clearer guidance first. Split a field only when source-backed survey
+     cases show that one field would lose a necessary distinction. Discover
+     names and values from these inputs, not from the examples below.
+
+   Illustrative checks for the proposed definition:
+
+   | Survey evidence | Definition must preserve | Reject |
+   |---|---|---|
+   | Lower power use; no reliability result | A measured decrease without a claim about failure risk | One direction value that means both lower power and lower risk |
+   | 40 enrolled; 27 measured at follow-up | Enrollment and the measured denominator | Guidance that uses 40 as the follow-up denominator |
+
 8. **Mark normalizable fields.** Any field where the same concept appears under different names across papers gets `normalization: {table_name}`. Include both a raw text field and a canonical ID field (e.g., `entity_raw` + `entity_id`).
 
 9. **Write the schema** to `projects/{domain}/schema/v001.yaml` in the rich YAML format specified below.
@@ -81,6 +114,14 @@ You will receive or locate the following:
    - Adding a field: include full metadata (extraction_guidance, normalization, etc.)
    - Removing a field: set `removal_rationale` to a specific explanation; log a `schema_rationale` observation
    - Modifying extraction_guidance: update in place, bump `last_modified_iteration`
+
+   - For group-relationship feedback, preserve reported counts and the stated
+     relationship through this versioned refinement. Do not substitute a
+     publication inclusion decision or an allocation to a downstream model.
+
+   - For a field-meaning defect, check the revised definition against the cited
+     failure and a contrasting source case. Apply the change through this
+     versioned schema process; do not repair export or presentation metadata.
 
 5. **Increment version.** Write to `projects/{domain}/schema/v{NNN+1}.yaml`. Update `schema_version` and `last_modified_iteration`.
 
@@ -113,7 +154,8 @@ identity_dimensions:
     extraction_guidance: |
       When a study reports data for multiple distinct groups (e.g., treatment
       arms, subgroup categories, exposure levels), each group is a separate row.
-      Always extract the reference/control group as a distinct row.
+      Extract a source-supported reference/control group as a distinct row
+      at its reported granularity. Do not invent a group or its counts.
 
 fields:
   # --- Universal fields (always include) ---
@@ -157,11 +199,11 @@ fields:
 3. **All fields required + nullable.** This forces the extractor to make an explicit decision (value or null) for every field on every row, preventing silent omission.
 4. **Identity dimensions must be complete.** If the Cartesian product of identity dimensions does not uniquely identify each atomic row, data will be lost through collapsing. Think carefully about what splits exist in the data.
 5. **Raw + canonical pairs for normalizable fields.** The raw field preserves paper-original text. The canonical field gets populated during normalization. Never skip the raw field.
-6. **Err toward inclusion.** When uncertain whether a field belongs, include it. Dropping a field in a later iteration is cheap. Adding a field and re-extracting is expensive.
+6. **Preserve necessary distinctions with the fewest fields.** Clarify an existing field when that faithfully represents the survey evidence. Add a field when source-backed cases demonstrate information loss that clearer guidance cannot fix.
 7. **Do not invent domain knowledge.** Everything in the schema must trace back to survey outputs, the domain reference, or MA Critique feedback. If no survey mentions a concept, it does not belong in the schema.
 8. **Do not re-add removed fields.** If the observation log contains a `schema_rationale` entry with a `removal_rationale` for a field, that field stays removed unless new evidence or explicit critique feedback justifies revival.
-9. **One atomic row = one finding.** The identity dimensions define what "one finding" means. A paper with 3 entities x 2 outcomes x 2 comparison groups yields 12 rows. Never collapse.
-10. **Reference/control group is always a row.** The baseline comparator is data, not implicit background. Extract it.
+9. **One atomic row = one source-supported finding.** Identity dimensions distinguish findings; their Cartesian product is a coverage diagnostic. Three entities x two outcomes x two groups yields 12 rows only when the source supports all 12 relationships. Preserve reported granularity without inventing combinations.
+10. **Preserve source-supported reference/control rows.** Represent each reported comparator at its supported identity granularity. Do not require an invented comparator, count, or link; allow the active schema to distinguish absent information from inapplicability.
 11. **Threshold-based dimensions need vocabulary for every threshold the corpus reports.** When an identity dimension represents a cutoff on an ordinal scale (severity grades, response categories, risk levels), the vocabulary must include a value for every distinct threshold combination that any paper in the corpus reports as a separate data column — not just the threshold you define first and its binary complement. Survey outputs catalog which threshold combinations each paper reports (e.g., Grade 1-2 and Grade 3-4 as separate columns, Grade ≥3 and Grade ≥4 as separate severity levels). For each such reported threshold, add a vocabulary value. If `above_cutoff` exists, `below_cutoff` should be available; but if the corpus also reports a distinct `middle_band` threshold, that too requires its own value. A vocabulary that covers only some reported thresholds causes the extractor to silently drop all rows for the uncovered thresholds — and the MA Critique cannot detect those missing rows because it evaluates only the rows that were kept. When in doubt, err toward including more vocabulary values: a sparse vocabulary value that appears in few papers is recoverable; a missing vocabulary value that causes row loss is not.
 
 # Pre-Completion Checklist

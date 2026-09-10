@@ -339,20 +339,9 @@ Once the schema is validated across multiple rotated subsets:
 
 ## Missingness Taxonomy
 
-- `null` means the paper does not report a value for that field. Plain nulls
-  carry no provenance claim.
-- `abstained` means the paper appears to report a value, but the value cannot be
-  read reliably from the available bundle source.
-- `not_applicable` is a non-null schema sentinel for categorical
-  inapplicability. Use it only when the schema defines that vocabulary value.
-- `not_stated` is a non-null schema sentinel for a dimension that applies but
-  the paper is silent. Use it only when the schema defines that vocabulary
-  value.
-- Observed `0` is a value, not missingness.
-- For identity dimensions, prefer explicit schema values for pooled,
-  unstratified, not-applicable, or not-stated surfaces. Use null for an identity
-  dimension only when the schema explicitly defines null as the aggregate or
-  absent representation.
+The extractor uses `missing(reason, explanation, sources=...)` for absent scientific values. The SDK contract defines seven reasons and the counted uncategorized fallback; read `docs/extraction-sdk-agent-contract.md`. Do not use `null()` or `abstained()` as authoring alternatives. New absent fields require an explanation; schema-declared canonical IDs awaiting normalization remain exempt.
+
+Keep schema-defined non-null `not_applicable` and `not_stated` values where required, with their explanation. Zero is a value, not missingness. Do not infer that the paper is silent merely because an extraction value is absent. Preserve historical results rather than guessing missingness reasons for them.
 
 ## Architecture Reference
 

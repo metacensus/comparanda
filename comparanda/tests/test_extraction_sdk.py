@@ -279,7 +279,12 @@ def test_derived_prose_arithmetic_requires_source_components(tmp_path: Path) -> 
     assert any(f.code == "missing_source_components" for f in failures)
 
 
-def test_derived_source_components_are_validated_and_persisted(tmp_path: Path) -> None:
+@pytest.mark.parametrize("reasoning", [
+    "Events plus non-events form the group denominator.",
+    "For Entity A, group A, the paper reports 3 patients with response and 7 without response. These complementary counts give a group denominator of 10.",
+    "The denominator combines the response and non-response counts for group A; it is not an enrollment count for other groups.",
+])
+def test_derived_source_components_are_validated_and_persisted(tmp_path: Path, reasoning: str) -> None:
     project, bundle, schema = write_fixture(tmp_path)
     out = project / "extractions" / "paper_1_components.jsonl"
     builder = ExtractionBuilder(
@@ -304,7 +309,7 @@ def test_derived_source_components_are_validated_and_persisted(tmp_path: Path) -
                 10,
                 [event_quote, nonevent_quote],
                 derivation="3 + 7 = 10",
-                reasoning="Events plus non-events form the group denominator.",
+                reasoning=reasoning,
                 source_components=[
                     source_component("events", 3, event_quote),
                     source_component("non_events", 7, nonevent_quote),
@@ -323,6 +328,11 @@ def test_derived_source_components_are_validated_and_persisted(tmp_path: Path) -
     row = json.loads(out.read_text().splitlines()[0])
     components = row["provenance"]["n_total"]["source_components"]
     assert [c["label"] for c in components] == ["events", "non_events"]
+    assert [c["value"] for c in components] == [3, 7]
+    assert row["n_total"] == 10
+    assert row["provenance"]["n_total"]["reasoning"] == reasoning
+    assert row["provenance"]["n_total"]["derivation"] == "3 + 7 = 10"
+    assert all(c["sources"][0]["location"] == "sections/results.md" for c in components)
 
 
 def test_derived_prose_arithmetic_component_operands_are_validated(tmp_path: Path) -> None:
