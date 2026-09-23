@@ -620,25 +620,18 @@ def test_figure_location_uses_preserved_picture_region(tmp_path):
 
 
 def test_full_export_preserves_rows_and_component_citations(tmp_path):
-    project, out = tmp_path / "project", tmp_path / "out"
-    bundle = project / "data/processed/paper"
-    bundle.mkdir(parents=True)
-    (bundle / "manifest.json").write_text("{}")
-    (bundle / "operand.md").write_text("4 carriers")
-    (project / "extractions").mkdir()
-    (project / "review_queue.json").write_text('{"items": []}')
     row = {
         "document_id": "paper", "n": 4,
         "provenance": {"n": {"extraction_certainty": "clean", "source_components": [
             {"value": 4, "sources": [{"location": "operand.md", "quote": "4 carriers", "page": 1}]}
         ]}},
     }
+    project, out = _mini_project(tmp_path, row), tmp_path / "out"
     source_file = project / "extractions/paper.jsonl"
     source_file.write_text(json.dumps(row) + '\n' + json.dumps({"_meta": {"schema_version": "v006"}}) + '\n')
     original_bytes = source_file.read_bytes()
     assert main(["--project", str(project), "--run-id", "test", "--out", str(out), "--blind"]) == 0
     raw = json.loads((out / "rows/paper.json").read_text())
-    # raw rows hold integer references; expansion rebuilds the v001 shape
     assert raw[0]["provenance"]["n"]["source_components"][0]["sources"] == [0]
     exported = portal_export.load_snapshot_rows(out, "paper")
     assert len(exported) == 1
@@ -656,13 +649,12 @@ def test_full_export_preserves_rows_and_component_citations(tmp_path):
     assert source_file.read_bytes() == original_bytes
 
 
-def _mini_project(tmp_path: Path, row: dict, quote_text: str = "4 carriers"):
-    """Build a one-paper project exporting without a PDF (page_only highlights)."""
+def _mini_project(tmp_path: Path, row: dict):
     project = tmp_path / "project"
     bundle = project / "data/processed/paper"
     bundle.mkdir(parents=True)
     (bundle / "manifest.json").write_text("{}")
-    (bundle / "operand.md").write_text(quote_text)
+    (bundle / "operand.md").write_text("4 carriers")
     (project / "extractions").mkdir()
     (project / "review_queue.json").write_text('{"items": []}')
     (project / "extractions/paper.jsonl").write_text(json.dumps(row) + "\n")
@@ -698,11 +690,10 @@ def test_export_writes_v002_rows_and_evidence(tmp_path: Path) -> None:
     ev = json.loads((out / "evidence/paper.json").read_text())
     assert ev["snapshot_format_version"] == "v002"
     assert ev["paper_id"] == "paper"
-    assert len(ev["sources"]) == 2  # "4 carriers" + "missing", distinct per paper
+    assert [s["quote"] for s in ev["sources"]] == ["4 carriers", "missing"]
     assert ev["reasoning"] == ["why four"]
     assert ev["derivation"] == ["how four"]
-    # rows and evidence are compact JSON (no indent)
-    assert "\n" not in (out / "rows/paper.json").read_text().strip("\n")
+    assert "\n" not in (out / "rows/paper.json").read_text()
     expanded = portal_export.load_snapshot_rows(out, "paper")
     assert expanded[0]["provenance"]["n"]["sources"] == [
         {"location": "operand.md", "quote": "4 carriers", "page": 1,
@@ -712,34 +703,30 @@ def test_export_writes_v002_rows_and_evidence(tmp_path: Path) -> None:
     assert expanded[0]["provenance"]["n"]["reasoning"] == "why four"
 
 
+def _fake_resolver(calls, resolution="page_only", page=1):
+    def resolve(_bundle, target, stats, field_value=None):
+        calls.append((target.get("quote"), field_value))
+        target.update({"pdf": "pdfs/paper.pdf", "resolution": resolution,
+                       "highlight": [{"page": page, "rects": []}]})
+        stats[resolution] += 1
+    return resolve
+
+
+def _must_not_resolve(_bundle, _target, _stats, field_value=None):
+    raise AssertionError("seeded source must not be recomputed")
+
+
 def test_distinct_source_resolved_once_per_paper(tmp_path: Path, monkeypatch) -> None:
     calls = []
-
-    def fake_resolve(_bundle, target, stats, field_value=None):
-        calls.append((target.get("quote"), field_value))
-        target["pdf"] = "pdfs/paper.pdf"
-        target["resolution"] = "page_only"
-        target["highlight"] = [{"page": 1, "rects": []}]
-        stats["page_only"] += 1
-
-    monkeypatch.setattr(portal_export, "_resolve_source_uncached", fake_resolve)
+    monkeypatch.setattr(portal_export, "_resolve_source_uncached", _fake_resolver(calls))
     project = _mini_project(tmp_path, _MINI_ROW)
     out = tmp_path / "out"
     assert main(["--project", str(project), "--run-id", "test", "--out", str(out), "--blind"]) == 0
-    # "4 carriers" (value 4) resolved once despite 3 occurrences; "missing" once
     assert calls == [("4 carriers", 4), ("missing", None)]
 
 
-def _tampered_cache_export(tmp_path: Path, monkeypatch) -> Path:
-    """First export becomes the cache; tamper one highlight + resolution in it."""
-    monkeypatch.setattr(
-        portal_export, "_resolve_source_uncached",
-        lambda _b, target, stats, field_value=None: (
-            target.update({"pdf": "pdfs/paper.pdf", "resolution": "exact",
-                           "highlight": [{"page": 7, "rects": []}]}),
-            stats.update({"exact": 1}),
-        ),
-    )
+def _cache_export(tmp_path: Path, monkeypatch) -> Path:
+    monkeypatch.setattr(portal_export, "_resolve_source_uncached", _fake_resolver([], "exact", 7))
     project = _mini_project(tmp_path, _MINI_ROW)
     cache = tmp_path / "cache"
     assert main(["--project", str(project), "--run-id", "test",
@@ -748,12 +735,8 @@ def _tampered_cache_export(tmp_path: Path, monkeypatch) -> Path:
 
 
 def test_highlight_cache_reuses_published_highlights(tmp_path: Path, monkeypatch) -> None:
-    cache = _tampered_cache_export(tmp_path, monkeypatch)
-
-    def _boom(_bundle, _target, _stats, field_value=None):
-        raise AssertionError("seeded source must not be recomputed")
-
-    monkeypatch.setattr(portal_export, "_resolve_source_uncached", _boom)
+    cache = _cache_export(tmp_path, monkeypatch)
+    monkeypatch.setattr(portal_export, "_resolve_source_uncached", _must_not_resolve)
     project = tmp_path / "project"
     out = tmp_path / "out"
     assert main(["--project", str(project), "--run-id", "test", "--out", str(out),
@@ -770,18 +753,13 @@ def test_highlight_cache_reuses_published_highlights(tmp_path: Path, monkeypatch
 
 
 def test_highlight_cache_accepts_v001_snapshot(tmp_path: Path, monkeypatch) -> None:
-    cache = _tampered_cache_export(tmp_path, monkeypatch)
-    # downgrade the cache export to v001 shape (expanded rows, no evidence/marker)
+    cache = _cache_export(tmp_path, monkeypatch)
     expanded = portal_export.load_snapshot_rows(cache, "paper")
     (cache / "rows/paper.json").write_text(json.dumps(expanded))
     manifest = json.loads((cache / "manifest.json").read_text())
     del manifest["snapshot_format_version"]
     (cache / "manifest.json").write_text(json.dumps(manifest))
-
-    def _boom(_bundle, _target, _stats, field_value=None):
-        raise AssertionError("seeded source must not be recomputed")
-
-    monkeypatch.setattr(portal_export, "_resolve_source_uncached", _boom)
+    monkeypatch.setattr(portal_export, "_resolve_source_uncached", _must_not_resolve)
     out = tmp_path / "out"
     assert main(["--project", str(tmp_path / "project"), "--run-id", "test",
                  "--out", str(out), "--blind", "--highlight-cache", str(cache)]) == 0
@@ -790,29 +768,29 @@ def test_highlight_cache_accepts_v001_snapshot(tmp_path: Path, monkeypatch) -> N
     assert diag["highlight_cache_misses"] == 0
 
 
-def test_highlight_cache_documents_mismatch_recomputes(tmp_path: Path, monkeypatch) -> None:
-    cache = _tampered_cache_export(tmp_path, monkeypatch)
-    # tamper the cache's published documents so the guards fail
+def _add_published_document(cache):
     manifest = json.loads((cache / "manifest.json").read_text())
     manifest["papers"][0]["documents"].append(
         {"pdf": "pdfs/extra.pdf", "sha256": "0" * 64, "page_count": 0, "role": "primary"})
     (cache / "manifest.json").write_text(json.dumps(manifest))
+
+
+@pytest.mark.parametrize("tamper, status", [
+    (_add_published_document, "documents_mismatch"),
+    (lambda cache: (cache / "bundles/paper/manifest.json").write_text('{"tables": []}'),
+     "bundle_manifest_mismatch"),
+])
+def test_highlight_cache_input_mismatch_recomputes(tmp_path, monkeypatch, tamper, status):
+    cache = _cache_export(tmp_path, monkeypatch)
+    tamper(cache)
     calls = []
-    monkeypatch.setattr(
-        portal_export, "_resolve_source_uncached",
-        lambda _b, t, s, field_value=None: (
-            calls.append(1),
-            t.update({"pdf": "pdfs/paper.pdf", "resolution": "page_only",
-                      "highlight": [{"page": 1, "rects": []}]}),
-            s.update({"page_only": 1}),
-        ),
-    )
+    monkeypatch.setattr(portal_export, "_resolve_source_uncached", _fake_resolver(calls))
     out = tmp_path / "out"
     assert main(["--project", str(tmp_path / "project"), "--run-id", "test",
                  "--out", str(out), "--blind", "--highlight-cache", str(cache)]) == 0
-    assert calls  # resolved fresh, not from cache
+    assert calls
     diag = json.loads((out / "manifest.json").read_text())["papers"][0]["highlight_diagnostics"]
-    assert diag["highlight_cache_status"] == "documents_mismatch"
+    assert diag["highlight_cache_status"] == status
     assert diag["highlight_cache_misses"] == 0
 
 
@@ -821,85 +799,39 @@ def test_highlight_cache_conflict_is_dropped(tmp_path: Path) -> None:
     bundle = portal_export.Bundle(
         "paper", project / "data/processed/paper",
         project / "data/raw/pdfs/paper.pdf")
-    bundle.prepare_documents()
     cache = tmp_path / "cache"
     (cache / "rows").mkdir(parents=True)
     (cache / "bundles/paper").mkdir(parents=True)
-    # three occurrences of one key with results r1, r2, r1: the key stays
-    # dropped after the conflict and is never seeded
     first = {"quote": "4 carriers", "location": "operand.md", "page": 1,
              "pdf": "pdfs/paper.pdf", "resolution": "exact",
              "highlight": [{"page": 1, "rects": []}]}
-    second = dict(first, resolution="page_only")
     made = [
-        {"row_index": 0, "identity": {}, "fields": {"n": 4},
-         "provenance": {"n": {"sources": [first]}}},
-        {"row_index": 1, "identity": {}, "fields": {"n": 4},
-         "provenance": {"n": {"sources": [second]}}},
-        {"row_index": 2, "identity": {}, "fields": {"n": 4},
-         "provenance": {"n": {"sources": [dict(first)]}}},
+        {"row_index": i, "identity": {}, "fields": {"n": 4},
+         "provenance": {"n": {"sources": [source]}}}
+        for i, source in enumerate([first, dict(first, resolution="page_only"), first])
     ]
     (cache / "rows/paper.json").write_text(json.dumps(made))
     (cache / "bundles/paper/manifest.json").write_text(
         (project / "data/processed/paper/manifest.json").read_text())
-    docs = bundle.document_catalog()
-    bundle.close()
     (cache / "manifest.json").write_text(json.dumps(
-        {"papers": [{"paper_id": "paper", "documents": docs}]}))
-    fresh = portal_export.Bundle("paper", project / "data/processed/paper",
-                                 project / "data/raw/pdfs/paper.pdf")
-    fresh.prepare_documents()
-    report = portal_export.seed_highlight_cache(fresh, cache, "paper")
-    assert report["status"] == "seeded"
-    assert report["conflicts"] == 1
-    assert report["seeded_keys"] == 0
-    assert fresh._source_resolution_cache == {}
-    fresh.close()
+        {"papers": [{"paper_id": "paper", "documents": bundle.document_catalog()}]}))
+    report = portal_export.seed_highlight_cache(bundle, cache, "paper")
+    assert report == {"status": "seeded", "seeded_keys": 0, "conflicts": 1}
+    assert bundle._source_resolution_cache == {}
+    bundle.close()
 
 
 def test_highlight_cache_refuses_output_dir(tmp_path: Path) -> None:
     project = _mini_project(tmp_path, _MINI_ROW)
     out = tmp_path / "out"
-    out.mkdir()
+    (out / "cache").mkdir(parents=True)
     marker = out / "marker.txt"
     marker.write_text("untouched")
-    assert main(["--project", str(project), "--run-id", "test", "--out", str(out),
-                 "--blind", "--highlight-cache", str(out), "--force"]) == 2
-    # nothing was written: no rows produced, stale marker intact
-    assert not (out / "rows").exists()
-    assert marker.read_text() == "untouched"
-    # cache nested inside out is also refused, before --force deletes anything
-    nested = out / "cache"
-    nested.mkdir()
-    assert main(["--project", str(project), "--run-id", "test", "--out", str(out),
-                 "--blind", "--highlight-cache", str(nested), "--force"]) == 2
-    assert not (out / "rows").exists()
-    assert marker.read_text() == "untouched"
-
-
-def test_highlight_cache_bundle_manifest_mismatch_recomputes(
-    tmp_path: Path, monkeypatch,
-) -> None:
-    cache = _tampered_cache_export(tmp_path, monkeypatch)
-    # change the cache's bundle manifest bytes so the guards fail
-    (cache / "bundles/paper/manifest.json").write_text('{"tables": []}')
-    calls = []
-    monkeypatch.setattr(
-        portal_export, "_resolve_source_uncached",
-        lambda _b, t, s, field_value=None: (
-            calls.append(1),
-            t.update({"pdf": "pdfs/paper.pdf", "resolution": "page_only",
-                      "highlight": [{"page": 1, "rects": []}]}),
-            s.update({"page_only": 1}),
-        ),
-    )
-    out = tmp_path / "out"
-    assert main(["--project", str(tmp_path / "project"), "--run-id", "test",
-                 "--out", str(out), "--blind", "--highlight-cache", str(cache)]) == 0
-    assert calls  # resolved fresh, not from cache
-    diag = json.loads((out / "manifest.json").read_text())["papers"][0]["highlight_diagnostics"]
-    assert diag["highlight_cache_status"] == "bundle_manifest_mismatch"
-    assert diag["highlight_cache_misses"] == 0
+    for cache in (out, out / "cache", tmp_path):
+        assert main(["--project", str(project), "--run-id", "test", "--out", str(out),
+                     "--blind", "--highlight-cache", str(cache), "--force"]) == 2
+        assert not (out / "rows").exists()
+        assert marker.read_text() == "untouched"
 
 
 def test_highlight_stats_has_canonical_resolution_keys(tmp_path: Path) -> None:
@@ -907,9 +839,6 @@ def test_highlight_stats_has_canonical_resolution_keys(tmp_path: Path) -> None:
     out = tmp_path / "out"
     assert main(["--project", str(project), "--run-id", "test", "--out", str(out), "--blind"]) == 0
     stats = json.loads((out / "manifest.json").read_text())["papers"][0]["highlight_stats"]
-    # top-level occurrences only: n.sources (1) + m.sources (1); component
-    # sources count into a separate Counter. Extra counters (pdf_missing)
-    # are allowed on uncached runs, as today.
     for key, want in (("exact", 0), ("partial_quote", 0), ("table_region", 0),
                       ("figure_region", 0), ("page_only", 2)):
         assert stats[key] == want
@@ -937,16 +866,11 @@ def test_load_snapshot_rows_expands_and_validates(tmp_path: Path) -> None:
                  "source_components": [{"value": 1, "sources": [src]}],
                  "reasoning": "r", "derivation": "d", "type": "paper"}}}]
     (snap / "manifest.json").write_text(json.dumps({"snapshot_format_version": "v002"}))
-    expanded = portal_export.load_snapshot_rows(snap, "p")
-    assert json.loads(json.dumps(expanded, sort_keys=True)) == \
-        json.loads(json.dumps(v001, sort_keys=True))
-    # v001 snapshot passes through (v001 rows on disk, no marker)
+    assert portal_export.load_snapshot_rows(snap, "p") == v001
     (snap / "rows/p.json").write_text(json.dumps(v001))
     (snap / "manifest.json").write_text(json.dumps({}))
     assert portal_export.load_snapshot_rows(snap, "p") == v001
-    # bad ref, double expansion, unknown version all raise
     (snap / "manifest.json").write_text(json.dumps({"snapshot_format_version": "v002"}))
-    (snap / "rows/p.json").write_text(json.dumps(v001))  # resolved objects, not ints
     with pytest.raises(ValueError):
         portal_export.load_snapshot_rows(snap, "p")
     (snap / "rows/p.json").write_text(json.dumps(
@@ -959,7 +883,7 @@ def test_load_snapshot_rows_expands_and_validates(tmp_path: Path) -> None:
         portal_export.load_snapshot_rows(snap, "p")
 
 
-def test_intern_evidence_scan_order_and_repeats(tmp_path: Path) -> None:
+def test_intern_evidence_scan_order_and_repeats() -> None:
     def _src(q):
         return {"quote": q, "location": "a.md", "page": 1}
     rows = [{"row_index": 0, "identity": {}, "fields": {},
@@ -970,23 +894,10 @@ def test_intern_evidence_scan_order_and_repeats(tmp_path: Path) -> None:
                        "derivation": "shared"},
              }}]
     ev = portal_export.intern_paper_evidence(rows)
-    # file order: b first (two), then a (one, already seen two); probe/compare
-    # use insertion order for the provenance scan
+    # b precedes a: file order, not sorted
     assert ev["sources"] == [_src("two"), _src("one")]
     assert ev["reasoning"] == ["shared"]
     assert ev["derivation"] == ["shared"]
-    assert rows[0]["provenance"]["a"]["sources"] == [1, 1]  # repeats keep order
+    assert rows[0]["provenance"]["a"]["sources"] == [1, 1]
     assert rows[0]["provenance"]["a"]["source_components"][0]["sources"] == [0]
     assert rows[0]["provenance"]["b"]["sources"] == [0]
-    expanded = copy.deepcopy(rows)
-    snap = tmp_path / "snap"
-    (snap / "rows").mkdir(parents=True)
-    (snap / "evidence").mkdir()
-    (snap / "rows/p.json").write_text(json.dumps(expanded))
-    (snap / "evidence/p.json").write_text(json.dumps(
-        {"snapshot_format_version": "v002", "paper_id": "p",
-         "sources": ev["sources"], "reasoning": ev["reasoning"],
-         "derivation": ev["derivation"]}))
-    (snap / "manifest.json").write_text(json.dumps({"snapshot_format_version": "v002"}))
-    assert portal_export.load_snapshot_rows(snap, "p")[0]["provenance"]["a"]["sources"] == \
-        [_src("one"), _src("one")]

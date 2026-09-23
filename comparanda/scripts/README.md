@@ -40,7 +40,7 @@ Path: `scripts/review/`
 | `review_queue.py` | Builds a queue of high-leverage extracted claims needing human review. | reviewer workflow |
 | `render_review_packet.py` | Renders a compact paper/review packet from extraction rows and bundle evidence. | reviewer workflow |
 | `apply_review.py` | Applies human review decisions back to extraction provenance in an audited form. | reviewer workflow |
-| `portal_export.py` | Builds an immutable reviewer snapshot (format v002 with `evidence/` store) in a domain data repository; resolves external project/config/output paths through `project_layout.py`; `--highlight-cache <export>` reuses resolved highlights from an existing export. | reviewer release workflow |
+| `portal_export.py` | Builds an immutable reviewer snapshot in a domain data repository; resolves external project/config/output paths through `project_layout.py`. | reviewer release workflow |
 
 ## Shared Utility
 
