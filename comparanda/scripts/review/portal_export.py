@@ -64,6 +64,15 @@ IDENTITY_FIELDS_FALLBACK = [
 
 MAX_RECTS_PER_SOURCE = 30
 SCHEMA_VERSION = "v001"
+# On-disk snapshot format written by this exporter (see runtime FORMAT-V002.md).
+# v002 moves per-row evidence copies into evidence/<paper_id>.json; rows keep
+# integer references. manifest.schema_version (SCHEMA_VERSION, "v001") is a
+# different, unchanged marker.
+SNAPSHOT_FORMAT_VERSION = "v002"
+# Resolution keys every manifest highlight_stats carries, defaulting to 0.
+CANONICAL_RESOLUTIONS = (
+    "exact", "partial_quote", "table_region", "figure_region", "page_only",
+)
 
 # A normalized quote at or below this length is treated as "short" — too weak to
 # broad-search on its own (e.g. "0", "11", "wt"). Short/numeric quotes are
@@ -1466,15 +1475,193 @@ def _resolve_source_uncached(bundle: Bundle, source: dict, stats: Counter, field
     stats["page_only"] += 1
 
 
-def resolve_source(bundle: Bundle, source: dict, stats: Counter, field_value=None):
-    """Cache repeated citation/value searches while retaining per-source counts."""
+def source_cache_key(bundle: Bundle, source: dict, field_value=None) -> str:
+    """Shared cache key for one source occurrence (resolve_source + cache seeding).
+
+    The key is the JSON of [quote, location, page, cell, field_value,
+    context.key, context.page, context.allowed_pages], where field_value is
+    the row's field value for top-level sources and the component's value for
+    source_components sources (see provenance_sources).
+    """
     context = bundle.source_context(source)
-    cache_key = json.dumps(
+    return json.dumps(
         [source.get("quote"), source.get("location"), source.get("page"),
          source.get("cell"), field_value, context["key"], context["page"],
          context["allowed_pages"]],
         ensure_ascii=False, sort_keys=True,
     )
+
+
+def load_snapshot_rows(snapshot: Path, paper_id: str) -> list:
+    """Return rows/<paper_id>.json in v001 shape, from a v001 or v002 snapshot.
+
+    Applies the FORMAT-V002.md section 5 rule exactly: v001 rows pass through
+    unchanged; v002 integer references into evidence/<paper_id>.json expand to
+    the table entries they index. Raises ValueError on a bad reference (a
+    non-integer, an out-of-range index, or a reference where a table entry is
+    expected) or on an unknown snapshot_format_version. Expanding an already
+    expanded (v001-shaped) row raises because resolved objects are not ints.
+    """
+    snapshot = Path(snapshot)
+    manifest = json.loads((snapshot / "manifest.json").read_text())
+    version = manifest.get("snapshot_format_version", "v001")
+    rows = json.loads((snapshot / "rows" / f"{paper_id}.json").read_text())
+    if version == "v001":
+        return rows
+    if version != "v002":
+        raise ValueError(f"unsupported snapshot_format_version: {version!r}")
+    ev = json.loads((snapshot / "evidence" / f"{paper_id}.json").read_text())
+
+    def at(table, i):
+        entries = ev.get(table)
+        if not isinstance(entries, list) or type(i) is not int or not 0 <= i < len(entries):
+            raise ValueError(f"{paper_id}: bad {table} ref {i!r}")
+        return entries[i]
+
+    for row in rows:
+        for pv in row["provenance"].values():
+            if "sources" in pv:
+                pv["sources"] = [at("sources", i) for i in pv["sources"]]
+            for comp in pv.get("source_components", []):
+                if "sources" in comp:
+                    comp["sources"] = [at("sources", i) for i in comp["sources"]]
+            for key in ("reasoning", "derivation"):
+                if key in pv:
+                    pv[key] = at(key, pv[key])
+    return rows
+
+
+def _canonical_json(value) -> str:
+    """Canonical-JSON equality key (FORMAT-V002.md section 6)."""
+    return json.dumps(value, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+
+
+def intern_paper_evidence(rows_out: list) -> dict:
+    """Intern one paper's evidence into v002 tables (FORMAT-V002.md sections 3-5).
+
+    Mutates rows_out in place: the four slots (pv.sources,
+    component sources, pv.reasoning, pv.derivation) become integer references.
+    Table order is first occurrence in the section 5 scan order: rows in file
+    order; provenance entries in file (insertion) order; within an entry sources in order,
+    then each component's sources in order, then reasoning, then derivation.
+    Returns {"sources": [...], "reasoning": [...], "derivation": [...]} holding
+    the first-seen object of each distinct entry (canonical-JSON distinctness).
+    Absent slots stay absent; repeats keep their length and order.
+    """
+    sources, reasoning, derivation = [], [], []
+    source_index, reasoning_index, derivation_index = {}, {}, {}
+
+    def _intern(table, entries, entry_key, index):
+        i = index.get(entry_key)
+        if i is None:
+            i = len(entries)
+            entries.append(table)
+            index[entry_key] = i
+        return i
+
+    for row in rows_out:
+        for pv in row["provenance"].values():
+            if "sources" in pv:
+                pv["sources"] = [
+                    _intern(src, sources, _canonical_json(src), source_index)
+                    for src in pv["sources"]
+                ]
+            for comp in pv.get("source_components", []):
+                if "sources" in comp:
+                    comp["sources"] = [
+                        _intern(src, sources, _canonical_json(src), source_index)
+                        for src in comp["sources"]
+                    ]
+            for key, entries, index in (
+                ("reasoning", reasoning, reasoning_index),
+                ("derivation", derivation, derivation_index),
+            ):
+                if key in pv:
+                    pv[key] = _intern(pv[key], entries, _canonical_json(pv[key]), index)
+    return {"sources": sources, "reasoning": reasoning, "derivation": derivation}
+
+
+# Sentinels for the seed_highlight_cache key table: _MISSING means unseen,
+# _DROPPED means conflicted (stays dropped for every later occurrence).
+_MISSING = object()
+_DROPPED = object()
+
+
+def seed_highlight_cache(bundle: Bundle, cache_dir, paper_id: str) -> dict:
+    """Seed bundle._source_resolution_cache from an existing export (one paper).
+
+    Reads the cache export's rows for paper_id through load_snapshot_rows
+    (accepting v001 or v002 snapshots), walks them with provenance_sources,
+    and pre-populates the resolution cache with {pdf, resolution, highlight,
+    stats} keyed by source_cache_key computed with the current run's bundle.
+    A key mapping to two different results is dropped (resolved fresh later).
+    Returns diagnostics {status, seeded_keys, conflicts} where status is one of
+    seeded / documents_mismatch / bundle_manifest_mismatch / paper_absent.
+    """
+    cache_dir = Path(cache_dir)
+    diagnostics = {"status": "paper_absent", "seeded_keys": 0, "conflicts": 0}
+    if not (cache_dir / "rows" / f"{paper_id}.json").exists():
+        return diagnostics
+    cache_manifest = json.loads((cache_dir / "manifest.json").read_text())
+    cache_papers = {
+        p.get("paper_id"): p for p in cache_manifest.get("papers", []) if isinstance(p, dict)
+    }
+    cache_paper = cache_papers.get(paper_id)
+    if cache_paper is None:
+        return diagnostics
+    published = {
+        (d.get("pdf"), d.get("sha256")) for d in (cache_paper.get("documents") or [])
+    }
+    current = {
+        (d.get("pdf"), d.get("sha256")) for d in bundle.document_catalog()
+    }
+    if published != current:
+        diagnostics["status"] = "documents_mismatch"
+        return diagnostics
+    cache_bundle_manifest = cache_dir / "bundles" / paper_id / "manifest.json"
+    bundle_manifest = bundle.bundle_dir / "manifest.json"
+    if not cache_bundle_manifest.is_file():
+        diagnostics["status"] = "bundle_manifest_mismatch"
+        return diagnostics
+    if (hashlib.sha256(cache_bundle_manifest.read_bytes()).hexdigest()
+            != hashlib.sha256(bundle_manifest.read_bytes()).hexdigest()):
+        diagnostics["status"] = "bundle_manifest_mismatch"
+        return diagnostics
+    cached_rows = load_snapshot_rows(cache_dir, paper_id)
+    by_key = {}
+    for row in cached_rows:
+        for field_name, pv in row.get("provenance", {}).items():
+            for source, value, _top in provenance_sources(
+                    pv, row["fields"].get(field_name)):
+                result = _canonical_json(
+                    {k: source[k] for k in ("pdf", "resolution", "highlight")}
+                )
+                key = source_cache_key(bundle, source, field_value=value)
+                seen = by_key.get(key, _MISSING)
+                if seen is _MISSING:
+                    by_key[key] = (result, source)
+                elif seen is not _DROPPED and seen[0] != result:
+                    by_key[key] = _DROPPED  # conflicting key: stays dropped
+    for key, entry in by_key.items():
+        if entry is _DROPPED:
+            diagnostics["conflicts"] += 1
+            continue
+        _result, source = entry
+        bundle._source_resolution_cache[key] = {
+            "pdf": source["pdf"],
+            "resolution": source["resolution"],
+            "highlight": copy.deepcopy(source["highlight"]),
+            "stats": Counter({source["resolution"]: 1}),
+            "seeded": True,
+        }
+        diagnostics["seeded_keys"] += 1
+    diagnostics["status"] = "seeded"
+    return diagnostics
+
+
+def resolve_source(bundle: Bundle, source: dict, stats: Counter, field_value=None):
+    """Cache repeated citation/value searches while retaining per-source counts."""
+    cache_key = source_cache_key(bundle, source, field_value=field_value)
     cached = bundle._source_resolution_cache.get(cache_key)
     if cached is None:
         bundle.diagnostics["source_cache_misses"] += 1
@@ -1491,6 +1678,8 @@ def resolve_source(bundle: Bundle, source: dict, stats: Counter, field_value=Non
         bundle._source_resolution_cache[cache_key] = cached
     else:
         bundle.diagnostics["source_cache_hits"] += 1
+        if cached.get("seeded"):
+            bundle.diagnostics["highlight_cache_hits"] += 1
     source["pdf"] = cached["pdf"]
     source["resolution"] = cached["resolution"]
     source["highlight"] = copy.deepcopy(cached["highlight"])
@@ -2145,6 +2334,14 @@ def main(argv=None):
         "<eval-dir>/../../benchmark/eval_config/bundle_status.json.",
     )
     ap.add_argument(
+        "--highlight-cache",
+        default=None,
+        help="existing export directory (v001 or v002) whose resolved "
+        "highlights are reused instead of recomputed. The cache export is "
+        "read one paper at a time; a paper is seeded only when its documents "
+        "and bundle manifest match the current inputs.",
+    )
+    ap.add_argument(
         "--units-only",
         action="store_true",
         help="recompute review_units.json from an EXISTING snapshot dir "
@@ -2262,6 +2459,18 @@ def main(argv=None):
             blocking_total += 1
             gate_by_tier[tier] += 1
 
+    highlight_cache_dir = None
+    if args.highlight_cache:
+        highlight_cache_dir = Path(args.highlight_cache).expanduser().resolve()
+        out_resolved = out.resolve()
+        if (highlight_cache_dir == out_resolved
+                or highlight_cache_dir in out_resolved.parents
+                or out_resolved in highlight_cache_dir.parents):
+            print("ERROR: --highlight-cache must not point at, inside, or "
+                  "outside-but-containing the output directory",
+                  file=sys.stderr)
+            return 2
+
     # prepare output dirs. Published run IDs are immutable unless the caller
     # makes replacement explicit with --force.
     try:
@@ -2290,6 +2499,11 @@ def main(argv=None):
             if override is not None:
                 bundle.pdf_path = override
         bundle.prepare_documents()
+        cache_report = None
+        if highlight_cache_dir is not None:
+            cache_report = seed_highlight_cache(bundle, highlight_cache_dir, pid)
+            cache_report["source_cache_misses_before"] = bundle.diagnostics.get(
+                "source_cache_misses", 0)
         pdf_path = bundle.pdf_path
         pdf_available = bundle.has_pdf
         resolve_highlights = highlight_papers is None or pid in highlight_papers
@@ -2354,8 +2568,19 @@ def main(argv=None):
                 "provenance": provenance,
             })
 
-        # write rows file
-        (out / "rows" / f"{pid}.json").write_text(json.dumps(rows_out, ensure_ascii=False, indent=2))
+        # intern evidence into v002 tables, then write compact rows + evidence
+        evidence = intern_paper_evidence(rows_out)
+        (out / "rows" / f"{pid}.json").write_text(
+            json.dumps(rows_out, ensure_ascii=False, separators=(",", ":")))
+        (out / "evidence").mkdir(parents=True, exist_ok=True)
+        (out / "evidence" / f"{pid}.json").write_text(
+            json.dumps({
+                "snapshot_format_version": SNAPSHOT_FORMAT_VERSION,
+                "paper_id": pid,
+                "sources": evidence["sources"],
+                "reasoning": evidence["reasoning"],
+                "derivation": evidence["derivation"],
+            }, ensure_ascii=False, separators=(",", ":")))
         rows_by_paper[pid] = paper_field_dicts  # for schema_summary
 
         global_rect_stats.update(paper_stats)
@@ -2367,7 +2592,25 @@ def main(argv=None):
         bundle.copy_documents(out)
 
         paper_seconds = time.perf_counter() - paper_started
+        if cache_report is not None and cache_report.get("status") == "seeded":
+            fresh = (bundle.diagnostics.get("source_cache_misses", 0)
+                     - cache_report.pop("source_cache_misses_before", 0))
+            bundle.diagnostics["highlight_cache_misses"] = max(fresh, 0)
+        else:
+            bundle.diagnostics.pop("highlight_cache_hits", None)
+            bundle.diagnostics.pop("highlight_cache_misses", None)
         diagnostics = dict(bundle.diagnostics)
+        # AC-3 compares these keys explicitly; a zero count must be visible,
+        # not just absent from the Counter.
+        diagnostics.setdefault("source_cache_hits", 0)
+        diagnostics.setdefault("source_cache_misses", 0)
+        if cache_report is not None:
+            cache_report.pop("source_cache_misses_before", None)
+            diagnostics["highlight_cache_status"] = cache_report["status"]
+            diagnostics["highlight_cache_seeded_keys"] = cache_report["seeded_keys"]
+            diagnostics["highlight_cache_hits"] = diagnostics.get("highlight_cache_hits", 0)
+            diagnostics["highlight_cache_misses"] = diagnostics.get("highlight_cache_misses", 0)
+            diagnostics["highlight_cache_conflicts"] = cache_report["conflicts"]
         diagnostics["paper_seconds"] = paper_seconds
         for key in ("unique_resolution_seconds", "textpage_build_seconds", "paper_seconds"):
             diagnostics[key] = round(diagnostics.get(key, 0.0), 3)
@@ -2414,7 +2657,10 @@ def main(argv=None):
             "field_fill_rate": field_fill_rate,
             "certainty_counts": dict(certainty_counts),
             "tier_counts": tc,
-            "highlight_stats": dict(paper_stats),
+            "highlight_stats": {
+                key: paper_stats.get(key, 0) for key in CANONICAL_RESOLUTIONS
+            } | {k: v for k, v in paper_stats.items()
+                  if k not in CANONICAL_RESOLUTIONS},
             "highlight_diagnostics": diagnostics,
         })
         bundle.close()
@@ -2438,6 +2684,7 @@ def main(argv=None):
         "domain": domain,
         "exported_at": exported_at,
         "blind": bool(args.blind),
+        "snapshot_format_version": SNAPSHOT_FORMAT_VERSION,
         "schema_version": SCHEMA_VERSION,
         "has_eval": has_eval,
         # Schema-driven identity tuple [{field, description}], in schema order.
