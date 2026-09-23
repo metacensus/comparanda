@@ -25,11 +25,14 @@ omitted. ``--project`` may likewise be supplied by COMPARANDA_PROJECT_DIR.
 from __future__ import annotations
 
 import argparse
+import copy
 import datetime as _dt
+import hashlib
 import json
 import re
 import shutil
 import sys
+import time
 import unicodedata
 from collections import Counter
 from pathlib import Path
@@ -469,18 +472,223 @@ def _dash_variants(q: str):
 _DEHYPHENATE = getattr(fitz, "TEXT_DEHYPHENATE", 0)
 
 
-def _search(page, query, clip=None):
+def _search(page, query, clip=None, *, textpage=None, metrics=None, phase=None):
     """search_for with dash variants + dehyphenate. Returns list[fitz.Rect]."""
     if not query:
         return []
+    if textpage is not None and clip is not None:
+        raise ValueError("a full-page TextPage cannot be used for a clipped search")
     for variant in _dash_variants(query):
+        if metrics is not None:
+            metrics["search_for_calls"] += 1
+            metrics[
+                "prose_search_for_calls" if textpage is not None
+                else "clipped_search_for_calls" if clip is not None
+                else "direct_search_for_calls"
+            ] += 1
+            if phase:
+                metrics[f"{phase}_search_for_calls"] += 1
         try:
-            hits = page.search_for(variant, clip=clip, flags=_DEHYPHENATE)
+            kwargs = {"clip": clip, "flags": _DEHYPHENATE}
+            if textpage is not None:
+                kwargs["textpage"] = textpage
+            hits = page.search_for(variant, **kwargs)
         except TypeError:
-            hits = page.search_for(variant, clip=clip)
+            # Compatibility with PyMuPDF releases predating the flags keyword.
+            # Cached TextPages are built with the same fallback extraction
+            # behavior, so direct and cached searches retain matching semantics.
+            kwargs = {"clip": clip}
+            if textpage is not None:
+                kwargs["textpage"] = textpage
+            hits = page.search_for(variant, **kwargs)
         if hits:
             return hits
     return []
+
+
+def _word_key(token: str) -> str:
+    """Comparable PDF word key without weakening numeric evidence.
+
+    Punctuation around ordinary prose words is presentation noise, but decimal
+    points, signs, and separators in tokens containing digits are evidence and
+    must remain exact.  This deliberately is not a fuzzy matcher.
+    """
+    token = normalize_quote(token).lower()
+    if not token:
+        return ""
+    if any(char.isdigit() for char in token):
+        return token
+    if token.endswith("-"):
+        return re.sub(r"^[^\w]+", "", token)
+    return re.sub(r"^[^\w]+|[^\w]+$", "", token)
+
+
+def _full_quote_word_match(page, query: str, clip=None, words=None):
+    """Return rects for one unambiguous, word-exact full-quote match.
+
+    This is a bounded fallback for PDF line wrapping and extraction spacing.
+    It only accepts distinctive prose quotes and maps the matching PDF words
+    back to their actual rectangles.  A trailing line-break hyphen may join the
+    immediately following word; all other token comparisons are exact.
+    """
+    query = normalize_quote(query)
+    query_words = [_word_key(word) for word in re.findall(r"\S+", query)]
+    query_words = [word for word in query_words if word]
+    alpha_count = sum(char.isalpha() for word in query_words for char in word)
+    if len(query_words) < 2 or alpha_count < 12:
+        return []
+    words = page.get_text("words", sort=True) if words is None else words
+    if clip is not None:
+        words = [word for word in words if fitz.Rect(word[:4]).intersects(clip)]
+    entries = []
+    index = 0
+    while index < len(words):
+        word = words[index]
+        key = _word_key(word[4])
+        # A PDF often exposes a line-end "hyphen-" and next-line "ation" as
+        # separate words. Join only this adjacent, lossless variant.
+        if key.endswith("-") and index + 1 < len(words):
+            next_key = _word_key(words[index + 1][4])
+            if next_key:
+                entries.append((key[:-1] + next_key, index, index + 1))
+                index += 2
+                continue
+        if key:
+            entries.append((key, index, index))
+        index += 1
+    matches = []
+    for start in range(len(entries)):
+        pos = start
+        rect_indexes = []
+        for wanted in query_words:
+            if pos >= len(entries) or entries[pos][0] != wanted:
+                break
+            rect_indexes.extend(range(entries[pos][1], entries[pos][2] + 1))
+            pos += 1
+        else:
+            matches.append(tuple(dict.fromkeys(rect_indexes)))
+    if len(matches) != 1:
+        return []
+    return [fitz.Rect(words[index][:4]) for index in matches[0]]
+
+
+def _full_quote_compact_match(page, query: str, clip=None, words=None):
+    """Match one distinctive quote after removing whitespace only.
+
+    PDF extraction can lose or introduce spaces inside an otherwise verbatim
+    quote (``n Z`` versus ``nZ``). This retains every punctuation mark and
+    digit, accepts exactly one whole-token-bounded occurrence, and returns the
+    underlying word boxes. It is intentionally narrower than fuzzy matching.
+    """
+    query = normalize_quote(query)
+    if sum(char.isalpha() for char in query) < 12:
+        return []
+    words = page.get_text("words", sort=True) if words is None else words
+    if clip is not None:
+        words = [word for word in words if fitz.Rect(word[:4]).intersects(clip)]
+    if not words:
+        return []
+    compact_words = []
+    spans = []
+    offset = 0
+    for index, word in enumerate(words):
+        text = normalize_quote(word[4])
+        if not text:
+            continue
+        compact_words.append(text)
+        spans.append((offset, offset + len(text), index))
+        offset += len(text)
+    haystack = "".join(compact_words)
+    if not haystack:
+        return []
+    for variant in _dash_variants(query):
+        needle = re.sub(r"\s+", "", variant)
+        if not needle:
+            continue
+        starts = []
+        start = haystack.find(needle)
+        while start >= 0:
+            end = start + len(needle)
+            left_ok = not (needle[0].isalnum() and start and haystack[start - 1].isalnum())
+            right_ok = not (
+                needle[-1].isalnum() and end < len(haystack) and haystack[end].isalnum()
+            )
+            if left_ok and right_ok:
+                starts.append((start, end))
+            start = haystack.find(needle, start + 1)
+        if len(starts) == 1:
+            start, end = starts[0]
+            return [fitz.Rect(words[index][:4]) for lo, hi, index in spans if lo < end and hi > start]
+    return []
+
+
+def _prepared_character_index(raw_chars, clip=None):
+    """Build compact normalized characters and their PDF boxes once."""
+    chars = []
+    for raw, bbox_values in raw_chars:
+        bbox = fitz.Rect(bbox_values)
+        if clip is None or bbox.intersects(clip):
+            chars.extend((output, bbox) for output in normalize_quote(raw))
+    return (
+        "".join(char for char, _ in chars if not char.isspace()),
+        tuple(bbox for char, bbox in chars if not char.isspace()),
+    )
+
+
+def _full_quote_character_match(
+    page, query: str, clip=None, raw_chars=None, prepared_index=None,
+):
+    """Match one distinctive full quote in PDF character runs.
+
+    Some PDFs expose an entire sentence as a single text word (for example,
+    ``trialassigned410patients``). Raw character boxes preserve the only safe
+    geometry in that case. Whitespace alone is ignored; every other character
+    remains exact. A unique complete quote is required: this is neither fuzzy
+    matching nor a numeric-only search.
+    """
+    query = normalize_quote(query)
+    if sum(char.isalpha() for char in query) < 12:
+        return []
+    if raw_chars is None:
+        raw_chars = []
+        for block in page.get_text("rawdict").get("blocks", []):
+            for line in block.get("lines", []):
+                for span in line.get("spans", []):
+                    for char in span.get("chars", []):
+                        raw_chars.append((char["c"], tuple(char["bbox"])))
+    if prepared_index is None:
+        prepared_index = _prepared_character_index(raw_chars, clip)
+    compact, compact_boxes = prepared_index
+    if not compact:
+        return []
+    for variant in _dash_variants(query):
+        needle = re.sub(r"\s+", "", variant)
+        if not needle:
+            continue
+        starts = []
+        start = compact.find(needle)
+        while start >= 0:
+            starts.append(start)
+            start = compact.find(needle, start + 1)
+        if len(starts) == 1:
+            start = starts[0]
+            return _merge_character_rects(compact_boxes[start:start + len(needle)])
+    return []
+
+
+def _merge_character_rects(rects):
+    """Coalesce glyph boxes into nearby spans without crossing columns."""
+    merged = []
+    for rect in sorted((fitz.Rect(rect) for rect in rects), key=lambda r: (r.y0, r.x0)):
+        if merged:
+            previous = merged[-1]
+            same_line = abs(previous.y0 - rect.y0) <= max(1.0, previous.height * .25)
+            close = rect.x0 - previous.x1 <= max(2.0, previous.height * .35)
+            if same_line and close:
+                merged[-1] = previous | rect
+                continue
+        merged.append(rect)
+    return merged
 
 
 def _union_rect(rects):
@@ -498,7 +706,9 @@ def _is_synthetic_col(label: str) -> bool:
     return bool(re.fullmatch(r"col_\d+", normalize_quote(label or "")))
 
 
-def _anchor_cell(page, table_rect, cell, value_query):
+def _anchor_cell(
+    page, table_rect, cell, value_query, *, metrics=None, clipped_search=None,
+):
     """Resolve a table cell to a tight value rect by row × column intersection.
 
     Searches the row-label text within the table rect to get its y-band, the
@@ -514,43 +724,53 @@ def _anchor_cell(page, table_rect, cell, value_query):
         return []
     row_label = cell.get("row")
     col_label = cell.get("column")
+    display_table_rect = fitz.Rect(table_rect) * page.rotation_matrix
+
+    def _clipped(query, clip):
+        if clipped_search is not None:
+            return clipped_search(page, query, clip)
+        return _search(
+            page, query, clip=clip, metrics=metrics, phase="table",
+        )
 
     # Row band: y-range of the row-label text within the table.
-    y0 = table_rect.y0
-    y1 = table_rect.y1
+    y0 = display_table_rect.y0
+    y1 = display_table_rect.y1
     if row_label and not _is_synthetic_col(row_label):
-        row_hits = _search(page, normalize_quote(row_label), clip=table_rect)
+        row_hits = _clipped(normalize_quote(row_label), table_rect)
         if row_hits:
-            ru = _union_rect(row_hits)
+            ru = _union_rect([r * page.rotation_matrix for r in row_hits])
             # pad a little so wrapped / multi-line labels still cover the data row
             pad = max(2.0, (ru.y1 - ru.y0) * 0.6)
             y0 = ru.y0 - pad
             y1 = ru.y1 + pad
 
     # Column band: x-range of the column-header text within the table.
-    x0 = table_rect.x0
-    x1 = table_rect.x1
+    x0 = display_table_rect.x0
+    x1 = display_table_rect.x1
     if col_label and not _is_synthetic_col(col_label):
-        col_hits = _search(page, normalize_quote(col_label), clip=table_rect)
+        col_hits = _clipped(normalize_quote(col_label), table_rect)
         if col_hits:
-            cu = _union_rect(col_hits)
+            cu = _union_rect([r * page.rotation_matrix for r in col_hits])
             pad = max(2.0, (cu.x1 - cu.x0) * 0.25)
             x0 = cu.x0 - pad
             x1 = cu.x1 + pad
 
     # Need at least one of the two bands to have narrowed the clip; otherwise
     # this is just a whole-table search and offers no disambiguation.
-    narrowed = (y0 > table_rect.y0 or y1 < table_rect.y1
-                or x0 > table_rect.x0 or x1 < table_rect.x1)
+    narrowed = (y0 > display_table_rect.y0 or y1 < display_table_rect.y1
+                or x0 > display_table_rect.x0 or x1 < display_table_rect.x1)
     if not narrowed:
         return []
 
-    sub = fitz.Rect(x0, y0, x1, y1)
-    sub.normalize()
-    sub = sub & table_rect  # keep inside the table
-    if sub.is_empty:
+    display_sub = fitz.Rect(x0, y0, x1, y1)
+    display_sub.normalize()
+    display_sub = display_sub & display_table_rect
+    if display_sub.is_empty:
         return []
-    return _search(page, value_query, clip=sub) if value_query else []
+    sub = display_sub * page.derotation_matrix
+    sub.normalize()
+    return _clipped(value_query, sub) if value_query else []
 
 
 # ---------------------------------------------------------------------------
@@ -558,15 +778,23 @@ def _anchor_cell(page, table_rect, cell, value_query):
 # ---------------------------------------------------------------------------
 
 
-def _norm_rects(rects, page_w, page_h):
-    """Normalize fitz.Rects to 0-1 top-left dicts, merge trivial same-line, cap."""
+def _norm_rects(rects, page):
+    """Normalize unrotated PyMuPDF rects into the displayed page coordinate frame.
+
+    PyMuPDF search and clip coordinates are always unrotated, while PDF.js
+    displays the page's declared rotation. Apply the page rotation matrix before
+    normalizing against ``page.rect`` so the stored overlay matches the canvas.
+    """
+    page_rect = page.rect
+    page_w, page_h = page_rect.width, page_rect.height
     out = []
     for r in rects:
+        displayed = fitz.Rect(r) * page.rotation_matrix
         out.append({
-            "x": r.x0 / page_w,
-            "y": r.y0 / page_h,
-            "w": (r.x1 - r.x0) / page_w,
-            "h": (r.y1 - r.y0) / page_h,
+            "x": (displayed.x0 - page_rect.x0) / page_w,
+            "y": (displayed.y0 - page_rect.y0) / page_h,
+            "w": displayed.width / page_w,
+            "h": displayed.height / page_h,
         })
     if len(out) > MAX_RECTS_PER_SOURCE:
         out = _merge_same_line(out)
@@ -592,9 +820,9 @@ def _merge_same_line(rects):
     return merged
 
 
-def _group_by_page(rects, page_no, page_w, page_h):
+def _group_by_page(rects, page_no, page):
     """All rects share one page here; return the SourceLocation highlight array."""
-    norm = _norm_rects(rects, page_w, page_h)
+    norm = _norm_rects(rects, page)
     return [{"page": page_no, "rects": norm}]
 
 
@@ -609,26 +837,62 @@ class Bundle:
     def __init__(self, paper_id: str, bundle_dir: Path, pdf_path: Path):
         self.paper_id = paper_id
         self.bundle_dir = bundle_dir
+        self.project_dir = bundle_dir.parents[2]
         self.pdf_path = pdf_path
         self.manifest = json.loads((bundle_dir / "manifest.json").read_text())
         # location (e.g. "tables/table_1.json" or its sibling .md) -> docling_idx
         self._loc_to_docling = {}
+        self._table_by_location = {}
         for t in self.manifest.get("tables", []):
             di = t.get("docling_idx")
-            if di is None:
-                continue
             for key in ("path", "markdown_path"):
                 p = t.get(key)
                 if p:
-                    self._loc_to_docling[p] = di
+                    self._table_by_location[p] = t
+                    if di is not None:
+                        self._loc_to_docling[p] = di
+        self._section_by_location = {
+            section.get("path"): section
+            for section in self.manifest.get("sections", [])
+            if section.get("path")
+        }
+        self._figure_by_location = {
+            figure.get("path"): figure
+            for figure in self.manifest.get("figures", [])
+            if figure.get("path")
+        }
         # docling tables (index -> entry)
         dpath = bundle_dir / "_provenance" / "docling_tables.json"
         self._docling = {}
         if dpath.exists():
             for entry in json.loads(dpath.read_text()).get("tables", []):
                 self._docling[entry.get("index")] = entry
-        self._doc = None
+        ppath = bundle_dir / "_provenance" / "docling_pictures.json"
+        self._pictures = {}
+        if ppath.exists():
+            for entry in json.loads(ppath.read_text()).get("pictures", []):
+                self._pictures[entry.get("index")] = entry
+        self._documents = {}
+        self._pdf_hashes = {}
         self._table_rect_cache = {}
+        self._figure_rect_cache = {}
+        self._source_resolution_cache = {}
+        # TextPage retains a weak reference to its Page, so keep both alive.
+        # These are full-page objects and are used only by prose_search().
+        self._full_page_textpages = {}
+        # Prose resolution never narrows to field_value, so distinct source
+        # cache keys can safely share exact (page, normalized-query) searches.
+        # Store immutable coordinates and return fresh Rects to each caller.
+        self._prose_search_result_cache = {}
+        self._word_quote_result_cache = {}
+        self._page_words_cache = {}
+        self._page_raw_chars_cache = {}
+        self._page_character_index_cache = {}
+        # Clipped searches remain ordinary Page.search_for calls. Exact clip
+        # coordinates are part of the key so numeric cell boundaries cannot
+        # alias one another.
+        self._clipped_search_result_cache = {}
+        self.diagnostics = Counter()
 
     @property
     def has_pdf(self) -> bool:
@@ -638,22 +902,280 @@ class Bundle:
 
     @property
     def doc(self):
-        if self._doc is None:
-            self._doc = fitz.open(self.pdf_path)
-        return self._doc
+        return self._document("primary")["doc"]
+
+    @staticmethod
+    def _sha256(path: Path) -> str:
+        digest = hashlib.sha256()
+        with path.open("rb") as stream:
+            for block in iter(lambda: stream.read(1024 * 1024), b""):
+                digest.update(block)
+        return digest.hexdigest()
+
+    def _register_primary(self):
+        current = self._documents.get("primary")
+        if current is not None and current["path"] == self.pdf_path:
+            return current
+        if current is not None and current.get("doc") is not None:
+            current["doc"].close()
+        descriptor = {
+            "key": "primary", "role": "primary", "path": self.pdf_path,
+            "pdf": f"pdfs/{self.paper_id}.pdf", "sha256": None,
+            "page_count": 0, "doc": None,
+        }
+        if self.pdf_path.exists():
+            descriptor["sha256"] = self._sha256(self.pdf_path)
+            descriptor["doc"] = fitz.open(self.pdf_path)
+            descriptor["page_count"] = descriptor["doc"].page_count
+        self._documents["primary"] = descriptor
+        return descriptor
+
+    def _resolve_supplement(self, table: dict):
+        expected = table.get("source_sha256")
+        artifact = table.get("source_artifact")
+        if not artifact or not expected:
+            raise ValueError(
+                f"{self.paper_id}: supplementary table metadata requires "
+                "source_artifact and source_sha256"
+            )
+        key = f"supplement:{expected}"
+        if key in self._documents:
+            return self._documents[key]
+        candidates = []
+        rel = Path(artifact)
+        if not rel.is_absolute():
+            direct = self.project_dir / rel
+            if direct.is_file():
+                candidates.append(direct)
+        raw_dir = self.project_dir / "data" / "raw"
+        if raw_dir.is_dir():
+            candidates.extend(sorted(raw_dir.rglob("*.pdf")))
+        seen = set()
+        matched = None
+        mismatched_direct = None
+        for candidate in candidates:
+            resolved = candidate.resolve()
+            if resolved in seen:
+                continue
+            seen.add(resolved)
+            actual = self._pdf_hashes.get(resolved)
+            if actual is None:
+                actual = self._sha256(resolved)
+                self._pdf_hashes[resolved] = actual
+            if candidate == (self.project_dir / rel) and actual != expected:
+                mismatched_direct = actual
+            if actual == expected:
+                matched = resolved
+                break
+        if matched is None:
+            detail = (
+                f"; source_artifact hash was {mismatched_direct}"
+                if mismatched_direct else ""
+            )
+            raise FileNotFoundError(
+                f"{self.paper_id}: supplement PDF with sha256 {expected} not found "
+                f"under {raw_dir}{detail}"
+            )
+        doc = fitz.open(matched)
+        descriptor = {
+            "key": key, "role": "supplement", "path": matched,
+            "pdf": f"pdfs/{self.paper_id}/supplement-{expected[:12]}.pdf",
+            "sha256": expected, "page_count": doc.page_count, "doc": doc,
+        }
+        self._documents[key] = descriptor
+        return descriptor
+
+    def prepare_documents(self):
+        """Resolve and hash every primary/supplement PDF before source work."""
+        self._register_primary()
+        for table in self.manifest.get("tables", []):
+            if table.get("source_artifact"):
+                self._resolve_supplement(table)
+
+    def _document(self, key: str):
+        self.prepare_documents()
+        return self._documents[key]
+
+    @staticmethod
+    def _mapped_page(table: dict, page_no):
+        if not isinstance(page_no, int) or page_no < 1:
+            return None
+        virtual = table.get("page_range") or [table.get("page"), table.get("page")]
+        actual = table.get("supplement_page_range") or virtual
+        if (
+            len(virtual) != 2 or len(actual) != 2
+            or not all(isinstance(v, int) for v in [*virtual, *actual])
+            or virtual[1] - virtual[0] != actual[1] - actual[0]
+        ):
+            raise ValueError("invalid table page_range/supplement_page_range mapping")
+        if not virtual[0] <= page_no <= virtual[1]:
+            raise ValueError(
+                f"source page {page_no} is outside table page_range {virtual}"
+            )
+        return actual[0] + page_no - virtual[0]
+
+    def source_context(self, source: dict):
+        location = source.get("location", "") or ""
+        table = self._table_by_location.get(location)
+        section = self._section_by_location.get(location)
+        raw_page = source.get("page")
+        if table and table.get("source_artifact"):
+            descriptor = self._resolve_supplement(table)
+            page_no = self._mapped_page(table, raw_page)
+            actual_range = table.get("supplement_page_range") or table.get("page_range")
+            allowed_pages = list(range(actual_range[0], actual_range[1] + 1))
+        else:
+            descriptor = self._register_primary()
+            page_no = raw_page if isinstance(raw_page, int) and raw_page >= 1 else None
+            allowed_pages = None
+        preferred_pages = None
+        if section:
+            page_range = section.get("page_range")
+            if (isinstance(page_range, list) and len(page_range) == 2
+                    and all(isinstance(page, int) for page in page_range)):
+                preferred_pages = list(range(page_range[0], page_range[1] + 1))
+        return {
+            "key": descriptor["key"], "doc": descriptor["doc"],
+            "pdf": descriptor["pdf"], "page": page_no,
+            "allowed_pages": allowed_pages, "preferred_pages": preferred_pages,
+            "table": table,
+        }
+
+    def document_catalog(self):
+        self.prepare_documents()
+        return [
+            {k: document[k] for k in ("pdf", "sha256", "page_count", "role")}
+            for document in self._documents.values()
+        ]
+
+    def copy_documents(self, out: Path):
+        self.prepare_documents()
+        for document in self._documents.values():
+            if not document["path"].is_file():
+                continue
+            destination = out / document["pdf"]
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(document["path"], destination)
 
     def close(self):
-        if self._doc is not None:
-            self._doc.close()
-            self._doc = None
+        self._clipped_search_result_cache.clear()
+        self._prose_search_result_cache.clear()
+        self._word_quote_result_cache.clear()
+        self._page_words_cache.clear()
+        self._page_raw_chars_cache.clear()
+        self._page_character_index_cache.clear()
+        self._full_page_textpages.clear()
+        for document in self._documents.values():
+            if document.get("doc") is not None:
+                document["doc"].close()
+                document["doc"] = None
 
     def page_count(self):
         if not self.has_pdf:
             return 0
-        return self.doc.page_count
+        return self._register_primary()["page_count"]
 
-    def table_rect(self, location: str):
-        """Return (page_no_1based, fitz.Rect) for a cited table location, or None."""
+    def prose_search(self, document_key: str, page_index: int, query: str, *, phase: str):
+        """Search unclipped prose using one flags-matched TextPage per page."""
+        result_key = (document_key, page_index, query)
+        if result_key in self._prose_search_result_cache:
+            self.diagnostics["prose_search_result_cache_hits"] += 1
+            page, _ = self._full_page_textpages[(document_key, page_index)]
+            coordinates = self._prose_search_result_cache[result_key]
+            return page, [fitz.Rect(values) for values in coordinates]
+        self.diagnostics["prose_search_result_cache_misses"] += 1
+        page_key = (document_key, page_index)
+        cached = self._full_page_textpages.get(page_key)
+        if cached is None:
+            page = self._document(document_key)["doc"][page_index]
+            started = time.perf_counter()
+            try:
+                textpage = page.get_textpage(flags=_DEHYPHENATE)
+            except TypeError:
+                textpage = page.get_textpage()
+            self.diagnostics["textpage_builds"] += 1
+            self.diagnostics["textpage_build_seconds"] += time.perf_counter() - started
+            cached = (page, textpage)
+            self._full_page_textpages[page_key] = cached
+        page, textpage = cached
+        hits = _search(
+            page, query, textpage=textpage, metrics=self.diagnostics, phase=phase,
+        )
+        self._prose_search_result_cache[result_key] = tuple(
+            tuple(rect) for rect in hits
+        )
+        return page, [fitz.Rect(values) for values in self._prose_search_result_cache[result_key]]
+
+    def clipped_search(self, document_key: str, page, query: str, clip):
+        """Memoize an exact clipped search without using a full-page TextPage."""
+        result_key = (document_key, page.number, tuple(clip), query)
+        if result_key in self._clipped_search_result_cache:
+            self.diagnostics["clipped_search_result_cache_hits"] += 1
+            coordinates = self._clipped_search_result_cache[result_key]
+            return [fitz.Rect(values) for values in coordinates]
+        self.diagnostics["clipped_search_result_cache_misses"] += 1
+        hits = _search(
+            page, query, clip=clip, metrics=self.diagnostics, phase="table",
+        )
+        self._clipped_search_result_cache[result_key] = tuple(
+            tuple(rect) for rect in hits
+        )
+        return [
+            fitz.Rect(values)
+            for values in self._clipped_search_result_cache[result_key]
+        ]
+
+    def word_quote_match(self, document_key: str, page, query: str, clip=None):
+        """Memoize bounded word-geometry fallback, including its exact clip."""
+        result_key = (document_key, page.number, query, tuple(clip) if clip else None)
+        cached = self._word_quote_result_cache.get(result_key)
+        if cached is None:
+            self.diagnostics["word_quote_cache_misses"] += 1
+            page_key = (document_key, page.number)
+            words = self._page_words_cache.get(page_key)
+            if words is None:
+                words = tuple(page.get_text("words", sort=True))
+                self._page_words_cache[page_key] = words
+                self.diagnostics["word_quote_word_pages_built"] += 1
+            rects = _full_quote_word_match(page, query, clip, words)
+            if not rects:
+                rects = _full_quote_compact_match(page, query, clip, words)
+                if rects:
+                    self.diagnostics["compact_quote_matches"] += 1
+            if not rects:
+                raw_chars = self._page_raw_chars_cache.get(page_key)
+                if raw_chars is None:
+                    raw_chars = []
+                    for block in page.get_text("rawdict").get("blocks", []):
+                        for line in block.get("lines", []):
+                            for span in line.get("spans", []):
+                                raw_chars.extend(
+                                    (char["c"], tuple(char["bbox"]))
+                                    for char in span.get("chars", [])
+                                )
+                    raw_chars = tuple(raw_chars)
+                    self._page_raw_chars_cache[page_key] = raw_chars
+                    self.diagnostics["word_quote_raw_pages_built"] += 1
+                clip_key = tuple(clip) if clip else None
+                index_key = (*page_key, clip_key)
+                prepared_index = self._page_character_index_cache.get(index_key)
+                if prepared_index is None:
+                    prepared_index = _prepared_character_index(raw_chars, clip)
+                    self._page_character_index_cache[index_key] = prepared_index
+                    self.diagnostics["word_quote_character_indexes_built"] += 1
+                rects = _full_quote_character_match(
+                    page, query, clip, raw_chars, prepared_index,
+                )
+                if rects:
+                    self.diagnostics["character_quote_matches"] += 1
+            cached = tuple(tuple(rect) for rect in rects)
+            self._word_quote_result_cache[result_key] = cached
+        else:
+            self.diagnostics["word_quote_cache_hits"] += 1
+        return [fitz.Rect(values) for values in cached]
+
+    def table_rect(self, location: str, context: dict):
+        """Return (page_no_1based, fitz.Rect) in the routed PDF, or None."""
         if location in self._table_rect_cache:
             return self._table_rect_cache[location]
         di = self._loc_to_docling.get(location)
@@ -661,14 +1183,44 @@ class Bundle:
         if di is not None:
             entry = self._docling.get(di)
             if entry and entry.get("bbox"):
-                page_no = entry.get("page")  # 1-based
-                page = self.doc[page_no - 1]
-                ph = page.rect.height
+                page_no = entry.get("page")  # 1-based virtual/source page
+                table = self._table_by_location.get(location)
+                if table and table.get("source_artifact"):
+                    page_no = self._mapped_page(table, page_no)
+                page = context["doc"][page_no - 1]
+                display_height = page.rect.height
                 l, t, r, b = entry["bbox"]  # bottom-left origin: t > b
-                rect = fitz.Rect(l, ph - t, r, ph - b)
+                # Docling boxes follow the visually displayed page orientation,
+                # with a bottom-left origin. Convert first to displayed top-left
+                # coordinates, then derotate into PyMuPDF's search/clip frame.
+                displayed = fitz.Rect(
+                    l, display_height - t, r, display_height - b,
+                )
+                displayed.normalize()
+                rect = displayed * page.derotation_matrix
                 rect.normalize()
                 result = (page_no, rect)
         self._table_rect_cache[location] = result
+        return result
+
+    def figure_rect(self, location: str, context: dict):
+        """Return a broad figure-region rect from preserved Docling geometry."""
+        if location in self._figure_rect_cache:
+            return self._figure_rect_cache[location]
+        figure = self._figure_by_location.get(location)
+        entry = self._pictures.get(figure.get("docling_idx")) if figure else None
+        result = None
+        if entry and entry.get("bbox") and isinstance(entry.get("page"), int):
+            page_no = entry["page"]
+            if 1 <= page_no <= context["doc"].page_count:
+                page = context["doc"][page_no - 1]
+                l, t, r, b = entry["bbox"]
+                displayed = fitz.Rect(l, page.rect.height - t, r, page.rect.height - b)
+                displayed.normalize()
+                rect = displayed * page.derotation_matrix
+                rect.normalize()
+                result = (page_no, rect)
+        self._figure_rect_cache[location] = result
         return result
 
 
@@ -689,7 +1241,7 @@ def _value_query(field_value):
     return nv if nv else ""
 
 
-def resolve_source(bundle: Bundle, source: dict, stats: Counter, field_value=None):
+def _resolve_source_uncached(bundle: Bundle, source: dict, stats: Counter, field_value=None):
     """Mutate `source` adding `resolution` + `highlight`; bump global stats.
 
     `field_value` is the extracted value this source supports (when known). It
@@ -698,13 +1250,15 @@ def resolve_source(bundle: Bundle, source: dict, stats: Counter, field_value=Non
     """
     raw_quote = source.get("quote", "") or ""
     nq = normalize_quote(raw_quote)
-    cited_page = source.get("page")
     location = source.get("location", "") or ""
     val_q = _value_query(field_value)
+    context = bundle.source_context(source)
+    cited_page = context["page"]
+    source["pdf"] = context["pdf"]
 
-    # No source PDF (gitignored / data-only clone): cannot resolve rects.
+    # No primary source PDF (gitignored / data-only clone): cannot resolve rects.
     # Record page_only so the client jumps to the cited page without overlay.
-    if not bundle.has_pdf:
+    if context["doc"] is None:
         jump_page = cited_page if isinstance(cited_page, int) and cited_page >= 1 else 1
         source["resolution"] = "page_only"
         source["highlight"] = [{"page": jump_page, "rects": []}]
@@ -712,17 +1266,21 @@ def resolve_source(bundle: Bundle, source: dict, stats: Counter, field_value=Non
         stats["pdf_missing"] += 1
         return
 
-    doc = bundle.doc
+    doc = context["doc"]
+    document_key = context["key"]
     cell = source.get("cell") or None
     short_or_numeric = _is_short_or_numeric(nq)
 
+    # Preserve a native caption/full-quote hit when available; figure geometry
+    # is a broad fallback for genuinely graphical evidence.
+    figure = bundle.figure_rect(location, context)
+
     # ---- Table-cited source ----
     if location.startswith("tables/"):
-        tr = bundle.table_rect(location)
+        tr = bundle.table_rect(location, context)
         if tr is not None:
             page_no, rect = tr
             page = doc[page_no - 1]
-            pw, ph = page.rect.width, page.rect.height
 
             # Does the quote equal one of the cell labels (i.e. the extractor
             # quoted the header / row-label, not the data value)? If so a raw
@@ -741,35 +1299,72 @@ def resolve_source(bundle: Bundle, source: dict, stats: Counter, field_value=Non
                 for value_q in (val_q, nq):
                     if not value_q:
                         continue
-                    hits = _anchor_cell(page, rect, cell, value_q)
+                    hits = _anchor_cell(
+                        page, rect, cell, value_q,
+                        clipped_search=lambda p, q, c: bundle.clipped_search(
+                            document_key, p, q, c,
+                        ),
+                    )
                     if hits:
                         source["resolution"] = "exact"
-                        source["highlight"] = _group_by_page(hits, page_no, pw, ph)
+                        source["highlight"] = _group_by_page(hits, page_no, page)
                         stats["exact"] += 1
                         stats["cell_anchored"] += 1
                         return
 
             # 2. RAW QUOTE within the table rect (long, distinctive values).
-            hits = _search(page, nq, clip=rect) if (nq and not short_or_numeric) else []
+            hits = bundle.clipped_search(
+                document_key, page, nq, rect,
+            ) if (nq and not short_or_numeric) else []
             if hits:
                 source["resolution"] = "exact"
-                source["highlight"] = _group_by_page(hits, page_no, pw, ph)
+                source["highlight"] = _group_by_page(hits, page_no, page)
                 stats["exact"] += 1
                 return
 
-            # 3. CELL-ANCHORING fallback even for non-short quotes that failed.
-            if cell:
-                hits = _anchor_cell(page, rect, cell, nq)
+            # Table PDFs often split a verified multi-word quote across rows or
+            # line wraps. Keep this fallback clipped to the known table box and
+            # reject short/numeric queries just as the direct search does.
+            hits = bundle.word_quote_match(
+                document_key, page, nq, clip=rect,
+            ) if (nq and not short_or_numeric) else []
+            if hits:
+                source["resolution"] = "exact"
+                source["highlight"] = _group_by_page(hits, page_no, page)
+                stats["exact"] += 1
+                stats["table_word_matches"] += 1
+                return
+
+            # Table captions commonly sit just above the detected table body.
+            # Permit a whole-page retry only for an explicit Table <id> caption;
+            # ordinary table evidence remains constrained to its body geometry.
+            if re.match(r"^table\s+[a-z]*\d+\b", nq, flags=re.IGNORECASE):
+                hits = bundle.word_quote_match(document_key, page, nq)
                 if hits:
                     source["resolution"] = "exact"
-                    source["highlight"] = _group_by_page(hits, page_no, pw, ph)
+                    source["highlight"] = _group_by_page(hits, page_no, page)
+                    stats["exact"] += 1
+                    stats["table_caption_matches"] += 1
+                    return
+
+            # 3. CELL-ANCHORING fallback even for non-short quotes that failed.
+            if cell:
+                hits = _anchor_cell(
+                    page, rect, cell, nq,
+                    clipped_search=lambda p, q, c: bundle.clipped_search(
+                        document_key, p, q, c,
+                    ),
+                )
+                if hits:
+                    source["resolution"] = "exact"
+                    source["highlight"] = _group_by_page(hits, page_no, page)
                     stats["exact"] += 1
                     stats["cell_anchored"] += 1
                     return
 
             # 4. degrade to whole-table region (still a useful jump target).
             source["resolution"] = "table_region"
-            source["highlight"] = _group_by_page([rect], page_no, pw, ph)
+            source["highlight"] = _group_by_page([rect], page_no, page)
             stats["table_region"] += 1
             return
         # table couldn't be mapped -> fall through to prose handling
@@ -795,8 +1390,7 @@ def resolve_source(bundle: Bundle, source: dict, stats: Counter, field_value=Non
         narrow to the extracted field value: doing so turns a multi-line quote
         into a tiny value glyph highlight and hides the supporting sentence.
         """
-        pw, ph = page.rect.width, page.rect.height
-        highlight = _group_by_page(hits, pno, pw, ph)
+        highlight = _group_by_page(hits, pno, page)
         if is_full_quote:
             source["resolution"] = "exact"
             stats["exact"] += 1
@@ -807,28 +1401,63 @@ def resolve_source(bundle: Bundle, source: dict, stats: Counter, field_value=Non
             stats["partial_quote"] += 1
         source["highlight"] = highlight
 
-    if page_no and 1 <= page_no <= doc.page_count and not short_or_numeric:
-        page = doc[page_no - 1]
-        for query, is_full_quote in _prose_queries():
-            hits = _search(page, query)
-            if hits:
-                _emit_prose(hits, page_no, page, is_full_quote=is_full_quote)
-                return
-
-    # scan ALL pages with the truncation ladder (off-by-one cited pages). The
-    # cited page is tried first to keep the highlight on the expected page.
+    # Try the complete quote everywhere before allowing a prefix. Section page
+    # ranges are a priority hint only: neighboring/off-by-one pages remain in
+    # the all-page pass.
     if nq and not short_or_numeric:
         order = []
         if page_no and 1 <= page_no <= doc.page_count:
             order.append(page_no - 1)
-        order += [p for p in range(doc.page_count) if p != (page_no - 1 if page_no else -1)]
-        for query, is_full_quote in _prose_queries():
+        for p in context.get("preferred_pages") or []:
+            if 1 <= p <= doc.page_count and p - 1 not in order:
+                order.append(p - 1)
+        allowed = context["allowed_pages"] or list(range(1, doc.page_count + 1))
+        order += [
+            p - 1 for p in allowed
+            if 1 <= p <= doc.page_count and p - 1 not in order
+        ]
+        for pno in order:
+            phase = (
+                "cited_page" if page_no is not None and pno == page_no - 1
+                else "all_page_fallback"
+            )
+            page, hits = bundle.prose_search(
+                document_key, pno, nq, phase=phase,
+            )
+            if not hits:
+                hits = bundle.word_quote_match(document_key, page, nq)
+                if hits:
+                    bundle.diagnostics["full_quote_word_matches"] += 1
+            if hits:
+                _emit_prose(hits, pno + 1, page, is_full_quote=True)
+                return
+        if page_no and 1 <= page_no <= doc.page_count:
+            bundle.diagnostics["cited_page_misses"] += 1
+        if figure is not None:
+            figure_page, rect = figure
+            page = doc[figure_page - 1]
+            source["resolution"] = "figure_region"
+            source["highlight"] = _group_by_page([rect], figure_page, page)
+            stats["figure_region"] += 1
+            return
+        # Truncation is only a visibly marked last resort after every page has
+        # failed the full quote. The first tuple element is the full query.
+        for query, is_full_quote in list(_prose_queries())[1:]:
             for pno in order:
-                page = doc[pno]
-                hits = _search(page, query)
+                page, hits = bundle.prose_search(
+                    document_key, pno, query, phase="all_page_fallback",
+                )
                 if hits:
                     _emit_prose(hits, pno + 1, page, is_full_quote=is_full_quote)
                     return
+
+    if figure is not None:
+        figure_page, rect = figure
+        page = doc[figure_page - 1]
+        source["resolution"] = "figure_region"
+        source["highlight"] = _group_by_page([rect], figure_page, page)
+        stats["figure_region"] += 1
+        return
 
     # no hit -> page_only (client jumps to cited page, no overlay)
     jump_page = page_no if page_no else (cited_page if cited_page else 1)
@@ -837,9 +1466,73 @@ def resolve_source(bundle: Bundle, source: dict, stats: Counter, field_value=Non
     stats["page_only"] += 1
 
 
-def mark_source_not_resolved_for_demo(source: dict, stats: Counter):
+def resolve_source(bundle: Bundle, source: dict, stats: Counter, field_value=None):
+    """Cache repeated citation/value searches while retaining per-source counts."""
+    context = bundle.source_context(source)
+    cache_key = json.dumps(
+        [source.get("quote"), source.get("location"), source.get("page"),
+         source.get("cell"), field_value, context["key"], context["page"],
+         context["allowed_pages"]],
+        ensure_ascii=False, sort_keys=True,
+    )
+    cached = bundle._source_resolution_cache.get(cache_key)
+    if cached is None:
+        bundle.diagnostics["source_cache_misses"] += 1
+        delta = Counter()
+        started = time.perf_counter()
+        _resolve_source_uncached(bundle, source, delta, field_value=field_value)
+        bundle.diagnostics["unique_resolution_seconds"] += time.perf_counter() - started
+        cached = {
+            "pdf": source["pdf"],
+            "resolution": source["resolution"],
+            "highlight": copy.deepcopy(source["highlight"]),
+            "stats": delta,
+        }
+        bundle._source_resolution_cache[cache_key] = cached
+    else:
+        bundle.diagnostics["source_cache_hits"] += 1
+    source["pdf"] = cached["pdf"]
+    source["resolution"] = cached["resolution"]
+    source["highlight"] = copy.deepcopy(cached["highlight"])
+    stats.update(cached["stats"])
+    bundle.diagnostics["source_occurrences"] += 1
+    bundle.diagnostics[f"resolution_{cached['resolution']}"] += 1
+
+
+def provenance_sources(provenance: dict, field_value=None):
+    """Yield citations with their supported value and whether they are top-level."""
+    for source in provenance.get("sources", []):
+        yield source, field_value, True
+    for component in provenance.get("source_components", []):
+        for source in component.get("sources", []):
+            yield source, component.get("value"), False
+
+
+def resolve_provenance_sources(
+    bundle: Bundle, provenance: dict, stats: Counter, cited_locations: set,
+    field_value=None, *, resolve_highlights=True,
+):
+    """Include derivation operands without changing top-level citation counts.
+
+    A repeated citation may support different values. Resolve each component
+    using its own value; the source/value cache safely reuses identical work.
+    """
+    for source, value, top_level in provenance_sources(provenance, field_value):
+        location = source.get("location")
+        if location:
+            cited_locations.add(location)
+        source_stats = stats if top_level else Counter()
+        if resolve_highlights:
+            resolve_source(bundle, source, source_stats, field_value=value)
+        else:
+            mark_source_not_resolved_for_demo(bundle, source, source_stats)
+
+
+def mark_source_not_resolved_for_demo(bundle: Bundle, source: dict, stats: Counter):
     """Attach a page jump without doing PDF rect resolution for demo slices."""
-    cited_page = source.get("page")
+    context = bundle.source_context(source)
+    source["pdf"] = context["pdf"]
+    cited_page = context["page"]
     jump_page = cited_page if isinstance(cited_page, int) and cited_page >= 1 else 1
     source["resolution"] = "not_resolved_for_demo"
     source["highlight"] = [{"page": jump_page, "rects": []}]
@@ -1589,12 +2282,14 @@ def main(argv=None):
     rows_by_paper = {}  # pid -> [non-provenance field dicts] for schema_summary
 
     for pid in paper_ids:
+        paper_started = time.perf_counter()
         bundle_dir = processed_dir / pid
         bundle = Bundle(pid, bundle_dir, pdfs_dir / f"{pid}.pdf")
         if not bundle.has_pdf:
             override = _resolve_pdf_override(bundle.manifest, args.pdf_dir)
             if override is not None:
                 bundle.pdf_path = override
+        bundle.prepare_documents()
         pdf_path = bundle.pdf_path
         pdf_available = bundle.has_pdf
         resolve_highlights = highlight_papers is None or pid in highlight_papers
@@ -1621,6 +2316,17 @@ def main(argv=None):
             if row.get("_meta_commentary") or row.get("_meta"):
                 continue
             raw_rows.append(row)
+        # Validate all cited files before expensive PDF work, including sources
+        # cited only as derivation operands. Never reinterpret or rewrite a
+        # provenance location to make an invalid extraction appear valid.
+        checked_locations = set()
+        for row in raw_rows:
+            for pv in row.get("provenance", {}).values():
+                for src, _, _ in provenance_sources(pv):
+                    location = src.get("location")
+                    if location and location not in checked_locations:
+                        _cited_bundle_file(bundle_dir, location)
+                        checked_locations.add(location)
         for idx, row in enumerate(raw_rows):
             identity, fields, provenance = split_row(row, identity_fields)
             paper_field_dicts.append(fields)
@@ -1637,14 +2343,10 @@ def main(argv=None):
                 if cert == "abstained":
                     abstained_count += 1
                 field_value = fields.get(fld)
-                for src in pv.get("sources", []):
-                    loc = src.get("location")
-                    if loc:
-                        cited_locations.add(loc)
-                    if resolve_highlights:
-                        resolve_source(bundle, src, paper_stats, field_value=field_value)
-                    else:
-                        mark_source_not_resolved_for_demo(src, paper_stats)
+                resolve_provenance_sources(
+                    bundle, pv, paper_stats, cited_locations,
+                    field_value=field_value, resolve_highlights=resolve_highlights,
+                )
             rows_out.append({
                 "row_index": idx,
                 "identity": identity,
@@ -1656,18 +2358,38 @@ def main(argv=None):
         (out / "rows" / f"{pid}.json").write_text(json.dumps(rows_out, ensure_ascii=False, indent=2))
         rows_by_paper[pid] = paper_field_dicts  # for schema_summary
 
-        # per-paper report
-        print(f"{pid} exact={paper_stats['exact']} "
-              f"table_region={paper_stats['table_region']} "
-              f"page_only={paper_stats['page_only']}")
         global_rect_stats.update(paper_stats)
 
         # copy bundle files cited by provenance + manifest + table sibling pairs
         _copy_bundle(bundle_dir, out / "bundles" / pid, cited_locations)
 
-        # copy PDF verbatim
-        if pdf_path.exists():
-            shutil.copy2(pdf_path, out / "pdfs" / f"{pid}.pdf")
+        # Copy every routed PDF verbatim (primary plus declared supplements).
+        bundle.copy_documents(out)
+
+        paper_seconds = time.perf_counter() - paper_started
+        diagnostics = dict(bundle.diagnostics)
+        diagnostics["paper_seconds"] = paper_seconds
+        for key in ("unique_resolution_seconds", "textpage_build_seconds", "paper_seconds"):
+            diagnostics[key] = round(diagnostics.get(key, 0.0), 3)
+        print(
+            f"{pid} exact={paper_stats['exact']} "
+            f"partial_quote={paper_stats['partial_quote']} "
+            f"table_region={paper_stats['table_region']} "
+            f"page_only={paper_stats['page_only']} "
+            f"seconds={diagnostics['paper_seconds']:.3f} "
+            f"unique_seconds={diagnostics['unique_resolution_seconds']:.3f} "
+            f"cache={diagnostics.get('source_cache_hits', 0)}/"
+            f"{diagnostics.get('source_cache_misses', 0)} "
+            f"prose_cache={diagnostics.get('prose_search_result_cache_hits', 0)}/"
+            f"{diagnostics.get('prose_search_result_cache_misses', 0)} "
+            f"clip_cache={diagnostics.get('clipped_search_result_cache_hits', 0)}/"
+            f"{diagnostics.get('clipped_search_result_cache_misses', 0)} "
+            f"textpages={diagnostics.get('textpage_builds', 0)} "
+            f"searches={diagnostics.get('search_for_calls', 0)} "
+            f"cited_misses={diagnostics.get('cited_page_misses', 0)} "
+            f"fallback_searches={diagnostics.get('all_page_fallback_search_for_calls', 0)}",
+            flush=True,
+        )
 
         # abstained_count from queue (definitive count of abstained items for paper)
         tc = dict(tier_by_paper[pid])
@@ -1685,6 +2407,7 @@ def main(argv=None):
             "title": bundle.manifest.get("title", pid),
             "pdf": f"pdfs/{pid}.pdf",
             "pdf_available": pdf_available,
+            "documents": bundle.document_catalog(),
             "page_count": bundle.page_count(),
             "row_count": len(raw_rows),
             "abstained_count": abstained_count,
@@ -1692,6 +2415,7 @@ def main(argv=None):
             "certainty_counts": dict(certainty_counts),
             "tier_counts": tc,
             "highlight_stats": dict(paper_stats),
+            "highlight_diagnostics": diagnostics,
         })
         bundle.close()
 
@@ -1795,8 +2519,28 @@ def _units_only(out: Path) -> int:
     return 0
 
 
+def _cited_bundle_file(bundle_dir: Path, location: str) -> Path:
+    """Require a real file inside this paper's bundle, with a portable location."""
+    rel = Path(location)
+    if rel.is_absolute() or ".." in rel.parts:
+        raise ValueError(
+            f"invalid provenance location {location!r}: expected a bundle-relative "
+            "path without '..'; repair the source extraction before exporting"
+        )
+    src = bundle_dir / rel
+    if not src.resolve().is_relative_to(bundle_dir.resolve()):
+        raise ValueError(f"provenance location escapes paper bundle: {location!r}")
+    if not src.is_file():
+        raise FileNotFoundError(f"cited bundle file missing: {src}")
+    return src
+
+
 def _copy_bundle(bundle_dir: Path, dest: Path, cited_locations: set):
     """Copy cited bundle files + manifest.json + table .json/.md sibling pairs."""
+    # Validate the whole citation set before copying any file. Absolute paths
+    # otherwise discard `dest`, and missing files used to vanish silently.
+    for location in cited_locations:
+        _cited_bundle_file(bundle_dir, location)
     dest.mkdir(parents=True, exist_ok=True)
     to_copy = set(cited_locations)
     # add table sibling pairs
@@ -1810,7 +2554,10 @@ def _copy_bundle(bundle_dir: Path, dest: Path, cited_locations: set):
     for rel in sorted(to_copy):
         src = bundle_dir / rel
         if src.exists():
+            src = _cited_bundle_file(bundle_dir, rel)
             d = dest / rel
+            if not d.resolve().is_relative_to(dest.resolve()):
+                raise ValueError(f"bundle destination escapes snapshot: {d}")
             d.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(src, d)
 
