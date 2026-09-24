@@ -1,6 +1,6 @@
 # Comparanda
 
-Agentic system for scientific paper schema extraction and structured data encoding.
+Agentic system for building source-grounded, normalized evidence substrates from scientific papers.
 
 ## Problem
 
@@ -8,6 +8,33 @@ Agentic system for scientific paper schema extraction and structured data encodi
 
 The bottleneck is the first step: turning a collection of papers into structured, comparable data. Today this is grueling manual work, repeated independently across institutions. Existing tools (Covidence, Elicit, etc.) can help with extraction — but they all assume a schema already exists. Someone still has to decide *what fields to extract* and *how to reconcile terminology* that has evolved across decades of literature. That schema design work is the hard part, and nobody automates it.
 
+Comparanda is the evidence-substrate engine for MetaCensus. It treats the schema as the product: given a domain and a collection of papers, the system discovers what structured data should be extracted, builds normalization tables (Rosetta Stones) to reconcile cross-era terminology, and extracts atomic-row evidence with the provenance and context needed by downstream analysis.
+
+## Responsibility boundary
+
+Comparanda owns the prerequisite evidence substrate. It discovers extraction
+schemas; extracts and normalizes source-grounded claims; preserves raw labels,
+uncertainty, derivations, and missingness; and represents or surfaces material
+identity, relationship, measurement, timing, and dependence context.
+
+Comparanda does **not** select the final research question, decide analysis-specific
+eligibility, choose the statistical model, execute a meta-analysis, or make
+guideline and policy recommendations. Users and downstream MetaCensus platform
+agents perform those tasks over the reusable Comparanda substrate. Comparanda's
+output must explicitly provide the prerequisite information needed to:
+
+1. explore candidate research questions and select one;
+2. determine analysis-specific inclusion and exclusion;
+3. determine a suitable statistical model; and
+4. construct the required inputs and run that model.
+
+Known analyst decisions may be used to test whether the substrate contained
+sufficient evidence and context for those four tasks; they are not outputs
+Comparanda must reproduce.
+
+This boundary is authoritative for feature design, agent scopes, and evaluation
+claims. A field-recovery score measures evidence recovery—not end-to-end
+meta-analysis validity.
 
 ## How it works
 
@@ -33,7 +60,7 @@ as the operator reference.
 | 3a | `extractor` | `comparanda/.claude/agents/extractor.md` | Workhorse — extracts atomic rows from a paper-prep bundle into JSONL. |
 | 3a-qc | `extraction-qc` | `comparanda/.claude/agents/extraction-qc.md` | Checks extractions for completeness vs survey, schema compliance, and internal consistency. |
 | 3b | `normalizer` | `comparanda/.claude/agents/normalizer.md` | Two-stage (deterministic + LLM) normalization of raw values to canonical IDs. |
-| 3.5 | `ma-critique` | `comparanda/.claude/agents/ma-critique.md` | Decides whether the extracted data is sufficient for meta-analysis; proposes the minimum schema changes to reach convergence. |
+| 3.5 | `ma-critique` | `comparanda/.claude/agents/ma-critique.md` | Assesses whether the extracted substrate preserves evidence needed downstream; proposes the minimum schema changes to reach convergence. |
 | 4 | `schema-proposer` | `comparanda/.claude/agents/schema-proposer.md` | Refines the rich schema based on MA-critique findings. |
 
 Other inner-loop components:

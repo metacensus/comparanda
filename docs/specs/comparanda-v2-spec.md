@@ -1,5 +1,12 @@
 # Comparanda v2 — System Specification
 
+> **Historical document.** This captures the April 2026 architecture and is not
+> the current authority for Comparanda's product boundary or benchmark claims.
+> See `../context/project-vision.md`, `../context/mvp-scope.md`, and
+> `../context/schema-architecture.md`. In particular, "meta-analysis ready"
+> language here must not be read as assigning research-question selection,
+> eligibility decisions, model selection, or analysis execution to Comparanda.
+
 > Produced 2026-04-03. Updated 2026-04-03 with final architecture decisions.
 > This spec supersedes the v1 build plan. v1 code is the starting point for migration.
 >

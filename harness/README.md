@@ -6,6 +6,45 @@ For the current harness agent scopes, file contracts, eval artifact paths,
 script dependencies, and eval resume behavior, see
 [`AGENT_INDEX.md`](./AGENT_INDEX.md). This README is a high-level overview.
 
+## Evaluation Claim Boundary
+
+The implemented harness primarily evaluates evidence recovery and faithfulness: whether source-supported fields and findings are represented in Comparanda output. Its aggregate and detailed field-coverage artifacts do **not** establish that Comparanda chose the correct synthesis question, inclusion set, comparator, arm partition, likelihood, or statistical model.
+
+Phase 1 evolves the current benchmark rather than creating a parallel
+evaluator. Original workbooks remain immutable indexed sources. Their curated
+data are translated into normalized, entity-aware gold. Each benchmark slice
+records its contributing workbook and benchmark version. Sheet-, field-, or
+cell-level workbook lineage is optional when useful. Scored gold remains
+grounded in source-paper evidence, and a legacy view must reproduce the
+historical result before the gold is expanded.
+
+Its load-bearing metrics are:
+
+1. **Coverage** — whether each expected source-backed fact is fully, partially,
+   or not represented.
+2. **Reproducibility** — whether the fact or entity-bound record can be
+   faithfully reconstructed at the required meaning, granularity, scope,
+   associations, uncertainty, and provenance.
+
+Reproducibility here extends current full-representation reasoning; it does not
+mean run-to-run model stability. Current `field_coverage` remains reusable
+semantic adjudication machinery and is not itself a headline composite input.
+
+Partial and missing adjudications require one primary failure reason:
+`source_absent`, `gold_ambiguous`, `extraction_miss`, `representation_loss`,
+`schema_limitation`, or `unsupported_extraction`. Schema limitation is a
+diagnostic cause rather than another scored surface.
+
+Cross-paper overlap conclusions and analyst actions may be stored as
+explanatory benchmark metadata showing why per-paper facts matter. They are
+unscored and not expected from Comparanda. Phase 1 does not require a
+relationship graph, issue-surfacing benchmark, or native cross-paper inference.
+
+Comparanda output should inform, but not perform, four downstream tasks: (1)
+explore and select research questions, (2) determine analysis-specific
+inclusion and exclusion, (3) select a suitable statistical model, and (4)
+construct the inputs needed to execute that analysis.
+
 ## Domain Scope
 
 This harness is domain-agnostic methodology. A single-domain superproject
@@ -86,7 +125,17 @@ uv run python -m harness.eval.aggregate \
 # artifacts, and resume policy.
 ```
 
-Composite score is emitted by the eval pipeline from row/field coverage, finding accuracy, claim faithfulness, and fill-rate surfaces.
+The historical composite score is emitted from aggregate row/field, finding-accuracy, claim-faithfulness, and fill-rate surfaces. Detailed semantic `field_coverage` is a supporting adjudication artifact, not a headline composite input.
+
+That composite score is an evidence-recovery calibration signal. It should not be labeled synthesis accuracy or decision accuracy. Corpus-absent, inaccessible, or unmatched papers should be reported as coverage status rather than scored as if the extractor had read them and failed.
+
+The normalized legacy view must preserve the historical result before the the domain expert
+prerequisite slice is added. The exact normalized tables, identity keys,
+grouped-completeness rules, weighting, report presentation, and any future
+effect on convergence are collaborative design gates; they should not be
+predeclared in this architecture overview.
+
+Native cross-paper inference is a conditional later capability. Consider it only if a downstream-use experiment shows that high-quality granular paper outputs are consistently insufficient; do not predeclare relationship or issue-surfacing metrics as current Comparanda requirements.
 
 ## Guard Hooks
 

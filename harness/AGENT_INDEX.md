@@ -6,6 +6,28 @@ summarizes each harness agent's scope, file contracts, script dependencies, and
 the resume behavior currently encoded in the orchestrator and agent
 instructions.
 
+## Evaluation Scope
+
+The current harness agents calibrate Comparanda's evidence substrate. Their implemented metrics primarily cover row/field recovery, claim faithfulness, semantic field coverage, and fill-rate behavior. A good score means the configured source evidence was represented faithfully under the benchmark mappings; it does not mean the system selected a correct meta-analysis question, inclusion set, comparator, partition, or statistical model.
+
+Use the following Phase 1 claim layers when interpreting or extending the harness:
+
+| Layer | Question | Current status |
+|---|---|---|
+| Recovery / faithfulness | Were source-supported fields and findings recovered with adequate provenance? | Implemented by aggregate, claim-faithfulness, and detailed field-coverage workflows |
+| Coverage | Is each expected source-backed fact fully, partially, or not represented? | Existing semantic field coverage is reusable; gold must be normalized and expanded |
+| Reproducibility | Can a fact or entity-bound record be faithfully reconstructed at the required scope, associations, uncertainty, and provenance? | Extends current full-representation reasoning; entity-aware rules remain a design checkpoint |
+| Failure attribution | Why is an item partial or missing? | Add a required diagnostic reason; schema limitation is not a separate score |
+
+Final study inclusion, arm construction, likelihood selection, model fitting, and interpretation are downstream analytical responsibilities. A diagnostician should not classify failure to reproduce one analyst's cross-paper conclusion or preferred action as an instruction defect.
+
+Comparanda output should inform four downstream tasks without performing them:
+research-question exploration and selection; analysis-specific inclusion and
+exclusion; selection of a suitable statistical model; and construction of the
+inputs needed to execute that analysis.
+
+Cross-paper conclusions and analyst actions may appear in Phase 1 fixtures only as contextual, unscored gold. Phase 1 does not require the harness to score relationship inference or issue surfacing. Native cross-paper inference is considered only later if a downstream-use experiment shows that granular paper outputs are insufficient.
+
 ## Phase Map
 
 | Phase | Agent / Actor | What Happens | Cardinality | Resume Policy |
@@ -70,6 +92,15 @@ Resume policy:
 
 Scope: measurement layer. Runs aggregate completeness/faithfulness surfaces and detailed semantic field-level coverage against gold. Produces machine-readable artifacts with audit rationale.
 
+Claim boundary: this agent currently evaluates configured evidence-recovery
+targets. Phase 1 will translate gold into normalized entity-aware records,
+preserve a reproducible legacy view, add the domain expert prerequisite facts, and extend
+failure attribution. The artifact and runner contract are not yet chosen. It
+does not score cross-paper overlap conclusions, analyst
+actions, the uniquely correct downstream synthesis, or a statistical model.
+Gold-absent papers must be distinguished from source-present extraction
+failures.
+
 Model: `opus` for strongest adjudication; deterministic scripts run locally.
 
 Inputs:
@@ -123,6 +154,24 @@ Resume policy:
 
 Scope: explains why eval failed and classifies whether the failure is instruction-fixable, already handled by System 1, domain-specific, or needs more investigation. Does not edit instructions.
 
+The diagnosis must separate:
+
+- corpus/source coverage gaps;
+- source-present recovery failures;
+- representation or schema limitations;
+- provenance or uncertainty failures;
+- gold ambiguity;
+- unsupported extraction; and
+- downstream analytical choices that are not Comparanda extraction requirements.
+
+Only demonstrated paper-level coverage, reproducibility, or grounding failures
+can justify a Comparanda instruction change. The locked failure attribution
+must distinguish schema limitation from extraction miss without turning it into
+a parallel metric. A corpus/source coverage gap normally calls for an input or
+coverage-status fix rather than an extraction-prompt change; a cross-paper
+inference or analyst-action mismatch does not justify a Phase 1 instruction
+change.
+
 Model: `sonnet`
 
 Inputs:
@@ -152,6 +201,8 @@ Resume policy:
 ### `critic`
 
 Scope: proposes exactly one domain-independent instruction change for one Comparanda agent file, or a no-change proposal. Conservative bridge from diagnosis to implementation.
+
+The critic must not encode one domain's preferred field name, cross-paper conclusion, comparator, inclusion decision, partition, or model as universal extraction methodology. Phase 1 changes should improve general coverage or reproducibility of per-paper prerequisite facts, uncertainty, and provenance across domains. Direct domain-schema edits are not harness instruction fixes. Any proposed universal abstraction or SDK change is a collaborative design gate.
 
 Model: `sonnet`
 

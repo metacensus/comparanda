@@ -1,5 +1,12 @@
 # Foundational Principles
 
+> **Historical presentation source.** This document preserves the original
+> system-architecture narrative; it is not the current authority for product
+> scope or benchmark claims. See `../../context/project-vision.md`,
+> `../../context/mvp-scope.md`, and `../../context/schema-architecture.md`.
+> References below to meta-analysis readiness and legacy composite metrics
+> should be interpreted as historical framing.
+
 > The architecture isn't arbitrary — it's driven by real constraints. This document captures the three-tier reasoning: immutable constraints force design principles, which lead to architectural choices.
 >
 > Format TBD: may become a slide, a diagram, or remain as talking points.

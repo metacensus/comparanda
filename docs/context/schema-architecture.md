@@ -4,6 +4,10 @@
 
 
 
+The schema describes a source-grounded evidence substrate. Schema convergence means that the system can preserve and retrieve the material evidence encountered in the corpus; it does not mean that one downstream synthesis question, inclusion set, arm construction, or model has been chosen correctly.
+
+The substrate must nevertheless provide granular per-paper prerequisite information for four downstream tasks: research-question exploration, inclusion and exclusion, model selection, and analysis execution. Downstream analysis compares papers, infers cross-paper relationships, makes the choices, and executes the model.
+
 ## Schema Layers
 
 ### Universal Data Primitives
@@ -34,6 +38,16 @@ Defined per topic/channel. For the DPYD pharmacogenetics pilot:
 ### Raw Columns vs Calculated Results
 - **Raw columns**: Data pulled directly from papers. Expected to be sparse — not every paper reports every variable (the "domain expansion problem").
 - **Calculated results**: Universal datasets generated through defined transformations of raw data. These are what meta-analysis tools actually consume.
+
+Calculated or inferred values must remain distinguishable from reported values and retain their source inputs and derivation. A transformation may expose a candidate residual group, compatible integer range, or common effect representation; it must not overwrite the atomic source evidence or silently turn an analytical preference into a reported fact.
+
+### Per-Paper Prerequisite Context and Unknown States
+
+Phase 1 tests whether Comparanda output represents the paper-level facts that downstream users need to compare reports. For duplicate or overlapping cohorts and subgroups, these may include recruitment dates and sites, parent study or dataset identifiers, sample sizes, eligibility criteria, analysis-population and subgroup definitions, and explicit subset, follow-up, extension, or reuse language reported by the paper.
+
+The schema should preserve these facts at their reported scope and granularity, along with explicit ambiguity, missingness, and provenance. It should not encode a cross-paper overlap conclusion as if the source paper reported it.
+
+Phase 1 does not add a relationship graph, cohort linker, issue record, sidecar, or post-normalization surfacing pass. A downstream user or platform agent compares granular paper outputs and reaches cross-paper conclusions. Native cross-paper inference should be reconsidered only if a later downstream-use experiment shows that well-recovered paper-level information is consistently insufficient.
 
 ## The Rosetta Stone
 
@@ -66,6 +80,35 @@ Schema definition and extraction are **tightly iterative** — they "blend toget
 5. Handle temporal nomenclature shifts via Rosetta Stone patch-ins
 
 The AI assists in this loop by suggesting data types and identifying which papers contain specific outcomes.
+
+The loop should refine schemas when source evidence is being lost or materially misrepresented. It should not add fields merely because one downstream analysis selected a particular comparator, likelihood, or sensitivity. Domain-specific analytical choices can be expressed in query or transformation definitions while the underlying evidence remains reusable for other questions.
+
+## Evaluation Boundary
+
+Phase 1 translates the existing gold into normalized, entity-aware benchmark
+records. Original workbooks remain immutable indexed sources. Each benchmark
+slice identifies its contributing workbook and benchmark version. Sheet-,
+field-, or cell-level workbook lineage is optional when useful rather than
+required for every fact. Scored gold remains grounded in source-paper evidence.
+Logical facts may attach to a paper/report, study/cohort, analysis
+population/subgroup, or outcome/finding. These are minimum benchmark
+identities, not a universal evidence ontology.
+
+The load-bearing results are coverage and reproducibility. Coverage records
+full, partial, or missing representation. Reproducibility asks whether a fact
+or entity-bound record can be reconstructed faithfully at the required scope,
+associations, uncertainty, and provenance. Run-to-run model stability is a
+different future measure.
+
+Partial and missing adjudications carry a failure reason: source absence, gold
+ambiguity, extraction miss, representation loss, schema limitation, or
+unsupported extraction. Schema limitation is diagnostic, not a parallel score.
+
+The evaluation remains semantic and schema-agnostic. Entity boundaries,
+normalization tables, identity keys, grouped-completeness rules, and weighting
+are collaborative design gates. Cross-paper overlap conclusions and analyst
+actions may be retained as explanatory benchmark metadata showing why the
+per-paper facts matter, but they are unscored and not expected from Comparanda.
 
 ## Backend Storage
 

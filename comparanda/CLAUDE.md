@@ -1,6 +1,15 @@
 # Comparanda
 
-Scientific paper schema extraction system. Given a domain and a corpus of papers, Comparanda discovers a structured schema and extracts data into atomic rows suitable for meta-analysis.
+Scientific paper schema extraction system. Given a domain and a corpus of papers, Comparanda discovers a structured schema and produces a grounded, normalized, reusable evidence substrate for downstream evidence synthesis.
+
+Comparanda prepares evidence; it does not choose a research question, define
+eligibility, include or exclude studies, select an estimand or statistical
+model, or run a meta-analysis. Its readiness question is whether the extracted
+substrate preserves and surfaces the evidence, context, relations,
+dependencies, uncertainties, and missing information that downstream users
+need to: (1) explore and select research questions, (2) determine inclusion and
+exclusion, (3) determine a suitable statistical model, and (4) construct the
+required inputs and run that model.
 
 ## How This Works
 
@@ -106,7 +115,7 @@ Check that these exist:
 
    Generate refs for: survey, schema-proposer, extractor, normalizer, ma-critique
 
-   **For MA Critique:** Focus on prior meta-analysis papers in the domain — what schemas they used, what statistical models, what worked/failed.
+   **For MA Critique:** Focus on prior meta-analysis papers in the domain — what evidence and context downstream analysts needed, which distinctions or dependencies were consequential, and where prior schemas lost information. Statistical models may be recorded as evidence of downstream requirements, not selected or recommended by Comparanda.
 
    **For Extractor:** Focus on what good atomic rows look like in the domain, common extraction pitfalls.
 
@@ -153,7 +162,11 @@ Check that these exist:
 
 ## Inner Loop
 
-Repeat Phases 2-4 until MA Critique says "ready" on the current subset. There
+Repeat Phases 2-4 until MA Critique says "ready" on the current subset. Here,
+`ready` means the schema and extractions form a sufficiently complete,
+grounded, reusable evidence substrate for downstream question exploration and
+analysis decisions; it does not mean Comparanda has selected studies or that a
+particular meta-analysis can or should be run. There
 is no fixed iteration cap; convergence is governed by generalization (see Phase
 5), not a hard count. If the same subset churns without progress (e.g. the
 schema oscillates or each iteration only fits one pathological paper), stop and
@@ -208,10 +221,18 @@ iterating.
 
 ### Phase 3.5 — MA Critique
 
+MA Critique is a substrate-readiness critique. It evaluates whether the schema
+preserves the reported evidence and the context needed for downstream use,
+including identities, group definitions, measurements, timing, dependencies,
+uncertainties, and unresolved states. It may use anticipated downstream uses to
+identify missing substrate fields or guidance, but it must not choose a
+research question, make inclusion/exclusion decisions, select a model, or run
+an analysis.
+
 1. Invoke @ma-critique:
    - Reads: extractions, current schema, domain reference, deep research, observation log (including own prior feedback)
    - Writes: structured critique to observation log
-   - Reports: convergence assessment ("ready" or "not ready" with reasons)
+   - Reports: substrate convergence assessment ("ready" or "not ready" with reasons)
 
 2. **If "ready":** Exit inner loop. Proceed to Phase 5.
 
@@ -278,10 +299,10 @@ whether the schema generalizes. Do NOT expand to all papers yet.
    but they still MUST be folded into the next schema version and applied to any
    affected re-extractions named by MA Critique. Non-structural means "does not
    reset the counter," not "ignore or defer the fix." A "clean" rotation is one
-   whose MA Critique returns "ready" or asks only for non-structural fixes. Keep
+   whose MA Critique returns substrate-`ready` or asks only for non-structural fixes. Keep
    a single fixed regression anchor across all rotations to detect regressions.
 
-4. **If the rotation is clean** (ready / non-structural only): apply any
+4. **If the rotation is clean** (substrate-ready / non-structural only): apply any
    non-structural schema updates, then increment the consecutive-clean counter.
    At 3, the schema is validated → proceed to Phase 6.
    Otherwise select another fresh subset and rotate again.
@@ -329,7 +350,9 @@ Once the schema is validated across multiple rotated subsets:
    - All identity dimensions are populated
    - Flag papers with large row count discrepancies for human review
 
-6. **Final MA Critique** on the full dataset.
+6. **Final MA Critique** on the full dataset. This confirms evidence-substrate
+   completeness and grounding for downstream use; it does not approve a
+   research question, inclusion set, model, or analysis.
 
 7. **Commit final output.** This is the deliverable.
 

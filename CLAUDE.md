@@ -3,6 +3,26 @@
 This repository contains reusable system code only. Domain state lives in a
 single-domain superproject that pins this repository as a Git submodule.
 
+## Responsibility boundary
+
+Before changing system scope, agent responsibilities, readiness claims, or
+evaluation targets, read
+[`README.md#responsibility-boundary`](./README.md#responsibility-boundary).
+That section is the authoritative product boundary.
+
+In brief, Comparanda discovers schemas and extracts, normalizes, represents, and
+surfaces the prerequisite evidence substrate. It does not select the final
+research question, make analysis-specific eligibility decisions, choose a
+statistical model, execute the meta-analysis, or make guideline or policy
+recommendations. Those are user and downstream MetaCensus platform
+responsibilities. Comparanda must nevertheless provide the prerequisite
+information needed to (1) explore and select research questions, (2) determine
+inclusion and exclusion, (3) determine a suitable statistical model, and (4)
+construct the required inputs and run that model. Do not turn the resulting
+downstream analyst decision into a required Comparanda output; use it to test
+whether the substrate preserved the evidence and context needed for those four
+tasks.
+
 ## Routing
 
 - **Run extraction or iterate a schema:** `cd comparanda/` and follow
@@ -11,7 +31,15 @@ single-domain superproject that pins this repository as a Git submodule.
   `harness/CLAUDE.md`. Use `harness/AGENT_INDEX.md` for evaluation artifacts.
 - **Understand repository composition:** read `docs/domain-superproject.md`.
 - **Build paper bundles:** read `docs/paper-prep-integration.md`; the
-  self-contained uv workspace is `comparanda/scripts/paper_prep/`.
+  self-contained uv workspace is `comparanda/scripts/paper_prep/` (Docling +
+  per-table Sonnet + Stage-2 arbiter + bundle assembly).
+- **Understand the system design or spec:** read `docs/specs/` and
+  `docs/presentation/system-architecture-v1/`, after reading the responsibility
+  boundary in `README.md`.
+- **Run paper-prep on a PDF:** `cd comparanda/scripts/paper_prep/ && uv sync`,
+  then `uv run python -m paper_prep <paper_id> --pdf <absolute-pdf-path>
+  --output-root <absolute-project-root>/data/processed` (or
+  `python -m paper_prep.batch ...` for a corpus). See Bootstrap step 4.
 
 Always `cd` into the inner loop or harness before invoking its agents. Pass
 absolute external project paths; do not infer application state from the engine
@@ -21,13 +49,19 @@ checkout.
 
 ### Inner loop (`comparanda/`)
 
-| Component | Role |
-|---|---|
-| `comparanda/CLAUDE.md` | Phase-by-phase orchestrator and project-root contract |
-| `comparanda/AGENT_INDEX.md` | Agent scopes, file contracts, scripts, and resume behavior |
-| `comparanda/.claude/agents/` | Survey, subset, schema, extraction, QC, normalization, and critique agents |
-| `comparanda/.claude/hooks/` | Extraction write and finalization guardrails |
-| `comparanda/scripts/` | Extraction, normalization, review/export, observation, and paper-prep tools |
+| Component | Phase | Role |
+|---|---|---|
+| `comparanda/CLAUDE.md` | all | Phase-by-phase orchestrator and project-root contract. Delegates to agents; does not extract directly. |
+| `comparanda/AGENT_INDEX.md` | all | Agent scopes, file contracts, scripts, hooks, and resume behavior |
+| `comparanda/.claude/agents/survey.md` | 1 | Breadth pass over each paper; catalogs what extractable data exists. First agent to touch each paper. |
+| `comparanda/.claude/agents/subset-selector.md` | 1, 5 | Picks 3-4 diverse papers for each inner-loop iteration; rotates subsets across iterations to detect overfitting. |
+| `comparanda/.claude/agents/schema-proposer.md` | 0.5, 2, 4 | Generates the survey schema (0.5) and the rich extraction schema (2); refines the rich schema from MA-critique findings (4). |
+| `comparanda/.claude/agents/extractor.md` | 3a | Reads a paper-prep bundle and emits atomic-row JSONL. Most token spend happens here. |
+| `comparanda/.claude/agents/extraction-qc.md` | 3a-QC | Reviews extractions for completeness vs survey, schema compliance, and internal consistency, before normalization. |
+| `comparanda/.claude/agents/normalizer.md` | 3b | Two-stage (deterministic + LLM) normalization of raw values to canonical IDs. |
+| `comparanda/.claude/agents/ma-critique.md` | 3.5 | Assesses whether the extracted substrate preserves the evidence needed downstream; proposes the minimum schema changes to reach convergence. |
+| `comparanda/.claude/hooks/` | 3a | Extraction write and finalization guardrails |
+| `comparanda/scripts/` | all | Extraction, normalization, review/export, observation, and paper-prep tools |
 
 The inner-loop sequence is survey → subset selection → schema proposal →
 extraction → extraction QC → normalization → meta-analysis critique → schema
@@ -38,15 +72,17 @@ refinement.
 | Component | Role |
 |---|---|
 | `harness/CLAUDE.md` | Calibration loop and external run-path contract |
+| `harness/AGENT_INDEX.md` | Harness agents, eval artifacts, script dependencies, and eval resume policy |
 | `harness/.claude/agents/monitor.md` | Read-only run monitoring |
 | `harness/.claude/agents/eval.md` | Aggregate and detailed gold-standard evaluation |
 | `harness/.claude/agents/diagnostician.md` | Instruction-level root-cause analysis |
 | `harness/.claude/agents/critic.md` | One generalizable instruction proposal |
 | `harness/src/harness/eval/` | Deterministic evaluation helpers |
 
-The outer loop may update universal inner-loop instructions. It must not mutate
-domain state; its external writes are restricted to the configured iterations
-directory.
+The outer loop may update universal inner-loop instructions in
+`comparanda/.claude/agents/`; it does not modify Python or hook code. It must
+not mutate domain state; its external writes are restricted to the configured
+iterations directory.
 
 ## Domain repository composition
 
