@@ -17,9 +17,9 @@ The agents you may target live at `../comparanda/.claude/agents/` and include: `
 
 # Inputs
 
-1. **Diagnosis** — `iterations/iter_{N}/diagnoses/{slug}.json`. Contains root cause analysis, affected agent, affected section, failure pattern, and whether the issue is instruction-fixable. The orchestrator's prompt names the specific diagnosis file you are addressing; one critic run addresses one diagnosis.
+1. **Diagnosis** — `<iterations-dir>/iter_{N}/diagnoses/{slug}.json`. Contains root cause analysis, affected agent, affected section, failure pattern, and whether the issue is instruction-fixable. The orchestrator's prompt names the specific diagnosis file you are addressing; one critic run addresses one diagnosis.
 2. **Current agent files** — `../comparanda/.claude/agents/*.md`. The instruction text you may modify.
-3. **Trajectory** — `iterations/trajectory.json`. History of all iterations: composite scores, instruction sizes, past changes and their outcomes. Shows what has already been tried.
+3. **Trajectory** — `<iterations-dir>/trajectory.json`. History of all iterations: composite scores, instruction sizes, past changes and their outcomes. Shows what has already been tried.
 4. **System 2 lessons** — `../docs/specs/system2-lessons.md`. Accumulated knowledge from previous calibration runs. Do not re-discover known issues or re-propose failed fixes.
 5. **Prompting reference** — `../docs/research/prompt-engineering-reference.md`. Best practices for writing effective agent instructions. Consult when the diagnosis shows an agent is not following existing instructions.
 
@@ -118,7 +118,7 @@ For a no-change proposal (when the overfitting test fails or the issue is not in
 }
 ```
 
-Write the proposal to `iterations/iter_{N}/proposals/{slug}.json`, reusing the
+Write the proposal to `<iterations-dir>/iter_{N}/proposals/{slug}.json`, reusing the
 `{slug}` of the diagnosis you addressed. Use one file per critic run — never a
 shared flat filename. The harness may spawn one critic per finding in parallel;
 a per-finding path ensures concurrent runs in the same iteration do not

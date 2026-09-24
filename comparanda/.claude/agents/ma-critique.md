@@ -25,11 +25,11 @@ The system is domain-agnostic. Your pooling prerequisite checks (PICO, effect si
 
 Before starting, read ALL of the following:
 
-1. **Extraction files**: `projects/{domain}/extractions/*.jsonl` — the normalized extraction output, one JSONL per paper
-2. **Current schema**: `projects/{domain}/schema/v*.yaml` (latest version) — the rich schema with field definitions and extraction guidance
-3. **Domain reference**: `projects/{domain}/domain/ma_critique_ref.md` — domain-specific meta-analysis knowledge: what prior MAs extracted, what statistical models they used, what pitfalls they encountered
-4. **Deep research report**: `projects/{domain}/domain/deep_research.md` — background on the domain and research questions
-5. **Observation log**: `projects/{domain}/observations/log.jsonl` — the full history, including YOUR OWN prior critiques from previous iterations. This is critical for avoiding cycles.
+1. **Extraction files**: `{project_root}/extractions/*.jsonl` — the normalized extraction output, one JSONL per paper
+2. **Current schema**: `{project_root}/schema/v*.yaml` (latest version) — the rich schema with field definitions and extraction guidance
+3. **Domain reference**: `{project_root}/domain/ma_critique_ref.md` — domain-specific meta-analysis knowledge: what prior MAs extracted, what statistical models they used, what pitfalls they encountered
+4. **Deep research report**: `{project_root}/domain/deep_research.md` — background on the domain and research questions
+5. **Observation log**: `{project_root}/observations/log.jsonl` — the full history, including YOUR OWN prior critiques from previous iterations. This is critical for avoiding cycles.
 
 # Procedure
 
@@ -160,7 +160,7 @@ direct JSONL write:
 
 ```bash
 python3 scripts/observation_log.py append \
-  --log projects/{domain}/observations/log.jsonl \
+  --log {project_root}/observations/log.jsonl \
   --entry-json '<JSON observation object>'
 ```
 
@@ -170,11 +170,11 @@ Use entries with:
 - Categories: `schema_rationale` (for field add/remove/modify recommendations), `domain_pattern` (for cross-paper observations)
 - Include the full convergence assessment in an observation entry
 
-If you discover domain patterns not already documented in your domain reference file (`projects/{domain}/domain/ma_critique_ref.md`), append them to the file. Examples: a statistical model convention you discovered across papers, a pooling consideration not in the initial reference, or a domain-specific heterogeneity factor. These updates help future iterations and are tracked via git.
+If you discover domain patterns not already documented in your domain reference file (`{project_root}/domain/ma_critique_ref.md`), append them to the file. Examples: a statistical model convention you discovered across papers, a pooling consideration not in the initial reference, or a domain-specific heterogeneity factor. These updates help future iterations and are tracked via git.
 
 # Output Format
 
-Produce a JSON object with this structure. Write the full critique to `projects/{domain}/critiques/iter_{NNN}.json`. Also log key findings to the observation log.
+Produce a JSON object with this structure. Write the full critique to `{project_root}/critiques/iter_{NNN}.json`. Also log key findings to the observation log.
 
 ```json
 {
@@ -330,7 +330,7 @@ After producing the structured JSON critique, append a brief commentary (as a se
 When invoked with the prefix **"REFERENCE GENERATION MODE"**, switch to domain knowledge synthesis:
 
 1. Read all provided materials: deep research report, seed knowledge document, Phase 0 reference papers (particularly prior meta-analyses in this domain).
-2. Write `projects/{domain}/domain/ma_critique_ref.md` containing:
+2. Write `{project_root}/domain/ma_critique_ref.md` containing:
    - **Prior MA schemas**: What fields did published meta-analyses in this domain extract? What was their data table structure?
    - **Statistical models used**: Which meta-analysis models (fixed-effect, random-effects, IPD) were applied? Why? What data did they require?
    - **What worked**: Extraction approaches that successfully supported pooling. Common effect measures used.

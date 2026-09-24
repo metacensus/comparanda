@@ -80,21 +80,21 @@ You receive:
    5. **Figure filtering.** `manifest.figures[]` includes ALL pictures Docling extracted, which is intentionally over-inclusive: publisher chrome (page footers, journal masthead logos, "fsg"/"npg" icons) ships alongside real scientific figures. Use each figure's `caption`, `label`, and `page` to decide if it is data-bearing. Skip figures with no caption and no informative label (or whose caption/label is a publisher/journal artifact rather than a scientific figure description). Only multimodally `Read` a figure when the schema needs data the figure carries — decorative chrome PNGs are wasted tokens.
    6. Provenance quotes still need to be verbatim from the bundle's content (sections/tables). A SubagentStop hook validates this when you finish — see Rule 3.
 
-2. **Rich schema** — YAML at `projects/{domain}/schema/v{NNN}.yaml` with `extraction_guidance` per field
+2. **Rich schema** — YAML at `{project_root}/schema/v{NNN}.yaml` with `extraction_guidance` per field
 
-3. **Domain reference** — `projects/{domain}/domain/extraction_ref.md` with domain-specific extraction knowledge
+3. **Domain reference** — `{project_root}/domain/extraction_ref.md` with domain-specific extraction knowledge
 
 4. **Observation log** — Query for entries relevant to this paper:
    ```bash
    python3 scripts/observation_log.py query \
-     --log projects/{domain}/observations/log.jsonl \
+     --log {project_root}/observations/log.jsonl \
      --paper-id {paper_id}
    ```
    This returns paper-specific flags and extraction difficulties from prior iterations, plus cross-cutting domain patterns. Do NOT read the full `log.jsonl` directly — it is too large and most entries are irrelevant to extraction.
 
 You may ALSO receive:
 
-5. **Prior extraction JSONL** — the path to a previous extraction of this same paper, e.g. `projects/{domain}/extractions/{paper_id}.jsonl` from a prior iteration. When present, treat it as a baseline of correct rows; the vast majority of rows and fields are unchanged across schema iterations and re-extracting them from scratch is pure waste.
+5. **Prior extraction JSONL** — the path to a previous extraction of this same paper, e.g. `{project_root}/extractions/{paper_id}.jsonl` from a prior iteration. When present, treat it as a baseline of correct rows; the vast majority of rows and fields are unchanged across schema iterations and re-extracting them from scratch is pure waste.
 6. **Schema diff document** — a description of what changed between the prior schema version and the current one (fields ADDED / REMOVED / structurally changed / extraction-guidance changed / controlled-vocab extended). When present, this is the authoritative list of what to re-evaluate; anything not listed is unchanged by definition.
 7. **QC repair packet** — a compact machine-readable repair request produced by the QC agent. When present, this is a targeted continuation of your prior extraction, not a fresh extraction request.
 
@@ -122,8 +122,8 @@ Run generated build scripts through the blessed runner:
 ```bash
 uv run scripts/extraction/run_extraction_build.py \
   --paper-id {paper_id} \
-  --project projects/{domain} \
-  --script projects/{domain}/extractions/.staging/{paper_id}/scripts/build.py
+  --project {project_root} \
+  --script {project_root}/extractions/.staging/{paper_id}/scripts/build.py
 ```
 
 # Procedure
@@ -153,7 +153,7 @@ When a prior extraction (input 5) is available, you do NOT re-do this mapping fo
 When a QC repair packet (input 7) is available, enter **resume repair mode**:
 
 - Open the existing build script at
-  `projects/{domain}/extractions/.staging/{paper_id}/scripts/build.py`.
+  `{project_root}/extractions/.staging/{paper_id}/scripts/build.py`.
 - Patch only the rows and fields named by the repair packet unless it requests
   `blocking_reextract`.
 - Preserve unrelated rows and provenance decisions. Do not reinterpret the
@@ -254,7 +254,7 @@ section, validate chunks locally, persist validation reports, and finalize
 through the same validation core used by `scripts/extraction/write_extraction.py`.
 
 Create a build script under
-`projects/{domain}/extractions/.staging/{paper_id}/scripts/build.py` or in a
+`{project_root}/extractions/.staging/{paper_id}/scripts/build.py` or in a
 temporary location that you then copy into that staging scripts directory. Use:
 
 ```python
@@ -269,10 +269,10 @@ from scripts.extraction.extraction_sdk import (
 )
 
 b = ExtractionBuilder(
-    project_dir="projects/{domain}",
+    project_dir="{project_root}",
     paper_id="{paper_id}",
-    schema_path="projects/{domain}/schema/v{NNN}.yaml",
-    bundle_dir="projects/{domain}/data/processed/{paper_id}",
+    schema_path="{project_root}/schema/v{NNN}.yaml",
+    bundle_dir="{project_root}/data/processed/{paper_id}",
 )
 E = b.evidence
 
@@ -308,7 +308,7 @@ b.meta({
     "identity_dimension_values": {"entity_raw": ["Treatment group A"]},
 })
 
-b.finalize("projects/{domain}/extractions/{paper_id}.jsonl")
+b.finalize("{project_root}/extractions/{paper_id}.jsonl")
 ```
 
 Key SDK rules:
@@ -339,17 +339,17 @@ CLI equivalents are available:
 
 ```bash
 uv run scripts/extraction/extraction_builder.py validate \
-  --project projects/{domain} \
+  --project {project_root} \
   --paper-id {paper_id} \
-  --schema projects/{domain}/schema/v{NNN}.yaml \
-  --bundle projects/{domain}/data/processed/{paper_id}
+  --schema {project_root}/schema/v{NNN}.yaml \
+  --bundle {project_root}/data/processed/{paper_id}
 
 uv run scripts/extraction/extraction_builder.py finalize \
-  --project projects/{domain} \
+  --project {project_root} \
   --paper-id {paper_id} \
-  --schema projects/{domain}/schema/v{NNN}.yaml \
-  --bundle projects/{domain}/data/processed/{paper_id} \
-  --out projects/{domain}/extractions/{paper_id}.jsonl
+  --schema {project_root}/schema/v{NNN}.yaml \
+  --bundle {project_root}/data/processed/{paper_id} \
+  --out {project_root}/extractions/{paper_id}.jsonl
 ```
 
 The builder emits the same `[write_extraction iter1] wrote N rows to <path>`
@@ -359,7 +359,7 @@ success marker expected by the finalization hook.
 
 **You do NOT write the extraction JSONL directly.** Instead, emit staging JSON
 files (`rows.json` + `meta.json`) under
-`projects/{domain}/extractions/.staging/{paper_id}/`, then invoke
+`{project_root}/extractions/.staging/{paper_id}/`, then invoke
 `scripts/extraction/write_extraction.py` via Bash. The script validates the staging files
 against the schema and bundle, transforms them into the on-disk JSONL shape, and
 writes atomically. On validation failure it prints the rendered failure list to
@@ -480,13 +480,13 @@ script owns those bookkeeping fields.
 Iter-1:
 
 ```bash
-scripts/extraction/write_extraction.py iter1   --paper-id    {paper_id}   --schema      projects/{domain}/schema/v{NNN}.yaml   --bundle      projects/{domain}/data/processed/{paper_id}/   --out         projects/{domain}/extractions/{paper_id}.jsonl   --rows-file   projects/{domain}/extractions/.staging/{paper_id}/rows.json   --meta-file   projects/{domain}/extractions/.staging/{paper_id}/meta.json
+scripts/extraction/write_extraction.py iter1   --paper-id    {paper_id}   --schema      {project_root}/schema/v{NNN}.yaml   --bundle      {project_root}/data/processed/{paper_id}/   --out         {project_root}/extractions/{paper_id}.jsonl   --rows-file   {project_root}/extractions/.staging/{paper_id}/rows.json   --meta-file   {project_root}/extractions/.staging/{paper_id}/meta.json
 ```
 
 Iter-n:
 
 ```bash
-scripts/extraction/write_extraction.py itern   --paper-id    {paper_id}   --schema      projects/{domain}/schema/v{NNN}.yaml   --bundle      projects/{domain}/data/processed/{paper_id}/   --prior       projects/{domain}/extractions/{paper_id}.jsonl   --out         projects/{domain}/extractions/{paper_id}.jsonl   --rows-file   projects/{domain}/extractions/.staging/{paper_id}/rows.json   --meta-file   projects/{domain}/extractions/.staging/{paper_id}/meta.json
+scripts/extraction/write_extraction.py itern   --paper-id    {paper_id}   --schema      {project_root}/schema/v{NNN}.yaml   --bundle      {project_root}/data/processed/{paper_id}/   --prior       {project_root}/extractions/{paper_id}.jsonl   --out         {project_root}/extractions/{paper_id}.jsonl   --rows-file   {project_root}/extractions/.staging/{paper_id}/rows.json   --meta-file   {project_root}/extractions/.staging/{paper_id}/meta.json
 ```
 
 In iter-n, `rows.json` carries ONLY modification entries with an explicit
@@ -502,7 +502,7 @@ duplicates.
 
 ```bash
 python3 scripts/observation_log.py append \
-  --log projects/{domain}/observations/log.jsonl \
+  --log {project_root}/observations/log.jsonl \
   --entry-json '{"iteration": 1, "phase": "3a_extraction", "agent": "extractor", "category": "extraction_difficulty", "content": "...", "related_fields": [], "paper_id": "{paper_id}"}'
 ```
 
@@ -597,7 +597,7 @@ Before invoking `scripts/extraction/write_extraction.py`, verify each item:
 When invoked with "REFERENCE GENERATION MODE", switch to domain knowledge generation:
 
 1. Read the provided domain research materials (deep research report, seed knowledge, Phase 0 reference papers).
-2. Write `projects/{domain}/domain/extraction_ref.md` containing:
+2. Write `{project_root}/domain/extraction_ref.md` containing:
    - What good atomic rows look like in this domain (with examples)
    - Common extraction pitfalls specific to this domain
    - Terminology patterns and naming conventions to expect

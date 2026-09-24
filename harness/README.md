@@ -8,7 +8,9 @@ script dependencies, and eval resume behavior, see
 
 ## Domain Scope
 
-This harness is domain-agnostic methodology. Per-domain forks provide benchmark data and eval config, either under `benchmark/` or through explicit CLI paths.
+This harness is domain-agnostic methodology. A single-domain superproject
+provides benchmark data, evaluation configuration, run state, and project data
+through explicit paths. Legacy per-domain forks remain supported.
 
 | Component | Domain-specific | Reusable |
 |-----------|:-:|:-:|
@@ -33,7 +35,7 @@ comparanda-harness/           (System 2)
 ├── benchmark/                optional per-domain files in application forks
 │   ├── gold_standard/        gold-standard spreadsheets
 │   └── eval_config/          document_id_map.json, gold_config.json, ...
-├── iterations/               trajectory.json, per-iteration archives
+├── iterations/               legacy in-repo run state
 ├── AGENT_INDEX.md            agent scopes, file contracts, scripts, resume behavior
 ├── src/harness/eval/
 │   ├── aggregate.py          Fast deterministic completeness/fill-rate surfaces
@@ -44,11 +46,19 @@ comparanda-harness/           (System 2)
 │   └── batch_eval.py         Batched eval planning/merge helpers
 └── CLAUDE.md                 Orchestrator operating manual
 
-../comparanda/                (System 1 — the system under calibration)
+../comparanda/                (System 1 engine — under calibration)
 ├── .claude/agents/           Agent definitions that System 2 modifies
-├── projects/<domain>/        Project data (extractions, schema, observations)
 └── CLAUDE.md                 System 1 orchestrator
+
+<project-root>/               external single-domain superproject
+├── schema/, extractions/, observations/, ...
+├── benchmark/                domain eval config + gold standard
+└── iterations/               domain run state
 ```
+
+Resolve `<project-root>`, `<iterations-dir>`, `<eval-config-dir>`, and
+`<gold-standard-dir>` as described in `CLAUDE.md`; do not infer application
+paths from the engine checkout.
 
 ## The Improvement Loop
 
@@ -65,11 +75,11 @@ comparanda-harness/           (System 2)
 ```bash
 # Aggregate metrics + deterministic eval surfaces (recommended):
 uv run python -m harness.eval.aggregate \
-  --extractions-dir ../comparanda/projects/<domain>/extractions \
-  --gold-standard "benchmark/gold_standard/<gold-standard-file>.xlsx" \
-  --document-id-map benchmark/eval_config/document_id_map.json \
+  --extractions-dir <project-root>/extractions \
+  --gold-standard "<gold-standard-dir>/<gold-standard-file>.xlsx" \
+  --document-id-map <eval-config-dir>/document_id_map.json \
   --with-judge \
-  --output iterations/iter_N/eval_report.json
+  --output <iterations-dir>/iter_N/eval_report.json
 
 # Field-level semantic coverage and one-shot/outer-loop eval are owned by the
 # eval agent. See harness/CLAUDE.md and AGENT_INDEX.md for the current prompts,
@@ -80,4 +90,7 @@ Composite score is emitted by the eval pipeline from row/field coverage, finding
 
 ## Guard Hooks
 
-A PreToolUse hook (`.claude/hooks/harness-guardrail-comparanda-writes.sh`) prevents System 2 from modifying any comparanda files except the universal instruction sections of `../comparanda/.claude/agents/*.md`.
+A PreToolUse hook (`.claude/hooks/harness-guardrail-comparanda-writes.sh`)
+restricts engine writes to universal agent/orchestrator instructions, treats
+external domain state as read-only, and permits writes only under the configured
+iterations directory.

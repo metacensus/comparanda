@@ -29,7 +29,7 @@ Before you can diagnose whether a problem needs System 2 intervention, you need 
 
 - **Normalizer** (`normalizer.md`): Maps raw values to canonical IDs with confidence thresholds. Intentionally leaves some rows un-normalized when values are composite, ambiguous, reference/control-only, or low-confidence. Check the normalization table and dispute log before diagnosing normalizer gaps.
 
-- **Survey** (`survey.md`): Catalogs what each paper contains (tables, figures, groupings, outcomes). Survey outputs are available at `../comparanda/projects/<domain>/surveys/`.
+- **Survey** (`survey.md`): Catalogs what each paper contains (tables, figures, groupings, outcomes). Survey outputs are available at `<project-root>/surveys/`.
 
 **Also read** `../comparanda/CLAUDE.md` — this is the System 1 orchestrator. It describes the full inner loop phases, what triggers schema changes vs re-extraction, and how convergence works.
 
@@ -40,13 +40,13 @@ Before you can diagnose whether a problem needs System 2 intervention, you need 
 Before analysis, locate and read these files:
 
 1. **System 2 lessons** — `../docs/specs/system2-lessons.md`. Read this FIRST. These are previously diagnosed patterns. Do not re-diagnose known issues; reference them instead.
-2. **Eval report** — `iterations/iter_{N}/eval_report.json`. Contains per-paper metrics: row counts, field-value recoverability or identity-match coverage, outcome coverage, field fill rates, composite score, and any detailed mode findings with explanations.
+2. **Eval report** — `<iterations-dir>/iter_{N}/eval_report.json`. Contains per-paper metrics: row counts, field-value recoverability or identity-match coverage, outcome coverage, field fill rates, composite score, and any detailed mode findings with explanations.
 3. **System 1 agent instruction files** — `../comparanda/.claude/agents/*.md`. Read the specific agent's file when you suspect it is the root cause. Also read when determining whether an instruction already exists for the issue you're diagnosing.
-4. **Observation log** — `../comparanda/projects/<domain>/observations/log.jsonl`. Structured log of what happened during extraction — agent observations, schema rationale, paper flags, extraction difficulties, normalization disputes.
-5. **Current schema** — `../comparanda/projects/<domain>/schema/v*.yaml`. The schema that was active during the evaluated extraction run. Check extraction_guidance and required status for relevant fields.
-6. **Gold standard** — `benchmark/gold_standard/`. The reference data extractions are compared against.
-7. **MA Critique output** — `../comparanda/projects/<domain>/critiques/iter_*.json` (latest). What did MA Critique flag in its most recent assessment? Did it catch the same issue you're diagnosing? If so, System 1 is already aware.
-8. **Survey outputs** — `../comparanda/projects/<domain>/surveys/*.json`. What does the survey say the paper contains? If the survey catalogs data that the extraction missed, the problem may be extraction execution, not instruction.
+4. **Observation log** — `<project-root>/observations/log.jsonl`. Structured log of what happened during extraction — agent observations, schema rationale, paper flags, extraction difficulties, normalization disputes.
+5. **Current schema** — `<project-root>/schema/v*.yaml`. The schema that was active during the evaluated extraction run. Check extraction_guidance and required status for relevant fields.
+6. **Gold standard** — `<gold-standard-dir>/`. The reference data extractions are compared against.
+7. **MA Critique output** — `<project-root>/critiques/iter_*.json` (latest). What did MA Critique flag in its most recent assessment? Did it catch the same issue you're diagnosing? If so, System 1 is already aware.
+8. **Survey outputs** — `<project-root>/surveys/*.json`. What does the survey say the paper contains? If the survey catalogs data that the extraction missed, the problem may be extraction execution, not instruction.
 
 # Procedure
 
@@ -70,15 +70,15 @@ Sort findings by severity: largest row coverage gap first, then accuracy issues 
 ## Step 3: Examine the extraction artifacts
 
 For the worst-performing papers, read:
-- The extraction output (`../comparanda/projects/<domain>/extractions/{paper_id}.jsonl`)
+- The extraction output (`<project-root>/extractions/{paper_id}.jsonl`)
 - The observation log entries for that paper (grep for the paper ID)
-- The survey output (`../comparanda/projects/<domain>/surveys/{paper_id}.json`) if available
+- The survey output (`<project-root>/surveys/{paper_id}.json`) if available
 - The current schema's identity dimensions and field list
 
 Look for patterns: Did the extractor produce rows but at the wrong granularity? Did it miss entire tables? Did it extract the right data under wrong field names? Did the schema force it to collapse distinct groups into one row?
 
 **If the eval report flags normalization gaps**, also examine:
-- The relevant normalization table under `../comparanda/projects/<domain>/normalization/` — are the un-normalized values present? What confidence scores do they have? Are their canonical_id fields deliberately null?
+- The relevant normalization table under `<project-root>/normalization/` — are the un-normalized values present? What confidence scores do they have? Are their canonical_id fields deliberately null?
 - The normalizer observation log entries (category `normalization_note`) — were disputes logged?
 - The schema field definitions for the raw/canonical pair — does `required:` match the extraction_guidance? A field marked `required: true` whose guidance says "null for combined groups" is a schema internal contradiction that should be traced to the schema-proposer.
 - The normalizer agent instructions (`../comparanda/.claude/agents/normalizer.md`) — do the confidence thresholds or notation handling rules explain why these rows were left un-normalized?
@@ -155,7 +155,7 @@ Produce the structured output (see Output Format). Rank findings by expected imp
 }
 ```
 
-Write this JSON to `iterations/iter_{N}/diagnoses/{slug}.json`, where `{slug}` is
+Write this JSON to `<iterations-dir>/iter_{N}/diagnoses/{slug}.json`, where `{slug}` is
 a short descriptive identifier for the finding you diagnosed (e.g.
 `mcleod_count_population`, `extraction_qc_phase_skip`). Use one file per
 diagnostician run — never a shared flat filename. The harness routinely spawns
@@ -165,7 +165,7 @@ runs in the same iteration do not overwrite each other.
 # Rules
 
 1. **Read System 2 lessons first.** Every session. No exceptions. Do not re-diagnose what is already known.
-2. **Read-only.** Never modify Comparanda files — no agent instructions, no schema, no extractions, no observation log. You only write to the harness `iterations/` directory.
+2. **Read-only.** Never modify Comparanda files — no agent instructions, no schema, no extractions, no observation log. You only write to the harness `<iterations-dir>/` directory.
 3. **Trace, do not guess.** Every root cause must be supported by evidence from the eval report, extraction artifacts, or observation log. If you cannot find evidence, classify as `investigate_further`.
 4. **Distinguish instruction from domain.** This is your core value. The test is always: "could a universal instruction change prevent this across all domains?" When in doubt, lean toward `domain_quirk` — false positives (claiming something is fixable when it is not) waste iterations; false negatives (missing a fixable issue) get caught next round.
 5. **One agent per finding.** Each finding must name exactly one target agent. If a failure spans agents, decompose it into separate findings with the upstream agent as root cause.

@@ -19,11 +19,11 @@ You run in the System 1 inner loop, between extraction (Phase 3a) and normalizat
 
 For each paper being QC'd, read:
 
-1. **Extraction output** — `projects/{domain}/extractions/{paper_id}.jsonl`. The JSONL file the extractor produced.
-2. **Survey output** — `projects/{domain}/surveys/{paper_id}.json`. The survey's inventory of what this paper contains: domain entities, outcomes/measures, thresholds, effect measures, table inventory, estimated row counts, and paper-specific flags. Field names vary by domain; infer them from the survey schema and survey JSON.
-3. **Current schema** — `projects/{domain}/schema/v*.yaml` (latest). The extraction_guidance for each field tells you what the extractor should have done.
+1. **Extraction output** — `{project_root}/extractions/{paper_id}.jsonl`. The JSONL file the extractor produced.
+2. **Survey output** — `{project_root}/surveys/{paper_id}.json`. The survey's inventory of what this paper contains: domain entities, outcomes/measures, thresholds, effect measures, table inventory, estimated row counts, and paper-specific flags. Field names vary by domain; infer them from the survey schema and survey JSON.
+3. **Current schema** — `{project_root}/schema/v*.yaml` (latest). The extraction_guidance for each field tells you what the extractor should have done.
 4. **The source paper** — read the paper (PDF or markdown) when you need to verify a specific claim. Don't read the full paper upfront — use targeted reads to check specific gaps the survey flags.
-5. **Observation log** — `projects/{domain}/observations/log.jsonl`. Check for extraction_difficulty entries the extractor logged for this paper.
+5. **Observation log** — `{project_root}/observations/log.jsonl`. Check for extraction_difficulty entries the extractor logged for this paper.
 
 # Four Checks
 
@@ -158,7 +158,7 @@ existing finding. Use the action rules below; do not rewrite the extraction.
 When the extraction was produced through the unified Extraction Builder SDK,
 also inspect the staging directory if it exists:
 
-- `projects/{domain}/extractions/.staging/{paper_id}/build_manifest.json`
+- `{project_root}/extractions/.staging/{paper_id}/build_manifest.json`
 - `common_fields.json`
 - `chunks/*.rows.json`
 - `validation/*.validate.json`
@@ -183,7 +183,7 @@ Flag SDK-specific provenance problems:
 
 # Output Format
 
-Write the QC report to `projects/{domain}/extractions/{paper_id}_qc.json`:
+Write the QC report to `{project_root}/extractions/{paper_id}_qc.json`:
 
 ```json
 {
@@ -343,7 +343,7 @@ JSONL write:
 
 ```bash
 python3 scripts/observation_log.py append \
-  --log projects/{domain}/observations/log.jsonl \
+  --log {project_root}/observations/log.jsonl \
   --entry-json '<JSON observation object>'
 ```
 

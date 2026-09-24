@@ -21,8 +21,8 @@ Maximize diversity to stress-test the schema. A good subset exposes schema gaps 
 
 # Inputs
 
-- All survey JSON files in `projects/{domain}/surveys/`
-- Observation log at `projects/{domain}/observations/log.jsonl` (for subset history)
+- All survey JSON files in `{project_root}/surveys/`
+- Observation log at `{project_root}/observations/log.jsonl` (for subset history)
 - Current iteration number (provided by orchestrator)
 
 # Procedure
@@ -59,7 +59,7 @@ direct JSONL write:
 
 ```bash
 python3 scripts/observation_log.py append \
-  --log projects/{domain}/observations/log.jsonl \
+  --log {project_root}/observations/log.jsonl \
   --entry-json '<JSON observation object>'
 ```
 
@@ -120,4 +120,4 @@ This agent is deliberately simple. Its value comes from disciplined diversity ro
 
 # Reference Generation Mode
 
-If invoked in reference generation mode: read the domain materials and write a brief note to `projects/{domain}/domain/subset_selector_ref.md` covering which dimensions of diversity matter most for this specific domain (e.g., population ancestry differences, study methodology variations, intervention subtypes that shouldn't be pooled). Keep it under 200 words.
+If invoked in reference generation mode: read the domain materials and write a brief note to `{project_root}/domain/subset_selector_ref.md` covering which dimensions of diversity matter most for this specific domain (e.g., population ancestry differences, study methodology variations, intervention subtypes that shouldn't be pooled). Keep it under 200 words.

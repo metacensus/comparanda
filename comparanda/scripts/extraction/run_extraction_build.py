@@ -6,7 +6,7 @@
 """Run an extractor-generated build script through a stable wrapper.
 
 Extractor agents naturally create per-paper generator scripts under
-``projects/<domain>/extractions/.staging/<paper_id>/scripts/build.py``.  This
+``<project-root>/extractions/.staging/<paper_id>/scripts/build.py``.  This
 wrapper gives those scripts a blessed invocation: repository-root cwd, import
 paths for both ``scripts.extraction.extraction_sdk`` and ``extraction_sdk``,
 predictable environment variables, and optional finalization through
@@ -86,7 +86,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--project",
         default=os.environ.get("COMPARANDA_PROJECT_DIR"),
         help=(
-            "Project directory, e.g. projects/<domain>. Defaults to "
+            "Project directory, e.g. <project-root>. Defaults to "
             "COMPARANDA_PROJECT_DIR when set."
         ),
     )

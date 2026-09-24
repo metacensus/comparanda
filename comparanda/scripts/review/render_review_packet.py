@@ -12,11 +12,11 @@ verify any value against the cited cell without opening the JSONL.
 
 Usage:
   python3 scripts/review/render_review_packet.py \
-      --extractions-dir projects/<d>/extractions --paper-id <pid> \
-      [--bundles-dir projects/<d>/data/processed] \
-      [--normalization-dir projects/<d>/normalization] \
-      [--schema projects/<d>/schema/vNNN.yaml] \
-      [--output projects/<d>/review_packets/<pid>.md]
+      --extractions-dir <project-root>/extractions --paper-id <pid> \
+      [--bundles-dir <project-root>/data/processed] \
+      [--normalization-dir <project-root>/normalization] \
+      [--schema <project-root>/schema/vNNN.yaml] \
+      [--output <project-root>/review_packets/<pid>.md]
 """
 from __future__ import annotations
 

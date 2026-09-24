@@ -25,15 +25,15 @@ Subcommands:
 Every reviewer note is required: a correction with no rationale is not auditable.
 
 Usage:
-  python3 scripts/review/apply_review.py list   --extractions-dir projects/<d>/extractions \
-      --bundles-dir projects/<d>/data/processed [--schema projects/<d>/schema/vNNN.yaml] [--tier 0,1]
-  python3 scripts/review/apply_review.py apply  --extractions-dir projects/<d>/extractions \
+  python3 scripts/review/apply_review.py list   --extractions-dir <project-root>/extractions \
+      --bundles-dir <project-root>/data/processed [--schema <project-root>/schema/vNNN.yaml] [--tier 0,1]
+  python3 scripts/review/apply_review.py apply  --extractions-dir <project-root>/extractions \
       --paper-id <pid> --row-index <i> --field effect_estimate \
       --action corrected --new-value 0.42 \
       --quote "0.42 (0.20, 0.64)" --location tables/table_2.json --page 7 \
       --reviewer "jdoe" --note "Table 2 row 'Tutoring' col 'ES'; extractor read the control column."
-  python3 scripts/review/apply_review.py status --extractions-dir projects/<d>/extractions \
-      --bundles-dir projects/<d>/data/processed
+  python3 scripts/review/apply_review.py status --extractions-dir <project-root>/extractions \
+      --bundles-dir <project-root>/data/processed
 """
 from __future__ import annotations
 

@@ -64,11 +64,11 @@ rationale belongs in the separate decision ledger written by
 Before starting, read ALL of the following:
 
 1. **Stable API contract**: `docs/normalization-api-agent-contract.md`
-2. **Extraction files**: `projects/{domain}/extractions/*.jsonl` — the raw extraction output
-3. **Rich schema**: `projects/{domain}/schema/v*.yaml` (latest version) — inspect `normalization:` annotations on fields to discover which fields need normalization. Zero hardcoded field names.
-4. **Existing normalization tables**: `projects/{domain}/normalization/*.json` — accumulated mappings from prior iterations
-5. **Domain reference**: `projects/{domain}/domain/normalization_ref.md` — domain-specific terminology, aliases, known code tables
-6. **Observation log**: `projects/{domain}/observations/log.jsonl` — prior normalization notes and disputes
+2. **Extraction files**: `{project_root}/extractions/*.jsonl` — the raw extraction output
+3. **Rich schema**: `{project_root}/schema/v*.yaml` (latest version) — inspect `normalization:` annotations on fields to discover which fields need normalization. Zero hardcoded field names.
+4. **Existing normalization tables**: `{project_root}/normalization/*.json` — accumulated mappings from prior iterations
+5. **Domain reference**: `{project_root}/domain/normalization_ref.md` — domain-specific terminology, aliases, known code tables
+6. **Observation log**: `{project_root}/observations/log.jsonl` — prior normalization notes and disputes
 
 # Procedure
 
@@ -85,13 +85,13 @@ Before collecting only unresolved raw values, audit whether existing normalizati
 Run the reconciliation hint helper:
 
 ```bash
-uv run scripts/normalization/normalization_reconcile.py --project projects/{domain} --iteration {N}
+uv run scripts/normalization/normalization_reconcile.py --project {project_root} --iteration {N}
 ```
 
 This writes:
 
 ```bash
-projects/{domain}/normalization/reconciliation_candidates_iter_{N}.json
+{project_root}/normalization/reconciliation_candidates_iter_{N}.json
 ```
 
 The helper is a deterministic spotlight, not a judge. Its top-level
@@ -114,7 +114,7 @@ Record every reviewed candidate through the API:
 
 ```bash
 uv run scripts/normalization/normalization_api.py reconcile \
-  --project projects/{domain} \
+  --project {project_root} \
   --iteration {N} \
   --table {table_name} \
   --raw '{raw value}' \
@@ -122,7 +122,7 @@ uv run scripts/normalization/normalization_api.py reconcile \
   --canonical-id '{canonical id}' \
   --confidence 0.92 \
   --reason 'Short semantic reason.' \
-  --evidence 'projects/{domain}/data/processed/{paper}/sections/results.md'
+  --evidence '{project_root}/data/processed/{paper}/sections/results.md'
 ```
 
 The API updates compact current state in the normalization table and writes
@@ -184,7 +184,7 @@ For reconciled existing entries, preserve `iteration_added` and add/update:
 Apply canonical IDs through the API only:
 
 ```bash
-uv run scripts/normalization/normalization_api.py apply --project projects/{domain} --threshold 0.9
+uv run scripts/normalization/normalization_api.py apply --project {project_root} --threshold 0.9
 ```
 
 For an explicitly reviewed medium-confidence reconciliation decision, use the
@@ -192,7 +192,7 @@ API's explicit reviewed-medium flag rather than silently lowering the threshold:
 
 ```bash
 uv run scripts/normalization/normalization_api.py apply \
-  --project projects/{domain} \
+  --project {project_root} \
   --tables {table_name} \
   --raw '{raw value}' \
   --threshold 0.85 \
@@ -205,12 +205,12 @@ Never modify `_raw` fields.
 Before finishing, run:
 
 ```bash
-uv run scripts/normalization/normalization_api.py validate --project projects/{domain} --base-ref HEAD
+uv run scripts/normalization/normalization_api.py validate --project {project_root} --base-ref HEAD
 ```
 
 # Output Format
 
-## Normalization table (`projects/{domain}/normalization/{table_name}.json`)
+## Normalization table (`{project_root}/normalization/{table_name}.json`)
 
 ```json
 {
@@ -241,7 +241,7 @@ Append through the collision-safe helper, not a direct JSONL write:
 
 ```bash
 python3 scripts/observation_log.py append \
-  --log projects/{domain}/observations/log.jsonl \
+  --log {project_root}/observations/log.jsonl \
   --entry-json '<JSON observation object>'
 ```
 
@@ -296,7 +296,7 @@ Report at the end:
 When invoked with the prefix **"REFERENCE GENERATION MODE"**, switch to reference file generation:
 
 1. Read the provided domain materials (deep research, seed knowledge, Phase 0 papers).
-2. Write `projects/{domain}/domain/normalization_ref.md` containing:
+2. Write `{project_root}/domain/normalization_ref.md` containing:
    - **Terminology evolution**: how naming conventions have changed over time in this domain
    - **Existing code tables**: canonical ID systems used in prior meta-analyses and databases
    - **Known aliases**: common alternate names, abbreviations, legacy nomenclature

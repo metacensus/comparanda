@@ -15,7 +15,7 @@ Usage (after harness.eval.score has produced score.json):
 
     uv run python -m harness.eval.render_eval \
         --score iterations/iter_{N}/score.json \
-        --extractions-dir ../comparanda/projects/<d>/extractions \
+        --extractions-dir <project-root>/extractions \
         --gold-standard benchmark/gold_standard/<gold>.xlsx \
         --document-id-map benchmark/eval_config/document_id_map.json \
         [--finding-scores iterations/iter_{N}/finding_scores.json] \

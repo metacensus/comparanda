@@ -213,7 +213,7 @@ def build_parser() -> argparse.ArgumentParser:
     common.add_argument(
         "--project",
         required=True,
-        help="Project directory, e.g. projects/<domain>",
+        help="Project directory, e.g. <project-root>",
     )
 
     upsert = sub.add_parser("upsert", parents=[common])

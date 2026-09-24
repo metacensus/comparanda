@@ -1,12 +1,12 @@
 # Extraction Scripts
 
 Extraction scripts are the only sanctioned path for materializing
-`projects/<domain>/extractions/{paper_id}.jsonl`.
+`<project-root>/extractions/{paper_id}.jsonl`.
 
 Recommended agent flow:
 
 1. The extractor writes or updates
-   `projects/<domain>/extractions/.staging/{paper_id}/scripts/build.py`.
+   `<project-root>/extractions/.staging/{paper_id}/scripts/build.py`.
 2. The build script imports the SDK:
 
    ```python
@@ -17,9 +17,9 @@ Recommended agent flow:
 
    ```bash
    uv run scripts/extraction/run_extraction_build.py \
-     --project projects/<domain> \
+     --project <project-root> \
      --paper-id <paper_id> \
-     --script projects/<domain>/extractions/.staging/<paper_id>/scripts/build.py \
+     --script <project-root>/extractions/.staging/<paper_id>/scripts/build.py \
      --finalize
    ```
 

@@ -9,7 +9,7 @@ Usage:
     uv run python -m paper_prep.batch \\
         --subset examples/example_batch_subset.json \\
         --pdfs-dir /path/to/pdfs \\
-        --bundle-out /path/to/projects/<domain>/data/processed/ \\
+        --bundle-out "$COMPARANDA_PROJECT_DIR/data/processed/" \\
         [--run-root /tmp/paper_prep_batch] \\
         [--per-table-budget-usd 1.50] \\
         [--table-batch-size 4] \\
