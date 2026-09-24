@@ -27,10 +27,9 @@ Usage from CLI:
         --session-log-dir ~/.claude/projects/<encoded-cwd> \\
         --output iterations/iter_10_bundle_ab/bundle_metrics.json
 
-In the fork layout, --fork-root points at the per-domain fork checkout (which
-contains both system code in comparanda/ + harness/ and the domain data at
-comparanda/projects/<domain>/). --app-repo is accepted as a deprecated alias
-for one release.
+In the legacy fork layout, --fork-root points at the per-domain fork checkout.
+In a domain superproject, pass the external project root explicitly.
+--app-repo is accepted as a deprecated alias for one release.
 """
 
 from __future__ import annotations

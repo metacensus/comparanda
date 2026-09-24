@@ -9,6 +9,10 @@
 
 > Produced 2026-04-03. Updated 2026-04-03 with final architecture decisions.
 > This spec supersedes the v1 build plan. v1 code is the starting point for migration.
+>
+> **Historical path model:** the system design remains useful, but the embedded
+> `projects/<domain>` paths were superseded by the domain-superproject contract
+> in `docs/domain-superproject.md`.
 
 ---
 

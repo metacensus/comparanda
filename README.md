@@ -67,7 +67,7 @@ Other inner-loop components:
 - **Hooks:** `comparanda/.claude/hooks/validate_extraction_write.py` blocks direct extraction JSONL writes, and `comparanda/.claude/hooks/ensure_extraction_finalized.py` enforces sanctioned finalization on extractor stop. See [`comparanda/AGENT_INDEX.md`](./comparanda/AGENT_INDEX.md#guardrails).
 - **Skill:** `comparanda/.claude/skills/comparanda/SKILL.md` — pipeline-knowledge skill surfaced to agents that need cross-phase context.
 - **Scripts:** `comparanda/scripts/` — documented helper APIs for extraction, normalization, review, observation logging, and paper prep. Start with [`comparanda/scripts/README.md`](./comparanda/scripts/README.md).
-- **Paper-prep preprocessor:** `comparanda/scripts/paper_prep/` — PDF → bundle pipeline (Docling extraction + per-table Sonnet first-pass + Stage-2 LLM arbiter + bundle assembly). Self-contained `uv` workspace. Run **before** the inner loop: `cd comparanda/scripts/paper_prep && uv sync && uv run python -m paper_prep <paper_id> --pdf <path> --output-root <projects/<domain>/data/processed/>`. Batch form: `uv run python -m paper_prep.batch ...`. See [`docs/paper-prep-integration.md`](./docs/paper-prep-integration.md) and Bootstrap Step 4 in [`CLAUDE.md`](./CLAUDE.md).
+- **Paper-prep preprocessor:** `comparanda/scripts/paper_prep/` — PDF → bundle pipeline (Docling extraction + per-table Sonnet first-pass + Stage-2 LLM arbiter + bundle assembly). Self-contained `uv` workspace. Run **before** the inner loop: `cd comparanda/scripts/paper_prep && uv sync && uv run python -m paper_prep <paper_id> --pdf <path> --output-root <project-root>/data/processed/`. Batch form: `uv run python -m paper_prep.batch ...`. See [`docs/paper-prep-integration.md`](./docs/paper-prep-integration.md) and Bootstrap Step 4 in [`CLAUDE.md`](./CLAUDE.md).
 - **Settings:** `comparanda/.claude/settings.json` — agent-level configuration.
 
 ### System 2 — outer loop (`harness/`)
@@ -90,7 +90,7 @@ Other harness components:
 - **Orchestrator:** `harness/CLAUDE.md` — improvement loop walkthrough (run Comparanda → monitor → evaluate → diagnose → propose → apply → keep or revert).
 - **Guard hook:** `harness/.claude/hooks/harness-guardrail-comparanda-writes.sh` — PreToolUse hook that prevents the harness from modifying anything in `comparanda/` except the universal instruction sections of `comparanda/.claude/agents/*.md`.
 - **Eval scripts:** `harness/src/harness/eval/` — aggregate metrics, claim faithfulness, semantic field coverage, scoring, rendering, batching, and workbench helpers invoked by the `eval` agent. See [`harness/AGENT_INDEX.md`](./harness/AGENT_INDEX.md#eval).
-- **Benchmark config:** supplied by the per-domain fork or by explicit eval CLI arguments. Canonical does not ship a live domain gold standard.
+- **Benchmark config:** supplied by the domain superproject or by explicit eval CLI arguments. Canonical does not ship a live domain gold standard.
 
 The outer-loop agents modify the inner-loop agent prompts in
 `comparanda/.claude/agents/`. They do **not** modify Python or hook code.
@@ -98,7 +98,13 @@ The outer-loop agents modify the inner-loop agent prompts in
 ## Companion repos
 
 - **This repo** — System 1 (`comparanda/`, inner loop) and System 2 (`harness/`, outer loop) live here as sibling subdirectories.
-- **Per-domain application repo** — holds the actual schemas, surveys, observation logs, extraction outputs, paper-prep bundles, benchmark config, and domain reference files for a given domain. Both System 1 and System 2 read from and write into this repo at runtime; it is intentionally separate so application state can iterate on a different cadence than system code.
+- **Per-domain superproject** — composes this repository as a pinned submodule
+  with one flattened domain workspace and a pinned domain-export repository.
+- **Per-domain data repo** — immutable deployable reviewer exports. It can be
+  pinned independently by the domain superproject and downstream consumers.
+
+See [`docs/domain-superproject.md`](./docs/domain-superproject.md) for the
+composition and path contracts.
 
 ## Bootstrap
 
@@ -128,48 +134,35 @@ harness/             # System 2 — the outer loop (calibration)
   .claude/agents/    # Agent prompts (monitor, eval, diagnostician, critic)
   .claude/hooks/     # Guard hook protecting comparanda/ from over-broad edits
   src/harness/       # Eval scripts invoked by the harness agents
-  benchmark/         # Optional per-domain gold standard/config in application forks
+  benchmark/         # Legacy local benchmark path; superprojects supply external paths
 docs/                # Architecture, specs, research, paper-prep integration notes
 ```
 
-## Application data in a fork
+## Application data in a domain superproject
 
-When you fork this repo to run a domain, the fork adds domain data **inside the
-existing system-code tree** — not as a sibling repo. There are no symlinks for
-system code; everything is in one checkout.
+Each domain has one private composition repository. Its root is the project
+root, so application state is not nested under a redundant
+`projects/<domain>/` directory.
 
-```
-<fork-root>/                          # e.g., <workspace>/comparanda-<domain>/
-├── comparanda/                       # System 1 (canonical)
-│   └── projects/<domain>/            ← added in fork (gitignored at canonical)
-│       ├── data/raw/{pdfs,spreadsheets}/
-│       │   ├── pdfs/                       # Source PDFs (gitignored — large)
-│       │   └── pdfs/phase0-references/     # Methodology + prior meta-analysis PDFs
-│       ├── data/processed/<paper_id>/      # Paper-prep bundles
-│       │   ├── manifest.json
-│       │   ├── sections/<name>.md
-│       │   ├── tables/table_<id>.{json,md}
-│       │   └── figures/figure_<n>.png
-│       ├── schema/v{NNN}.yaml              # Rich schema versions
-│       ├── domain/{deep_research,seed_knowledge,*_ref}.md
-│       ├── surveys/<paper_id>.json         # Phase 1
-│       ├── extractions/<paper_id>.jsonl    # Phase 3a
-│       ├── normalization/<table>.json      # Phase 3b
-│       ├── critiques/iter_<NNN>.json       # Phase 3.5
-│       └── observations/log.jsonl          # Append-only structured log
-├── harness/                          # System 2 (canonical)
-│   ├── iterations/                   ← added in fork (gitignored at canonical)
-│   │   ├── trajectory.json
-│   │   ├── accuracy_coverage.json
-│   │   └── iter_*/
-│   └── benchmark/                    ← optional fork-owned gold standard/config
-└── docs/                             # System 1+2 (canonical)
+```text
+comparanda-<domain>/
+├── comparanda/                 submodule -> this repository
+├── export/                     submodule -> comparanda-<domain>-data
+├── schema/, surveys/, extractions/, observations/
+├── normalization/, critiques/, domain/
+├── data/raw/                   source corpus (binary assets may use Git LFS)
+├── data/processed/             paper-prep bundles
+├── benchmark/                  evaluation config + gold standard
+├── iterations/                 domain run history
+└── comparanda-project.json     portable path contract
 ```
 
-The fork is created via GitHub's fork button. Domain data is committed to the
-fork's `main` branch. Only methodology changes — agent prompts, hooks, eval
-code — are PR'd back to canonical from the fork's `methodology` branch.
+Methodology changes are committed on a feature branch inside the `comparanda/`
+submodule. Domain and run state are committed in the superproject. Reviewer
+exports are committed in `export/`. Consumers pin each repository independently;
+advancing one pin is an explicit reviewable change.
 
 Recommended naming convention for `<paper_id>`: `Author_Year_DocumentID`.
 
-See [`CLAUDE.md`](./CLAUDE.md) for the bootstrap walkthrough that populates this tree.
+See [`docs/domain-superproject.md`](./docs/domain-superproject.md) for setup and
+[`CLAUDE.md`](./CLAUDE.md) for the inner-loop bootstrap walkthrough.

@@ -148,6 +148,27 @@ def atomic_write_jsonl(out_path: Path | str, rows: list[dict], meta: dict) -> No
         raise
 
 
+def missing_provenance(entry: dict) -> dict:
+    return {
+        "missing_reason": entry["missing_reason"],
+        "reasoning": entry["reasoning"],
+        "sources": entry.get("sources", []),
+    }
+
+
+def write_validation_report(out_path: Path | str, payload: dict, schema: ev.Schema, failures: list[ev.Failure]) -> None:
+    out_path = Path(out_path)
+    folder = out_path.parent / ".staging" / out_path.stem / "validation"
+    folder.mkdir(parents=True, exist_ok=True)
+    report = ev.failure_report(failures, context={"paper_id": out_path.stem, "mode": "final"})
+    report.update(ev.missingness_report(payload, schema))
+    (folder / "final.validate.json").write_text(json.dumps(report, indent=2, ensure_ascii=False))
+    text = ev.render_failures(failures) if failures else "ok\n"
+    (folder / "final.validate.txt").write_text(text + "\n" + ev.render_missingness_summary(report))
+    if report["warning_count"]:
+        print(ev.render_missingness_summary(report), file=sys.stderr, end="")
+
+
 def fields_to_disk_row(
     fields_list: list[dict], schema: ev.Schema, *, fill_nulls: bool
 ) -> dict:
@@ -160,14 +181,8 @@ def fields_to_disk_row(
         if name in ev.STRUCTURAL_EXEMPT_FIELDS:
             continue
         if value is None:
-            if entry.get("extraction_certainty") == "abstained":
-                abst: dict[str, Any] = {
-                    "extraction_certainty": "abstained",
-                    "sources": entry.get("sources", []),
-                }
-                if entry.get("reasoning"):
-                    abst["reasoning"] = entry["reasoning"]
-                provenance[name] = abst
+            if name not in schema.exempt_fields:
+                provenance[name] = missing_provenance(entry)
             continue
         prov_entry: dict[str, Any] = {
             "type": entry["type"],
@@ -222,15 +237,10 @@ def merge_partial_into_prior(prior_row: dict, partial_fields: list[dict]) -> dic
             continue
         merged[name] = value
         if value is None:
-            if entry.get("extraction_certainty") == "abstained":
-                abst: dict[str, Any] = {
-                    "extraction_certainty": "abstained",
-                    "sources": entry.get("sources", []),
-                }
-                if entry.get("reasoning"):
-                    abst["reasoning"] = entry["reasoning"]
-                prov[name] = abst
+            if "missing_reason" in entry:
+                prov[name] = missing_provenance(entry)
             else:
+                # The validator only permits unannotated canonical placeholders.
                 prov.pop(name, None)
         elif name not in ev.STRUCTURAL_EXEMPT_FIELDS:
             prov_entry: dict[str, Any] = {
@@ -331,6 +341,7 @@ def finalize_iter1(
         rows_payload, schema=schema, bundle=bundle, mode="iter1"
     )
     failures += ev.validate_meta_payload(meta_payload, mode="iter1")
+    write_validation_report(out_path, rows_payload, schema, failures)
     if failures:
         raise ExtractionValidationError(failures)
 
@@ -391,6 +402,7 @@ def finalize_itern(
         rows_payload, schema=schema, bundle=bundle, mode="itern"
     )
     failures += ev.validate_meta_payload(meta_payload, mode="itern")
+    write_validation_report(out_path, rows_payload, schema, failures)
     if failures:
         raise ExtractionValidationError(failures)
 

@@ -11,7 +11,7 @@ eval report but are NOT inputs here.
 Usage (run by the eval agent after aggregate + detailed passes):
 
     uv run python -m harness.eval.score \
-        --extractions-dir ../comparanda/projects/<domain>/extractions \
+        --extractions-dir <project-root>/extractions \
         --gold-standard benchmark/gold_standard/<file>.xlsx \
         --document-id-map benchmark/eval_config/document_id_map.json \
         --finding-accuracy 0.71 \

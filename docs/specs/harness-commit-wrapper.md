@@ -1,6 +1,10 @@
 # Harness commit wrapper — spec
 
-> **Status:** prerequisite for first harness run on the fork. Implemented in Phase 2.5 of the migration. No fallback / cherry-pick workaround — without the wrapper, methodology and domain commits interleave on `main` and the 2-branch model breaks.
+> **Status:** legacy per-domain-fork compatibility only. Domain superprojects
+> use separate Git repositories for methodology, application state, and exports;
+> commit directly in the repository that owns the path. Do not use this router
+> in the composed layout. The remaining specification documents the older
+> two-branch model.
 
 ## Problem
 

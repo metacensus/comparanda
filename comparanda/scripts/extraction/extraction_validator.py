@@ -35,6 +35,12 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Iterable
 
+MISSING_REASONS = frozenset({
+    "not_found", "explicitly_unavailable", "referenced_source_unavailable",
+    "definition_mismatch", "unreadable", "conflicting_evidence", "not_applicable",
+})
+MISSING_REASONS_REQUIRING_SOURCES = MISSING_REASONS - {"not_found", "not_applicable"}
+
 ALLOWED_PROVENANCE_TYPES = frozenset({"paper", "derived"})
 STRUCTURAL_EXEMPT_FIELDS = frozenset({"provenance", "_meta_commentary"})
 
@@ -44,7 +50,7 @@ STRUCTURAL_EXEMPT_FIELDS = frozenset({"provenance", "_meta_commentary"})
 # on a field entry but VALIDATED when present, and `clean` is rejected when
 # the source is uncorroborated/figure — so the tag cannot lie.
 ALLOWED_DERIVATION_KINDS = frozenset({"verbatim", "derived", "inferred"})
-ALLOWED_CERTAINTIES = frozenset({"clean", "ambiguous", "abstained"})
+ALLOWED_CERTAINTIES = frozenset({"clean", "ambiguous"})
 # Table validation statuses (from paper-prep, review note) that forbid a `clean`
 # tag on a value sourced from that table.
 _UNCORROBORATED_TABLE = frozenset({"single_source", "unresolved_conflict"})
@@ -508,6 +514,7 @@ class BundleSources:
     full_text: str
     by_file: dict[str, str] = field(default_factory=dict)
     tables: dict[str, dict] = field(default_factory=dict)
+    available_files: frozenset[str] = field(default_factory=frozenset)
 
     @classmethod
     def load(cls, bundle_dir: Path) -> "BundleSources":
@@ -556,7 +563,10 @@ class BundleSources:
             except OSError:
                 pass
 
-        return cls(full_text=load_bundle_text(bundle_dir), by_file=by_file, tables=tables)
+        return cls(
+            full_text=load_bundle_text(bundle_dir), by_file=by_file, tables=tables,
+            available_files=frozenset(str(p.relative_to(bundle_dir)) for p in bundle_dir.rglob("*") if p.is_file()),
+        )
 
     # Tokens that look like a bundle file path inside a free-text location.
     _PATH_RE = re.compile(r"(sections|tables|figures)/[\w.\-]+")
@@ -949,6 +959,107 @@ def _validate_source_components(
     return failures
 
 
+def _validate_missing_entry(entry: dict, *, loc: str, bundle: BundleSources) -> list[Failure]:
+    failures: list[Failure] = []
+    if "missing_reason" not in entry:
+        failures.append(Failure("missing_reason_required", loc, "use missing(reason, explanation); bare null and abstention shortcuts are not accepted"))
+    reason = entry.get("missing_reason")
+    if reason is not None and (not isinstance(reason, str) or reason not in MISSING_REASONS):
+        failures.append(Failure("bad_missing_reason", loc, f"choose one of {sorted(MISSING_REASONS)}, or explicit null only for an uncovered case"))
+    explanation = entry.get("reasoning")
+    if not isinstance(explanation, str) or not explanation.strip():
+        failures.append(Failure("reasoning_required_missing", loc, "every absent value requires a concrete explanation"))
+    for key in ("type", "derivation", "derivation_kind", "extraction_certainty", "source_components"):
+        if key in entry:
+            failures.append(Failure("shape_error", loc, f"an absent value must not carry {key!r}; its sources support missingness, not a value claim"))
+    sources = entry.get("sources", [])
+    if not isinstance(sources, list):
+        failures.append(Failure("bad_source_shape", loc, "sources must be a list"))
+        return failures
+    if isinstance(reason, str) and reason in MISSING_REASONS_REQUIRING_SOURCES and not sources:
+        failures.append(Failure("missingness_sources_required", loc, f"{reason} requires evidence for the reason, not an invented value"))
+    for i, src in enumerate(sources):
+        source_loc = f"{loc} sources[{i}]"
+        if not isinstance(src, dict):
+            failures.append(Failure("bad_source_shape", source_loc, "source must be an object"))
+            continue
+        location = src.get("location")
+        page = src.get("page")
+        quote = src.get("quote", "")
+        if not isinstance(location, str) or not location.strip() or type(page) is not int or page < 0:
+            failures.append(Failure("bad_source_shape", source_loc, "source requires a nonempty location and nonnegative integer page"))
+            continue
+        if not isinstance(quote, str):
+            failures.append(Failure("bad_source_shape", source_loc, "quote must be a string when supplied"))
+            continue
+        unknown = set(src) - {"location", "page", "quote", "cell"}
+        if unknown:
+            failures.append(Failure("bad_source_shape", source_loc, f"unknown source keys: {sorted(unknown)}"))
+        matched, text = bundle.resolve_location(location)
+        if matched is None and location not in bundle.available_files:
+            failures.append(Failure("location_not_a_bundle_file", source_loc, "cite an available source or the passage referencing missing material, not an absent file"))
+            continue
+        # Explicit absence and references need a verifiable source statement.
+        if reason in ("explicitly_unavailable", "referenced_source_unavailable") and (not quote.strip() or text is None):
+            failures.append(Failure("missingness_quote_required", source_loc, "this reason requires a quoted statement in an available text source"))
+        elif text is not None and quote and not find_quote_in_source(quote, text):
+            failures.append(Failure("quote_not_at_location", source_loc, "the missingness-support quote is absent from the cited source"))
+        elif not quote.strip() and reason != "unreadable":
+            failures.append(Failure("missingness_quote_required", source_loc, "a readable supporting source needs its relevant quote"))
+    return failures
+
+
+def missingness_report(payload: dict, schema: Schema) -> dict[str, Any]:
+    """Audit supplied fields only; old untouched rows are not silently reclassified."""
+    counts = {key: 0 for key in sorted(MISSING_REASONS)}
+    fallbacks: list[dict[str, Any]] = []
+    unexplained: list[dict[str, Any]] = []
+    shared: dict[str, int] = {}
+    total = 0
+    rows = payload.get("rows", []) if isinstance(payload, dict) else []
+    if not isinstance(rows, list):
+        rows = []
+    for index, row in enumerate(rows):
+        if not isinstance(row, dict) or not isinstance(row.get("fields"), list):
+            continue
+        for entry in row["fields"]:
+            if not isinstance(entry, dict) or not isinstance(entry.get("name"), str):
+                continue
+            if entry["name"] in schema.exempt_fields or "value" not in entry or entry["value"] is not None:
+                continue
+            total += 1
+            reason = entry.get("missing_reason")
+            item = {"row": index, "field": entry.get("name"), "explanation": entry.get("reasoning")}
+            if "missing_reason" not in entry or not isinstance(entry.get("reasoning"), str) or not entry["reasoning"].strip():
+                unexplained.append(item)
+            elif reason is None:
+                fallbacks.append(item)
+                shared[entry["reasoning"]] = shared.get(entry["reasoning"], 0) + 1
+            elif isinstance(reason, str) and reason in counts:
+                counts[reason] += 1
+    return {
+        "missingness": {
+            "scope": "submitted new/modified field occurrences; untouched prior rows excluded",
+            "missing_field_count": total, "by_reason": counts,
+            "uncategorized_count": len(fallbacks),
+            "uncategorized_fraction": len(fallbacks) / total if total else 0.0,
+            "uncategorized_fields": fallbacks,
+            "uncategorized_distinct_explanations": len(shared),
+            "unexplained_fields": unexplained,
+        },
+        "warnings": [{"code": "uncategorized_missing", **item} for item in fallbacks],
+        "warning_count": len(fallbacks),
+    }
+
+
+def render_missingness_summary(report: dict[str, Any]) -> str:
+    summary = report["missingness"]
+    text = f"Missing values: {summary['missing_field_count']}; uncategorized: {summary['uncategorized_count']}."
+    if summary["uncategorized_count"]:
+        text += " WARNING: QC must review each uncategorized explanation in the machine report."
+    return text + "\n"
+
+
 def _validate_field_entry(
     entry: Any,
     *,
@@ -984,7 +1095,7 @@ def _validate_field_entry(
         "name", "value", "type", "sources", "derivation",
         "source_components",
         "derivation_kind", "extraction_certainty",  # review note
-        "reasoning",  # review note
+        "reasoning", "missing_reason",  # Explanations and structured missingness
     }
     unknown = set(entry.keys()) - ALLOWED_FIELD_ENTRY_KEYS
     if unknown:
@@ -1003,49 +1114,16 @@ def _validate_field_entry(
             f"got {certainty!r}",
         ))
 
-    # Null value: normally no provenance. review note adds ONE exception — an
-    # explicit abstention: value null + extraction_certainty 'abstained' + a
-    # location-only source recording WHERE the unreadable value sits. This
-    # distinguishes "study did not report" (plain null) from "we could not
-    # read it" (abstained null).
     if value is None:
-        if certainty == "abstained":
-            srcs = entry.get("sources")
-            if not isinstance(srcs, list) or not srcs:
-                failures.append(Failure(
-                    "abstention_missing_source", loc,
-                    "an abstained field must carry a sources entry with the "
-                    "location/page of the unreadable value (quote optional)",
-                ))
-            else:
-                for i, src in enumerate(srcs):
-                    if not isinstance(src, dict) or not isinstance(src.get("location"), str):
-                        failures.append(Failure(
-                            "abstention_bad_source", f"{loc} sources[{i}]",
-                            "abstention source needs at least a 'location' string",
-                        ))
-            if "derivation" in entry:
-                failures.append(Failure(
-                    "shape_error", loc, "abstained field must not carry 'derivation'",
-                ))
-            # R2-01: an abstention is an interpretive judgment — it must state
-            # the concrete uncertainty.
-            reasoning = entry.get("reasoning")
-            if not isinstance(reasoning, str) or not reasoning.strip():
-                failures.append(Failure(
-                    "reasoning_required_missing", loc,
-                    "an abstained field requires a non-empty 'reasoning' stating "
-                    "the concrete uncertainty (what could not be read and why).",
-                ))
+        if name in schema.exempt_fields:
+            # Canonical IDs pending normalization are not missing scientific facts.
+            if set(entry) - {"name", "value"}:
+                failures.append(Failure("shape_error", loc, "normalization placeholders must not carry extraction provenance"))
             return failures
-        for key in ("type", "sources", "derivation", "derivation_kind"):
-            if key in entry:
-                failures.append(Failure(
-                    "shape_error", loc,
-                    f"null-valued field must not carry '{key}' "
-                    f"(use extraction_certainty='abstained' for an unreadable value)",
-                ))
-        return failures
+        return failures + _validate_missing_entry(entry, loc=loc, bundle=bundle)
+
+    if "missing_reason" in entry:
+        failures.append(Failure("shape_error", loc, "a populated value must not carry missing_reason"))
 
     # Non-null value: provenance is required UNLESS the field is exempt
     # (schema-derived: normalizer-populated _id fields).
@@ -1217,7 +1295,7 @@ def _validate_field_entry(
             ))
 
     # R2-01: prose reasoning is REQUIRED when the interpretive step is
-    # non-trivial — a derived/inferred value, an ambiguous/abstained read, or a
+    # non-trivial — a derived/inferred value, an ambiguous read, or a
     # multi-source field. For verbatim+clean single-source values the cell
     # anchor itself is the context, so reasoning stays optional (cost
     # discipline).
@@ -1232,7 +1310,7 @@ def _validate_field_entry(
         and n_sources == 1
     )
     reasoning_required = (
-        certainty in {"ambiguous", "abstained"}
+        certainty == "ambiguous"
         or (dkind == "inferred" and not has_derivation_text)
         or (
             dkind == "derived"
@@ -1252,7 +1330,7 @@ def _validate_field_entry(
             failures.append(Failure(
                 "reasoning_required_missing", loc,
                 "a non-empty 'reasoning' is required when derivation_kind is "
-                "derived/inferred, extraction_certainty is ambiguous/abstained, "
+                "derived/inferred, extraction_certainty is ambiguous, "
                 "or the field has multiple sources — connect the evidence to "
                 "the claim in 1-2 sentences.",
             ))
@@ -1439,6 +1517,13 @@ def _validate_row(
                         f"field {n!r} is not declared in schema "
                         f"v{schema.version}",
                     ))
+
+    if not has_identity_key:
+        for missing_name in sorted(set(schema.field_names) - seen_names - schema.exempt_fields):
+            failures.append(Failure(
+                "unexplained_missing_field", f"{row_loc} field={missing_name}",
+                "new rows must explicitly provide a value or missing(reason, explanation); automatic bare nulls are not allowed",
+            ))
 
     # R2-09: internal-consistency over the assembled row's Standards Core
     # numerics (CI ordering, estimate-in-CI, events ≤ total).

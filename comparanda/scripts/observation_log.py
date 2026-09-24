@@ -8,7 +8,7 @@ All agents read from and write to this log. Categories:
   - extraction_difficulty: challenges that may inform instruction updates
   - subset_selection: which papers were selected and why
 
-Format: one JSON object per line (JSONL) at projects/{domain}/observations/log.jsonl
+Format: one JSON object per line (JSONL) at {project_root}/observations/log.jsonl
 """
 
 from __future__ import annotations

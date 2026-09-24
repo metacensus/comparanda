@@ -1,4 +1,4 @@
-"""Path-based commit router for the fork 2-branch model.
+"""Path-based commit router for the legacy fork 2-branch model.
 
 Inspect staged paths, classify each as methodology vs domain, and route the
 commit to the correct branch. Mixed-path commits are rejected in strict mode.
@@ -15,6 +15,9 @@ Or as a module:
 
 The wrapper is invoked AFTER the operator stages changes with `git add ...`.
 It does not stage anything itself.
+
+Domain superprojects must not use this router: methodology, application state,
+and deployable exports are separate Git repositories in that composition.
 """
 
 from __future__ import annotations

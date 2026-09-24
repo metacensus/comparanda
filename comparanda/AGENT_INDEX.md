@@ -22,7 +22,7 @@ encoded in the orchestrator and agent instructions.
 | 5 | `subset-selector` plus phases 3a-3.5 | Rotate subsets to test schema generalization. | one subset per rotation | Extractor resume still applies for previously seen papers; new papers use fresh extractors. |
 | 6 | `extractor`, `normalizer`, `ma-critique` | Produce the final full-corpus extraction against the converged schema, then normalize and critique the final dataset. | bounded batches, not full-corpus concurrency | Reuse/resume recorded extractor sessions and build scripts before fresh extraction; fresh extractors only for unseen or documented-unrecoverable papers. |
 
-## Shared Project State (`projects/<domain>/`)
+## Shared Project State (`<project-root>/`)
 
 | Path | Owner / Writers | Readers |
 |---|---|---|

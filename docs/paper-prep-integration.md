@@ -14,7 +14,7 @@ is no longer needed to produce bundles.)
 First-time setup:
 
 ```bash
-cd <workspace>/comparanda-<domain>/comparanda/scripts/paper_prep
+cd "$COMPARANDA_PROJECT_DIR/comparanda/comparanda/scripts/paper_prep"
 uv sync   # installs docling + pydantic
 ```
 
@@ -23,7 +23,7 @@ Per-paper build:
 ```bash
 uv run python -m paper_prep <paper_id> \
     --pdf "/path/to/<paper_id>.pdf" \
-    --output-root <workspace>/comparanda-<domain>/comparanda/projects/<domain>/data/processed/
+    --output-root "$COMPARANDA_PROJECT_DIR/data/processed/"
 ```
 
 Corpus build (subset JSON maps PMID → paper_id):
@@ -31,8 +31,8 @@ Corpus build (subset JSON maps PMID → paper_id):
 ```bash
 uv run python -m paper_prep.batch \
     --subset examples/dpyd_batch_subset.json \
-    --pdfs-dir <workspace>/comparanda-<domain>/comparanda/projects/<domain>/data/raw/pdfs/ \
-    --bundle-out <workspace>/comparanda-<domain>/comparanda/projects/<domain>/data/processed/
+    --pdfs-dir "$COMPARANDA_PROJECT_DIR/data/raw/pdfs/" \
+    --bundle-out "$COMPARANDA_PROJECT_DIR/data/processed/"
 ```
 
 > **Run from a regular terminal, not from inside a Claude Code session.**
@@ -54,7 +54,7 @@ uv run python -m paper_prep.batch \
 The bundle lands at:
 
 ```
-projects/<domain>/data/processed/<paper_id>/
+<project-root>/data/processed/<paper_id>/
     manifest.json
     sections/<name>.md
     tables/table_<id>.{json,md}
@@ -78,7 +78,7 @@ drops any two-sided table whose conflicts went unresolved.
 
 ## What to do if a bundle is missing
 
-The extractor agent expects `projects/<domain>/data/processed/<paper_id>/`
+The extractor agent expects `<project-root>/data/processed/<paper_id>/`
 to exist when it's invoked. If invoked on a paper without a bundle, the
 agent will fail at the "Read manifest.json" step with a missing-file error
 — there is no fallback to PDF or markdown.
