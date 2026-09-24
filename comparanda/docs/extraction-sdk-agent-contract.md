@@ -50,11 +50,10 @@ If the build script writes staging files but does not finalize, add
 ```python
 from scripts.extraction.extraction_sdk import (
     ExtractionBuilder,
-    abstained,
+    missing,
     derived,
     inferred,
     not_applicable,
-    null,
     paper,
     source_component,
 )
@@ -152,7 +151,7 @@ c.add_row({
         derivation="Schema effect-size type for the cited model estimate.",
         reasoning="The row label identifies the estimate as adjusted/model-based.",
     ),
-    "n_events": null("The table reports a model estimate, not group-specific event counts."),
+    "n_events": missing("not_found", "The table reports a model estimate, not group-specific event counts."),
 })
 ```
 
@@ -230,12 +229,9 @@ for high-leverage values.
   calculated, composed, or a schema sentinel supported by cited sources.
 - `inferred(value, sources, reasoning=...)`: a non-verbatim judgment from a
   cited source, usually figure-derived or ambiguous.
-- `abstained(reasoning, sources)`: the paper reports a value but it cannot be
-  read reliably.
-- `null(reason)`: the paper does not report the value. Plain nulls make no
-  extraction claim and carry no provenance. The reason helps the build script
-  and validation messages remain readable, but it is not retained as field-level
-  output provenance.
+- `missing(reason, explanation, sources=...)`: record an absent value with `missing_reason`, nonempty `reasoning`, and evidence supporting that reason where available. Reasons: `not_found`, `explicitly_unavailable`, `referenced_source_unavailable`, `definition_mismatch`, `unreadable`, `conflicting_evidence`, `not_applicable`. Explicitly unavailable combines source-stated non-reporting and non-measurement; explain which occurred.
+- `missing(reason=None, explanation=...)`: uncategorized fallback only when no listed reason applies. Explain the specific situation and why it is uncovered. Validation reports every use for QC review. Empty explanations are invalid.
+- `null(...)` and `abstained(...)` are not supported authoring alternatives in the new contract. Historical files remain readable without guessing a category; no new output may use these helpers to bypass missingness metadata.
 - `not_applicable(reasoning, sources)`: the schema sentinel is appropriate for
   this row.
 
@@ -316,13 +312,7 @@ The compact report includes:
 
 Hint codes:
 
-- `PROV_LITERAL`: `paper(...)` means the field value must appear literally in
-  the cited quote or anchored table cell. If the value is not literal, either
-  cite a source that contains it, use `null(...)` when the paper truly does not
-  report a value for this field, use `derived(...)` for a non-null schema label,
-  sentinel, composed label, or calculated value supported by sources, use
-  `inferred(...)` for a contextual judgment that is not mechanically derived,
-  or use `not_applicable(...)` only for the schema sentinel `"not_applicable"`.
+- `PROV_LITERAL`: `paper(...)` means the field value must appear literally in the cited quote or anchored table cell. If the value is not literal, either cite a source that contains it, use `missing(...)` with the applicable reason when no supported value can be assigned to this field, use `derived(...)` for a non-null schema label, sentinel, composed label, or calculated value supported by sources, use `inferred(...)` for a contextual judgment that is not mechanically derived, or use `not_applicable(...)` only for the schema sentinel `"not_applicable"`.
 - `DERIVED_COMPONENTS`: a derived arithmetic/component value needs
   `source_components` for each source-supported operand. Use this for
   calculated values, complements, sums, percentages, denominators, and composed
@@ -337,10 +327,7 @@ Hint codes:
 - `QUOTE_LOCATION`: the quote or pattern is not found at the cited location, or
   exists elsewhere. Use exact text from the intended source, change the
   location, or use the SDK quote-location hint to find the right file.
-- `NULL_SHAPE`: JSON `null` values should not carry paper/derived provenance.
-  Use `null(reason)` for unreported values, `abstained(...)` for unreadable
-  reported values, and non-null `derived(...)`/`inferred(...)` sentinels only
-  when the schema expects an actual string value.
+- `NULL_SHAPE`: absent values require explanatory metadata. Use `missing(...)` with a defined reason. Ordinary missingness metadata must not invent a paper/derived value claim. Use `missing(reason=None, explanation=...)` only for an uncovered case; it emits a counted fallback warning. Non-null special values are allowed only when the schema defines them.
 
 - `quote_not_at_location`: the quote exists elsewhere or not at all. Use the
   cited location named by the validator, or replace the quote with exact text
@@ -420,3 +407,5 @@ A successful finalization prints:
 
 Report this marker and the staged validation report path. Do not rerun
 finalization just to make the marker appear again.
+
+Missingness explanations apply to extractor-owned scientific fields, not schema-exempt canonical IDs awaiting normalization or optional provenance keys. Keep the existing normalization exemption; do not classify a pending ID as a missing source fact.

@@ -38,6 +38,17 @@ CERTAINTY_BADGE = {
     "reviewed_rejected": "REJECTED by reviewer",
 }
 
+MISSING_LABEL = {
+    "not_found": "Not found in supplied material",
+    "explicitly_unavailable": "Explicitly not reported / not measured",
+    "referenced_source_unavailable": "Referenced source unavailable",
+    "definition_mismatch": "Available information does not fit this field",
+    "unreadable": "Source value unreadable",
+    "conflicting_evidence": "Conflicting evidence",
+    "not_applicable": "Not applicable",
+    None: "Missing — reason not categorized",
+}
+
 
 def _load_rows(jsonl_path: Path) -> tuple[list[dict], dict]:
     rows: list[dict] = []
@@ -110,7 +121,11 @@ def _render_field(name: str, value, entry: dict, tier: str | None,
     certainty = entry.get("extraction_certainty")
     kind = entry.get("derivation_kind") or ("derived" if entry.get("type") == "derived" else "verbatim")
 
-    if certainty == "abstained":
+    if value is None and "missing_reason" in entry:
+        reason = entry["missing_reason"]
+        label = MISSING_LABEL.get(reason, f"Missing — {reason}")
+        head = f"- **{name} — {label}**"
+    elif certainty == "abstained":
         head = f"- **{name} — ABSTAINED** (the paper reports a value the pipeline could not read reliably; routed to human review)"
     else:
         badge_bits = [kind]
@@ -193,8 +208,9 @@ def render_packet(
         "connects the evidence to the claim. Values marked *verbatim, clean* were "
         "transcribed directly from a cross-validated source; the cited cell is the "
         "complete justification. **AMBIGUOUS**/**ABSTAINED** values are queued for "
-        "human review. Fields the paper does not report are listed as *not "
-        "reported* — absence of data, not absence of extraction."
+        "human review. New missing values show their absence reason, explanation "
+        "and available evidence rather than a transcribed-value label. Legacy "
+        "nulls without provenance remain listed separately."
     )
     out.append("")
 

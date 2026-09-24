@@ -47,9 +47,24 @@ Read the domain reference file before processing the paper. It contains entity n
     - Count distinct comparison groups
     - Multiply: `entities x outcomes x grade_levels x groups`
     - Write out the multiplication so it is auditable
+    - Treat it as a coverage estimate, not proof that every combination was reported; note unsupported combinations in an existing schema-defined commentary field.
 11. Flag page numbers containing complex tables, figures with embedded data, or supplementary material references that may require vision-based extraction.
-12. Write structured JSON output to `{project_root}/surveys/{paper_id}.json`.
-13. Append an observation through
+12. Record source statements about which groups or people are related:
+    - Trial/cohort identifiers, reused participants, or one cohort being a subset
+      of another.
+    - People in multiple groups, including compound exposures/interventions.
+    - Different labels that the paper explicitly says describe the same people.
+    Put the literal statement and source location in an existing schema-defined
+    notes/commentary field. If none can hold it, record the limitation through
+    the observation in step 14; do not invent a survey JSON key.
+
+    | Illustrative source | Record | Do not infer |
+    |---|---|---|
+    | “X and Y refer to the same 9 participants” | The explicit identity statement and its location | Two independent groups |
+    | X has 9 participants and Y has 9; no linking statement | Both counts; shared membership is unknown | Equal counts prove shared participants |
+
+13. Write structured JSON output to `{project_root}/surveys/{paper_id}.json`.
+14. Append an observation through
     `uv run scripts/observation_log.py append --log {project_root}/observations/log.jsonl --entry-json '<JSON observation object>'`
     noting paper-specific terminology, surprises, or quality concerns. Omit
     `id` or use `OBS-XXX`; do not write directly to `log.jsonl`.
@@ -97,6 +112,11 @@ in the schema-defined commentary/concerns field.
   The helper allocates the real ID.
 - Do not skip supplementary material references — note them even if you cannot read them.
 - Do not guess sample sizes from subgroup totals. If total N is not stated, use null.
+- Keep reported group totals and reported overlaps distinct. A group total may
+  include people also counted in another group. For example, X=12, Y=5 and
+  overlap=2 remain three reported facts; do not replace X with X-only=10.
+  If overlap is not reported, do not assert that the groups are disjoint.
+
 - Keep your processing time proportional to paper complexity. Simple papers need simple surveys.
 
 # Pre-Completion Checklist

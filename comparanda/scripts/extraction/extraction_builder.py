@@ -72,14 +72,21 @@ def _write_report(
     failures: list[ev.Failure],
     *,
     rows_path: Path | None = None,
+    rows_payload: Any | None = None,
+    schema: ev.Schema | None = None,
 ) -> None:
     validation_dir = staging / "validation"
     validation_dir.mkdir(parents=True, exist_ok=True)
     context = _report_context(staging, name, rows_path)
+    report = ev.failure_report(failures, context=context)
+    if rows_payload is not None and schema is not None:
+        report.update(ev.missingness_report(rows_payload, schema))
     (validation_dir / f"{name}.validate.json").write_text(
-        json.dumps(ev.failure_report(failures, context=context), indent=2, ensure_ascii=False)
+        json.dumps(report, indent=2, ensure_ascii=False)
     )
     text = ev.render_failures(failures, context=context) if failures else "ok\n"
+    if "missingness" in report:
+        text += "\n" + ev.render_missingness_summary(report)
     (validation_dir / f"{name}.validate.txt").write_text(text)
 
 
@@ -113,7 +120,14 @@ def cmd_validate(args: argparse.Namespace) -> int:
         rows_payload=rows_payload,
         meta_payload=meta_payload,
     )
-    _write_report(staging, "final", failures, rows_path=rows_path)
+    _write_report(
+        staging,
+        "final",
+        failures,
+        rows_path=rows_path,
+        rows_payload=rows_payload,
+        schema=ev.Schema.load(args.schema),
+    )
     if failures:
         print(
             ev.render_failures(
@@ -142,7 +156,14 @@ def cmd_validate_chunk(args: argparse.Namespace) -> int:
         rows_payload=rows_payload,
         meta_payload=meta_payload,
     )
-    _write_report(staging, args.chunk, failures, rows_path=rows_path)
+    _write_report(
+        staging,
+        args.chunk,
+        failures,
+        rows_path=rows_path,
+        rows_payload=rows_payload,
+        schema=ev.Schema.load(args.schema),
+    )
     if failures:
         print(
             ev.render_failures(
@@ -160,6 +181,8 @@ def cmd_finalize(args: argparse.Namespace) -> int:
     staging = _staging_dir(args.project, args.paper_id, args.staging_dir)
     rows = _rows_path(staging)
     meta = _meta_path(staging)
+    rows_payload = _read_json(rows)
+    schema = ev.Schema.load(args.schema)
     try:
         result = core.finalize_iter1(
             schema_path=args.schema,
@@ -169,13 +192,27 @@ def cmd_finalize(args: argparse.Namespace) -> int:
             meta_file=meta,
         )
     except core.ExtractionValidationError as e:
-        _write_report(staging, "final", e.failures, rows_path=rows)
+        _write_report(
+            staging,
+            "final",
+            e.failures,
+            rows_path=rows,
+            rows_payload=rows_payload,
+            schema=schema,
+        )
         print(str(e), file=sys.stderr)
         return 3
     except core.ExtractionCoreError as e:
         print(str(e), file=sys.stderr)
         return 2
-    _write_report(staging, "final", [], rows_path=rows)
+    _write_report(
+        staging,
+        "final",
+        [],
+        rows_path=rows,
+        rows_payload=rows_payload,
+        schema=schema,
+    )
     print(result.success_marker(), file=sys.stderr)
     return 0
 
