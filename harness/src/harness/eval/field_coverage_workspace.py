@@ -1,7 +1,6 @@
 """Prepare and guard isolated field-coverage eval workspaces.
 
-This module formalizes the workflow proven by the Rosmarin/Deenen isolated
-retests: one paper per clean workspace, authoritative inputs under ``input/``,
+This module formalizes the isolated-retest workflow: one paper per clean workspace, authoritative inputs under ``input/``,
 agent scratch space under ``scratch/``, final artifacts under ``output/``, and
 a mechanical early-checkpoint gate.
 """
@@ -10,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -20,6 +20,15 @@ from typing import Any
 
 from harness.eval.field_checklist import build_checklist_for_comparison, write_jsonl
 from harness.eval.workbench import write_workbench_bundle
+
+
+# Model used for the isolated eval agent. Override with COMPARANDA_EVAL_MODEL
+# or the --model CLI flag.
+DEFAULT_EVAL_MODEL = "claude-sonnet-5[1m]"
+
+
+def default_eval_model() -> str:
+    return os.environ.get("COMPARANDA_EVAL_MODEL") or DEFAULT_EVAL_MODEL
 
 
 CHECKPOINT_FILES = ("progress.json", "notes.md")
@@ -201,8 +210,9 @@ def prepare_workspace(
     previous_validation_path: Path | None = None,
     agent_id: str | None = None,
     parent_session_id: str | None = None,
-    model: str = "claude-sonnet-5[1m]",
+    model: str | None = None,
 ) -> PreparedWorkspace:
+    model = model or default_eval_model()
     run_mode = normalize_run_mode(run_mode)
     comparison_path = comparison_path.resolve()
     output_root = output_root.resolve()
@@ -451,7 +461,9 @@ def main() -> int:
     prepare.add_argument("--previous-validation", help="prior field_coverage_validation.json to copy into input/")
     prepare.add_argument("--agent-id", help="resumable eval agent id, when known")
     prepare.add_argument("--parent-session-id", help="parent Claude session id, when known")
-    prepare.add_argument("--model", default="claude-sonnet-5[1m]")
+    prepare.add_argument("--model", default=None,
+                         help="eval agent model (default: $COMPARANDA_EVAL_MODEL or "
+                              f"{DEFAULT_EVAL_MODEL})")
 
     checkpoint = subparsers.add_parser("checkpoint", help="check early checkpoint compliance")
     checkpoint.add_argument("--run-dir", required=True)

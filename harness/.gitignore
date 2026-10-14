@@ -3,8 +3,9 @@ __pycache__/
 .venv/
 .DS_Store
 
-# Per-domain harness runtime state — populated only in domain forks (not canonical).
-# Use /iterations/* (not /iterations/) so forks can re-include via !/iterations/
-# on `main`. Git refuses to re-include children of a fully-excluded directory.
-# The fork's !-override never lands on `methodology`.
+# Harness run state (per-domain). Normally written to an external iterations
+# directory (COMPARANDA_ITERATIONS_DIR). A fork that keeps run state in-repo can
+# re-include it with `!/iterations/`; the pattern is `/iterations/*` rather than
+# `/iterations/` because Git cannot re-include children of a fully excluded
+# directory.
 /iterations/*

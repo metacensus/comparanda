@@ -159,9 +159,9 @@ class EntityResolver:
     conflicts: list[tuple[str, str, str]] = field(default_factory=list)
     # Gold entity field names tried (in order) for the inline-id / direct-token
     # fallbacks. Defaults preserve legacy behavior; set per-domain from
-    # gold_config.entity_columns (review note).
+    # gold_config.entity_columns.
     entity_fields: tuple[str, ...] = ("Entity", "entity", "entity_raw")
-    # R3-13: extraction-side field list override (set from
+    # Extraction-side field list override (set from
     # gold_config.extraction_entity_fields by callers). Precedence:
     # this attribute > crosswalk config > legacy default.
     extraction_fields: tuple[str, ...] | None = None
@@ -291,7 +291,7 @@ class EntityResolver:
             tok = _canonical_token(_row_get(row, f))
             if tok and cfg is not None and self._by_text and tok in self._by_text.values():
                 return tok, "direct_id"
-        # Symmetric direct-tokenization fallback (review note): when no crosswalk
+        # Symmetric direct-tokenization fallback: when no crosswalk
         # resolves the gold row, tokenize its entity string the SAME way the
         # extraction side is tokenized (resolve_extraction_all also falls back to
         # `_canonical_token`). This lets gold and a normalized extraction match on

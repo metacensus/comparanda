@@ -1,5 +1,10 @@
 """Path-based commit router for the legacy fork 2-branch model.
 
+Optional maintainer tooling. Nothing else in Comparanda depends on it; you only
+need it if you keep domain data in a fork of this repository and want commits
+split between a `methodology` branch (system code) and a `main` branch
+(system code plus domain data).
+
 Inspect staged paths, classify each as methodology vs domain, and route the
 commit to the correct branch. Mixed-path commits are rejected in strict mode.
 

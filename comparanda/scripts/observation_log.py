@@ -200,7 +200,7 @@ def read_schema_rationale(log_path: Path) -> list[ObservationEntry]:
 
 
 def _extract_pmid(paper_id: str) -> str | None:
-    """Extract PMID (trailing digits) from a paper_id like 'Bozina_2022_34780066'."""
+    """Extract PMID (trailing digits) from a paper_id like 'Smith_2022_12345678'."""
     parts = paper_id.rsplit("_", 1)
     if len(parts) == 2 and parts[1].isdigit() and len(parts[1]) >= 7:
         return parts[1]
@@ -208,7 +208,7 @@ def _extract_pmid(paper_id: str) -> str | None:
 
 
 def _extract_author_year(paper_id: str) -> tuple[str, str] | None:
-    """Extract (author, year) from a paper_id like 'Bozina_2022_34780066'."""
+    """Extract (author, year) from a paper_id like 'Smith_2022_12345678'."""
     parts = paper_id.split("_")
     if len(parts) >= 2:
         author = parts[0].lower()
@@ -300,7 +300,7 @@ def main() -> None:
         help="Query entries relevant to a paper extraction",
     )
     q.add_argument("--log", required=True, help="Path to log.jsonl")
-    q.add_argument("--paper-id", required=True, help="Paper ID (e.g. Bozina_2022_34780066)")
+    q.add_argument("--paper-id", required=True, help="Paper ID (e.g. Smith_2022_12345678)")
 
     s = sub.add_parser("summary", help="Show log summary")
     s.add_argument("--log", required=True, help="Path to log.jsonl")

@@ -1,10 +1,15 @@
-# Data files (large PDFs and spreadsheets) — anchored to root only.
-# Without the leading slash, this would match any "data/" dir at any depth,
-# including fork-only `comparanda/projects/<domain>/data/` (bundles, gold
-# standard, PDFs). Anchored so forks can populate per-domain data trees.
+# Data files (large PDFs and spreadsheets) — anchored to the repository root.
+# Without the leading slash this would match any "data/" directory at any
+# depth, including per-domain `comparanda/projects/<domain>/data/` trees that a
+# fork may choose to track.
 /data/
 
-# Source data archive
+# Local-only reference material; never published.
+/internal/
+
+# Python
+__pycache__/
+*.pyc
 
 # macOS
 .DS_Store

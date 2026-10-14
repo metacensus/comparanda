@@ -1,4 +1,4 @@
-"""Render a reviewer-facing eval explainer (review note).
+"""Render a reviewer-facing eval explainer.
 
 `score.json` carries the gates and the accuracy decomposition as bare
 counters, and the per-finding semantic reasoning lives in a separate file
@@ -9,7 +9,7 @@ that: per paper, every deterministic numeric comparison with its outcome,
 every gold finding with its semantic score AND the eval agent's reasoning
 inline, and the gates in plain language — including whether a gate actually
 ENGAGED (a gate that compared nothing is reported as NOT ENGAGED, never as
-passed — R3-01).
+passed).
 
 Usage (after harness.eval.score has produced score.json):
 

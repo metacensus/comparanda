@@ -27,7 +27,7 @@ from harness.eval.identity import EntityResolver, load_crosswalk_config
 
 # High-leverage numeric fields whose uncertainty matters most for pooling.
 # Mirror of comparanda/scripts/review/review_queue.py:32 (HIGH_LEVERAGE) — keep the
-# two sets in sync (review note).
+# two sets in sync.
 HIGH_LEVERAGE = {
     "effect_estimate", "effect_size", "effect_size_value",
     "ci_lower", "effect_size_ci_lower",
@@ -39,7 +39,7 @@ HIGH_LEVERAGE = {
 
 
 def _certainty_profile(rows: list[dict]) -> dict:
-    """Per-paper certainty profile from each row's `provenance` (review note).
+    """Per-paper certainty profile from each row's `provenance`.
 
     Scans every provenance entry (`{field: {extraction_certainty, ...}}`):
       - clean / ambiguous: a provenance entry on a non-null field with that tag.
@@ -99,7 +99,7 @@ class PaperEval:
     field_fill_rates: dict[str, float] = field(default_factory=dict)
     identity_dim_completeness: dict[str, float] = field(default_factory=dict)
     normalization: dict = field(default_factory=dict)  # detailed normalization status
-    certainty_profile: dict = field(default_factory=dict)  # review note
+    certainty_profile: dict = field(default_factory=dict)
     flags: list[str] = field(default_factory=list)
 
 
@@ -117,7 +117,7 @@ class AggregateEval:
     papers_below_50pct: list[str]  # paper_ids with < 50% row coverage
     papers_below_70pct: list[str]  # paper_ids with < 70% row coverage
     schema_contradictions: list[dict] = field(default_factory=list)  # required fields with <100% fill
-    certainty_rollup: dict = field(default_factory=dict)  # corpus certainty totals (review note)
+    certainty_rollup: dict = field(default_factory=dict)  # corpus certainty totals
     composite_score: float = 0.0
 
 
@@ -250,13 +250,13 @@ def _load_schema_field_metadata(schema_dir: Path | None = None) -> dict[str, dic
 
     Without `--schema-dir` there is no domain-agnostic way to locate the schema
     (the old `<domain>` placeholder path never resolved and silently disabled
-    schema-contradiction detection — review note). Emit a loud warning and
+    schema-contradiction detection). Emit a loud warning and
     return {} rather than guessing.
     """
     if schema_dir is None:
         print(
             "WARNING: schema metadata unavailable — pass --schema-dir to enable "
-            "schema-contradiction detection. Skipping (review note).",
+            "schema-contradiction detection. Skipping.",
             file=sys.stderr,
         )
         return {}
@@ -264,7 +264,7 @@ def _load_schema_field_metadata(schema_dir: Path | None = None) -> dict[str, dic
     if not schema_dir.exists():
         print(
             f"WARNING: schema dir {schema_dir} does not exist — skipping "
-            f"schema-contradiction detection (review note).",
+            f"schema-contradiction detection.",
             file=sys.stderr,
         )
         return {}
@@ -378,7 +378,7 @@ def evaluate_paper(
     elif row_coverage < 0.7:
         flags.append(f"WARNING: row coverage {row_coverage:.0%} < 70%")
     if row_coverage > 1.5:
-        # review note (design decision): richer-than-gold extraction is
+        # Richer-than-gold extraction is
         # acceptable — the gold may be incomplete. Coverage is still capped at
         # 1.0 for scoring, but this is a neutral review note, not a penalty.
         flags.append(
@@ -428,7 +428,7 @@ def evaluate_all(
     schema_dir: Path | None = None,
 ) -> AggregateEval:
     """Evaluate all extracted papers against gold standard."""
-    # Gold-standard schema config (review note); defaults preserve legacy shape.
+    # Gold-standard schema config; defaults preserve legacy shape.
     eval_config_dir = document_id_map_path.parent
     gold_config = load_gold_config(eval_config_dir)
     doc_col = gold_config.document_id_column
@@ -442,8 +442,7 @@ def evaluate_all(
     crosswalk_config = load_crosswalk_config(eval_config_dir)
     resolver = EntityResolver.build(gold_standard_path, crosswalk_config)
     resolver.entity_fields = tuple(gold_config.entity_columns)
-    resolver.extraction_fields = tuple(gold_config.extraction_entity_fields)  # R3-13
-
+    resolver.extraction_fields = tuple(gold_config.extraction_entity_fields)
     document_id_values = set(document_id_map.values())
     papers = []
     for extraction_file in sorted(extractions_dir.glob("*.jsonl")):
@@ -519,7 +518,7 @@ def evaluate_all(
     avg_fill_rates = {f: sum(rates) / len(rates) for f, rates in all_fill_rates.items()}
     schema_contradictions = _compute_schema_contradictions(avg_fill_rates, schema_meta) if schema_meta else []
 
-    # Corpus certainty rollup (review note): sum the per-paper profiles.
+    # Corpus certainty rollup: sum the per-paper profiles.
     certainty_rollup = {
         k: sum(p.certainty_profile.get(k, 0) for p in papers)
         for k in ("clean", "ambiguous", "abstained", "untagged",
@@ -528,7 +527,7 @@ def evaluate_all(
 
     # Aggregate mode: completeness metrics only. finding_accuracy requires detailed
     # mode (the eval agent reasoning about matched rows). Use the single gating
-    # composite (review note) in aggregate-only mode (finding_accuracy=None) so
+    # composite in aggregate-only mode (finding_accuracy=None) so
     # this module and the gate never compute different formulas.
     composite = gating_composite(
         row_coverage=mean_row_cov,
@@ -565,7 +564,7 @@ def format_report(eval_result: AggregateEval) -> str:
                  f"(aggregate-only, capped at 0.50 — excludes finding_accuracy)")
     lines.append("")
 
-    # Certainty rollup (review note)
+    # Certainty rollup
     cr = eval_result.certainty_rollup
     if cr:
         hl_total = cr.get("high_leverage_total", 0)

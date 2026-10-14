@@ -52,7 +52,7 @@ Produce exactly this JSON structure (no markdown fencing, no commentary outside 
   "schema_version": "v003",
   "papers_extracted": 4,
   "total_rows": 126,
-  "row_counts_by_paper": {"Froehlich": 24, "Bozina": 14},
+  "row_counts_by_paper": {"Smith2021": 24, "Jones2019": 14},
   "ma_critique_status": "ready | not_ready | not_yet_run",
   "latest_commit": "80cafec Phase 3.5: MA critique — READY",
   "recent_commits": ["80cafec Phase 3.5: ...", "a1b2c3d Phase 3a: ..."],

@@ -1,4 +1,4 @@
-"""Per-domain gold-standard schema configuration (review note / R2-03).
+"""Per-domain gold-standard schema configuration.
 
 The eval pipeline used to hardcode one gold standard's shape: sheet name,
 document-id and entity column literals, the twelve projected gold fields, the
@@ -7,14 +7,16 @@ value-column map, the effect/outcome column names — and, worst of all,
 matcher (`value_diff._STOPWORDS`). A new domain whose spreadsheet used different
 headers got silent nulls, which made the value gate vacuously clean.
 
-This module centralizes that schema into one dataclass with defaults that
-exactly preserve the legacy behavior, loadable per-domain from
-`eval_config/gold_config.json`. The defaults ship only **generic English
+This module centralizes that schema into one dataclass, loadable per-domain
+from `eval_config/gold_config.json`. The built-in defaults describe an
+example spreadsheet layout (an "Individual Outcomes" sheet keyed by
+"DocumentID" with "Effect Size" / CI / count columns); override any of them
+in gold_config.json to match your own gold standard. The defaults ship only **generic English
 stopwords** — no domain vocabulary — so the outcome-narrowing step never
 deletes the tokens that distinguish outcomes ("math posttest" vs
 "reading posttest").
 
-It also loads `eval_config/gold_adjudications.json` (review note adjudication
+It also loads `eval_config/gold_adjudications.json` (adjudication
 path): per-mismatch resolutions (`gold_error` | `extraction_error`) with
 mandatory evidence for any overruled gold value, so the value gate stays hard
 while the gold standard stays corrigible.
@@ -27,7 +29,8 @@ from dataclasses import dataclass, field, fields as dataclass_fields
 from pathlib import Path
 
 
-# The twelve gold fields previously projected inline in prepare_comparison.py.
+# Example layout: the gold fields projected into each comparison row.
+# Override with `gold_fields` in gold_config.json.
 _DEFAULT_GOLD_FIELDS = (
     "Entity ID", "Composite Category ID", "Outcome Description",
     "Grade Clean", "Outcome Category", "Effect Size",
@@ -36,7 +39,8 @@ _DEFAULT_GOLD_FIELDS = (
     "Comparison Type",
 )
 
-# The legacy DEFAULT_COLUMN_MAP from value_diff.py (gold column -> core field).
+# Example layout: gold column -> extraction core field compared numerically.
+# Override with `value_column_map` in gold_config.json.
 _DEFAULT_VALUE_COLUMN_MAP = {
     "Effect Size": "effect_estimate",
     "Lower 95 CI": "ci_lower",
@@ -48,7 +52,7 @@ _DEFAULT_VALUE_COLUMN_MAP = {
 # leaked into value_diff._STOPWORDS ("posttest", "standardized", "early",
 # "achievement", "math", "reading", "score", "scores", "test") are deliberately
 # absent — they would collapse the outcome-narrowing step on an education
-# corpus (review note defect 3).
+# corpus.
 _DEFAULT_STOPWORDS = (
     "the", "a", "an", "of", "and", "or", "in", "on", "for", "with", "to",
     "at", "by",
@@ -59,7 +63,11 @@ _VALID_RESOLUTIONS = {"gold_error", "extraction_error"}
 
 @dataclass
 class GoldConfig:
-    """The per-domain gold-standard shape. Defaults preserve legacy behavior."""
+    """The per-domain gold-standard shape.
+
+    Defaults describe an example spreadsheet layout; every field can be
+    overridden per domain in `eval_config/gold_config.json`.
+    """
 
     sheet: str = "Individual Outcomes"
     document_id_column: str = "DocumentID"
@@ -75,7 +83,7 @@ class GoldConfig:
     stopwords: frozenset[str] = field(
         default_factory=lambda: frozenset(_DEFAULT_STOPWORDS)
     )
-    # R3-13: extraction-side fields tried (in order) when resolving an
+    # Extraction-side fields tried (in order) when resolving an
     # extraction row to an entity token. The legacy default assumes the schema
     # named its entity axis entity_raw/_canonical — a domain whose discovered
     # schema uses a different axis (e.g. intervention_raw for a mixed-design
@@ -84,7 +92,7 @@ class GoldConfig:
     extraction_entity_fields: tuple[str, ...] = (
         "entity_canonical_id", "entity_canonical", "entity_raw",
     )
-    # R3-15: ordered (gold_column, extraction_field) narrowing pairs applied
+    # Ordered (gold_column, extraction_field) narrowing pairs applied
     # by the value-diff BEFORE nearest-effect candidate selection. Each pair
     # soft-narrows the candidate pool to rows whose extraction_field text
     # token-overlaps the gold column's text (no overlap anywhere → pool kept).
@@ -152,7 +160,7 @@ def load_gold_config(eval_config_dir: Path) -> GoldConfig:
 
 
 def load_adjudications(eval_config_dir: Path) -> list[dict]:
-    """Load `gold_adjudications.json` (review note adjudication path).
+    """Load `gold_adjudications.json`.
 
     Shape::
 
@@ -207,6 +215,6 @@ def load_adjudications(eval_config_dir: Path) -> list[dict]:
                 raise ValueError(
                     f"adjudication[{i}] resolution='gold_error' requires non-empty "
                     f"evidence.quote and evidence.location — an overruled gold value "
-                    f"must carry documented evidence (review note)."
+                    f"must carry documented evidence."
                 )
     return entries

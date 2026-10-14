@@ -1,4 +1,4 @@
-"""Gold standard loader — reads the gold-standard gold-standard workbook.
+"""Gold standard loader — reads a gold-standard spreadsheet.
 
 The gold standard is the human-verified extraction (a per-domain spreadsheet of
 rows x columns across the studies in the corpus). This module loads and
@@ -20,12 +20,12 @@ def load_gold_standard(
     sheet_name: str = "Individual Outcomes",
     gold_config: GoldConfig | None = None,
 ) -> pd.DataFrame:
-    """Load the gold standard individual outcomes sheet.
+    """Load the gold-standard sheet (default name is the example layout's
+    "Individual Outcomes"; override via `gold_config.sheet`).
 
     When `gold_config` is supplied, its `sheet` overrides `sheet_name` and the
     configured `document_id_column` is required to be present — a missing
-    document-id column is a loud error rather than silent downstream nulls
-    (review note).
+    document-id column is a loud error rather than silent downstream nulls.
     """
     if gold_config is not None:
         sheet_name = gold_config.sheet
@@ -40,7 +40,7 @@ def load_gold_standard(
             raise ValueError(
                 f"Gold standard sheet '{sheet_name}' is missing the configured "
                 f"document_id_column '{doc_col}'. Present columns: {list(df.columns)} "
-                f"(review note: loud column validation, not silent nulls)."
+                f"(loud column validation, not silent nulls)."
             )
 
     return df
@@ -106,7 +106,7 @@ def _num(v) -> float | None:
 
 
 def check_gold_consistency(df: pd.DataFrame, gold_config: GoldConfig) -> list[dict]:
-    """Internal-consistency WARNINGS on the gold standard itself (review note).
+    """Internal-consistency WARNINGS on the gold standard itself.
 
     These are gold-side warnings, never errors — a wrong gold value is as
     dangerous as a wrong extraction, but the gold is corrigible, so we surface

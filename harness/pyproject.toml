@@ -3,12 +3,15 @@ name = "harness"
 version = "0.1.0"
 description = "Calibration harness for Comparanda — evaluates and improves agent instructions"
 requires-python = ">=3.12"
+authors = [{ name = "MetaCensus" }]
 dependencies = [
     "pandas>=2.2",
     "openpyxl>=3.1",
-    "anthropic>=0.89.0",
     "pyyaml>=6.0.3",
 ]
+
+[project.urls]
+Repository = "https://github.com/metacensus/comparanda"
 
 [project.scripts]
 harness-commit = "harness.git_wrapper.commit:main"

@@ -450,7 +450,7 @@ def _dash_variants(q: str):
     (verified: '2022-23' in quote vs '2022–23' in PDF). search_for matches
     against the page's actual glyphs, so we must try the dash the PDF holds.
     Also collapses spaces around '+'/'>' so "c.1905 + 1G>A" matches
-    "c.1905+1G>A" (Joerger variant-name re-spacing).
+    "c.1905+1G>A" (extractors often re-space variant names).
     """
     seen = set()
 
@@ -1849,8 +1849,8 @@ def compute_review_units(queue_items: list, manifests_by_paper: dict,
 
         # 1. inferred_high_leverage -> read_item, MERGED across fields that share
         #    the same row + sentence (same page + location). Two fields read from
-        #    one sentence (e.g. Joerger row-6 n_total & n_events on p.7
-        #    discussion.md) become ONE multi-member unit; a different sentence in
+        #    one sentence (e.g. row 6's n_total and n_events both quoted from the
+        #    same sentence on p.3 of discussion.md) become ONE multi-member unit; a different sentence in
         #    the same paper stays a separate unit.
         if tier == "inferred_high_leverage":
             ri = item.get("row_index")

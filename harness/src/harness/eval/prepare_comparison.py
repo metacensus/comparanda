@@ -149,7 +149,7 @@ def prepare_comparison(
 ) -> dict:
     """Prepare a structured gold-vs-extraction comparison for one paper."""
     # Gold-standard schema config lives alongside the document id map in
-    # eval_config/ (review note). Defaults preserve legacy behavior.
+    # eval_config/. Defaults preserve legacy behavior.
     eval_config_dir = document_id_map_path.parent
     gold_config = load_gold_config(eval_config_dir)
     gold_config_loaded = (eval_config_dir / "gold_config.json").exists()
@@ -219,8 +219,7 @@ def prepare_comparison(
     crosswalk_config = load_crosswalk_config(eval_config_dir)
     resolver = EntityResolver.build(gold_standard_path, crosswalk_config)
     resolver.entity_fields = tuple(gold_config.entity_columns)
-    resolver.extraction_fields = tuple(gold_config.extraction_entity_fields)  # R3-13
-
+    resolver.extraction_fields = tuple(gold_config.extraction_entity_fields)
     # Resolve every extraction row to a canonical token.
     ext_by_token: dict[str, list[int]] = {}
     ext_tokens: list[str | None] = []

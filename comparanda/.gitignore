@@ -1,8 +1,6 @@
 # Data files (large PDFs and spreadsheets)
 /data/
 
-# Source data archive
-
 # Python
 __pycache__/
 *.pyc
@@ -22,10 +20,9 @@ projects/*/extractions/*.provenance-failed.json
 projects/*/extractions/.staging/
 
 # Runtime caches
-# NOTE: .rag_cache/ is NOT gitignored — it costs money to rebuild (OpenAI API).
-# Preserve it across branches and worktrees.
+.rag_cache/
 
-# v1 runtime output (kept for reference during migration)
+# Legacy in-repo runtime output locations (v1 layout)
 /surveys/
 /extractions/
 /normalization/
@@ -36,10 +33,10 @@ projects/*/extractions/.staging/
 /iterations/trajectory.json
 /iterations/versions/
 
-# Per-domain application data — populated only in domain forks (not canonical).
-# Use /projects/* (not /projects/) so forks can re-include a specific domain via
-# !/projects/<domain>/ on their `main` branch. Git refuses to re-include children
-# of a fully-excluded directory, so the glob form is required for fork overrides.
-# The fork's !-override never lands on `methodology`, so methodology PRs to
-# canonical never carry domain-specific gitignore drift.
+# Per-domain project data. This repository ships system code only; domain data
+# normally lives in a separate project directory (see docs/domain-superproject.md).
+# If you instead keep domain data in a fork of this repository, re-include it in
+# your fork with a line such as `!/projects/<domain>/`. The pattern is
+# `/projects/*` rather than `/projects/` because Git cannot re-include children
+# of a fully excluded directory.
 /projects/*

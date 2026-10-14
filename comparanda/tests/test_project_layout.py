@@ -7,7 +7,7 @@ from scripts.project_layout import LayoutError, ProjectLayout
 
 
 def test_loads_flattened_external_project_config(tmp_path: Path) -> None:
-    project = tmp_path / "comparanda-<domain>"
+    project = tmp_path / "comparanda-example"
     project.mkdir()
     (project / "comparanda-project.json").write_text(
         json.dumps(

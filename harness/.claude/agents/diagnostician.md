@@ -157,7 +157,7 @@ Produce the structured output (see Output Format). Rank findings by expected imp
 
 Write this JSON to `<iterations-dir>/iter_{N}/diagnoses/{slug}.json`, where `{slug}` is
 a short descriptive identifier for the finding you diagnosed (e.g.
-`mcleod_count_population`, `extraction_qc_phase_skip`). Use one file per
+`smith_count_population`, `extraction_qc_phase_skip`). Use one file per
 diagnostician run — never a shared flat filename. The harness routinely spawns
 one diagnostician per finding in parallel; a per-finding path ensures concurrent
 runs in the same iteration do not overwrite each other.

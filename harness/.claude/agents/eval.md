@@ -1,7 +1,7 @@
 ---
 name: eval
 model: opus
-description: Evaluates Comparanda extractions against the gold standard benchmark. Two modes — aggregate (fast completeness metrics) and detailed (semantic accuracy evaluation with explanations). The accuracy adjudicator runs the STRONGEST model (review note): it must not be weaker than the extractor it grades.
+description: Evaluates Comparanda extractions against the gold standard benchmark. Two modes — aggregate (fast completeness metrics) and detailed (semantic accuracy evaluation with explanations). The accuracy adjudicator runs the STRONGEST model: it must not be weaker than the extractor it grades.
 tools: [Read, Write, Bash, Glob, Grep]
 ---
 
@@ -106,7 +106,7 @@ uv run python -m harness.eval.claim_faithfulness \
 
    **Field fill rates** — fraction of non-null values for key extraction fields, split by required vs optional.
 
-4. **Aggregate mode does NOT compute finding_accuracy.** The aggregate composite maxes at 0.7. finding_accuracy requires detailed mode.
+4. **Aggregate mode does NOT compute finding_accuracy.** The aggregate-only composite is capped at 0.50 (`AGGREGATE_ONLY_CAP`). finding_accuracy requires detailed mode.
 
 ## Detailed Mode (Accuracy Evaluation)
 
@@ -400,7 +400,7 @@ This produces a structured JSON: each gold row is paired against extraction cand
    transform basis; do not hide adjudication logic only in the script.
 
    **Normalization context.** Normalization artifacts live under
-   `../comparanda/{project_root}/normalization/`. Use these tables as
+   `<project-root>/normalization/`. Use these tables as
    optional evidence for aliases, canonical ids, and resolver misses. Cite
    whether an identity match came from extraction fields, deterministic
    resolver/crosswalk, normalization table, source/provenance text, or your
@@ -456,7 +456,7 @@ This produces a structured JSON: each gold row is paired against extraction cand
    ```
    On clean papers (no unmatched rows or no low-scored gold), set `comparisons_made: 0` and a one-line `sweep_result` saying so.
 
-6. **Write the structured per-finding scores file (review note) — do not hand-aggregate.** For every paper you evaluate, emit one record per gold row to `<iterations-dir>/iter_{N}/finding_scores.json`.
+6. **Write the structured per-finding scores file — do not hand-aggregate.** For every paper you evaluate, emit one record per gold row to `<iterations-dir>/iter_{N}/finding_scores.json`.
 
    The legacy fields remain mandatory because `harness.eval.score` recomputes
    `mean(completeness * accuracy)` from them:
@@ -574,8 +574,7 @@ This produces a structured JSON: each gold row is paired against extraction cand
    `proposed_gold_adjudications` array — `{document_id, gold_index, field,
    resolution: "gold_error", evidence: {quote, location, page}, note}`. Do NOT
    write `<eval-config-dir>/gold_adjudications.json` yourself: adjudication
-   is a deliberate human/orchestrator action, mirrored in
-   `benchmark/MODIFICATIONS.md`. Once applied, the value-diff excludes that
+   is a deliberate human/orchestrator action. Once applied, the value-diff excludes that
    mismatch from the hard gate and reports it separately.
 
    **Denominator rule (mandatory for trajectory comparability):** Every gold row counts in the denominator regardless of what it reports — effect-size rows, count-only rows (subject counts, event counts without an OR/RR), reference/control rows, and threshold-stratified rows are all included. Do not down-weight or exclude rows because "there's no effect size to evaluate." Down-weighting silently shifts the denominator and produces spurious regression signals across iterations: a paper whose extraction is byte-for-byte identical can appear to "regress" simply because a later eval pass applied a stricter denominator. If you believe a particular gold row is unevaluable (e.g., gold itself is malformed), score it 0 explicitly and explain why — do not drop it from the denominator.
@@ -611,7 +610,7 @@ This produces a structured JSON: each gold row is paired against extraction cand
 
    **Diff-aware pass-through (subsequent iterations).** Read the prior detailed eval at `<iterations-dir>/iter_{N-1}/detailed_eval.json` if present. For each paper, compare the prior `raw` aggregate metrics against the current iteration's `raw`. If a paper's raw metrics are unchanged within tolerance (extraction file unmodified, or differences ≤ 1 row per metric) AND the prior eval has a populated `metric_adjustments` block, pass through the prior rationale verbatim — only re-audit metrics whose raw value materially changed. Document carried-forward rationales with `"passed_through_from": "iter_{N-1}"` so the diagnostician can distinguish fresh judgments from inherited ones. New papers (no prior eval) and papers with materially-changed raw metrics get a full audit. This mirrors the extractor's prior-extraction pass-through optimization — avoid re-doing identical reasoning when the underlying data hasn't changed.
 
-8. **Compute the composite IN CODE — do not self-compute it (review note/F10/R2-02).** The headline composite that drives keep/revert is computed by `harness.eval.score`, not by you. You supply your per-finding scores FILE (step 6); the module recomputes finding_accuracy from it, validates the denominators, and combines it deterministically with the structural metrics and the deterministic value-diff:
+8. **Compute the composite IN CODE — do not self-compute it.** The headline composite that drives keep/revert is computed by `harness.eval.score`, not by you. You supply your per-finding scores FILE (step 6); the module recomputes finding_accuracy from it, validates the denominators, and combines it deterministically with the structural metrics and the deterministic value-diff:
 
    ```bash
   uv run python -m harness.eval.score \
@@ -625,7 +624,7 @@ This produces a structured JSON: each gold row is paired against extraction cand
      --output <iterations-dir>/iter_{N}/score.json
    ```
 
-   The module reweights toward accuracy (finding_accuracy carries the plurality, 0.50), caps row coverage at 1.0, runs the legacy deterministic numeric value-diff as a diagnostic, and, when every finding has structured adjudication fields, uses `harness.eval.semantic_value_gate` as the active value gate. It emits `value_gate_source`, active `value_mismatch_count` + `value_gate_passed`, legacy deterministic mismatch diagnostics, **plus the recall gate** `unmatched_gold_with_values` + `coverage_gate_passed` (review note: any gold finding with values and no extraction counterpart blocks convergence — 100% recall vs gold is required) **plus an `accuracy_decomposition` block** showing what was confirmed deterministically vs judged semantically, so the headline number is auditable by a reviewer. **Any semantic value mismatch or invalid declared transform is a hard convergence gate** — a non-zero active count blocks convergence regardless of score. In aggregate-only mode, the composite is explicitly capped and flagged `aggregate_only` so it cannot set the best-watermark or satisfy convergence. The legacy `--finding-accuracy <float>` form still exists as a degraded mode flagged `unvalidated_scalar` — it cannot satisfy convergence; always prefer `--finding-scores`.
+   The module reweights toward accuracy (weights in `harness/src/harness/eval/composite.py`: row_coverage 0.30, entity_coverage 0.15, field_fill_rate 0.05, finding_accuracy 0.50 — the plurality), caps row coverage at 1.0, runs the legacy deterministic numeric value-diff as a diagnostic, and, when every finding has structured adjudication fields, uses `harness.eval.semantic_value_gate` as the active value gate. It emits `value_gate_source`, active `value_mismatch_count` + `value_gate_passed`, legacy deterministic mismatch diagnostics, **plus the recall gate** `unmatched_gold_with_values` + `coverage_gate_passed` (any gold finding with values and no extraction counterpart blocks convergence — 100% recall vs gold is required) **plus an `accuracy_decomposition` block** showing what was confirmed deterministically vs judged semantically, so the headline number is auditable by a reviewer. **Any semantic value mismatch or invalid declared transform is a hard convergence gate** — a non-zero active count blocks convergence regardless of score. In aggregate-only mode, the composite is explicitly capped and flagged `aggregate_only` so it cannot set the best-watermark or satisfy convergence. The legacy `--finding-accuracy <float>` form still exists as a degraded mode flagged `unvalidated_scalar` — it cannot satisfy convergence; always prefer `--finding-scores`.
 
    Your `agent_adjusted` metrics (step 7) are **report-only**: they appear in the eval report for the diagnostician's context but are NOT inputs to the gating composite. If a structural metric is genuinely misleading, say so in your reasoning — but the gate runs on raw + value-diff + your finding_accuracy, not on numbers you can move.
 
@@ -659,7 +658,7 @@ Write the evaluation report to `<iterations-dir>/iter_{N}/eval_report.json`:
   "iteration": 1,
   "timestamp": "2026-04-07T...",
   "composite_score": 0.588,
-  "composite_note": "headline score uses agent_adjusted metrics where present, raw heuristics otherwise; finding_accuracy null in aggregate-only mode caps at 0.7",
+  "composite_note": "headline score is computed in code by harness.eval.score from raw metrics + finding_accuracy; agent_adjusted metrics are report-only; finding_accuracy null in aggregate-only mode caps at 0.50",
   "component_scores": {
     "row_coverage": 0.97,
     "finding_accuracy": null,

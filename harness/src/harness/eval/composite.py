@@ -1,4 +1,4 @@
-"""Code-computed gating composite (review note, F10).
+"""Code-computed gating composite.
 
 Before this module the headline composite that drives keep/revert was
 computed *by the eval LLM agent*, which also emitted `agent_adjusted`
@@ -11,7 +11,7 @@ module computes the composite deterministically in Python from:
 
 The agent may still *report* `agent_adjusted` metrics, but they do not
 silently replace the raw inputs to the gate. Weights are re-balanced toward
-value-correctness (review note: accuracy is principle #1 but was outweighed
+value-correctness (accuracy is principle #1 but was outweighed
 2:1 by counting terms).
 """
 
@@ -20,7 +20,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 
-# Re-weighted toward accuracy (F10). The value-correctness block
+# Re-weighted toward accuracy. The value-correctness block
 # (finding_accuracy) carries the plurality; coverage is necessary but
 # secondary. When finding_accuracy is unavailable (aggregate-only) the
 # composite is explicitly capped and flagged so it cannot set a watermark.
@@ -40,7 +40,7 @@ class CompositeResult:
     value_mismatch_count: int
     value_gate_passed: bool     # False blocks convergence regardless of score
     components: dict
-    # review note — the 100% recall gate. A gold finding that reports numeric
+    # The 100% recall gate. A gold finding that reports numeric
     # values but paired to NO extraction candidate is a coverage hole the
     # mismatch count cannot see (value_diff skips candidate-less rows). The
     # coverage gate is hard for CONVERGENCE (recall against gold must be
@@ -63,10 +63,11 @@ def gating_composite(
 
     `finding_accuracy is None` → aggregate-only mode: the accuracy term is
     omitted and the result is capped, so an un-judged iteration can never
-    look as good as a judged one (fixes the F10 watermark-pollution bug and
-    the F3/F11 finding_accuracy=1.0 default).
+    look as good as a judged one (previously an aggregate-only composite
+    could set the best-score watermark, and a missing finding_accuracy
+    defaulted to 1.0).
     """
-    row_c = min(max(row_coverage, 0.0), 1.0)          # cap over-extraction (F10)
+    row_c = min(max(row_coverage, 0.0), 1.0)          # cap over-extraction
     ent_c = min(max(entity_coverage, 0.0), 1.0)
     fill = min(max(field_fill_rate, 0.0), 1.0)
 

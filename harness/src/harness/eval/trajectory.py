@@ -19,7 +19,7 @@ class IterationRecord:
     row_coverage: float
     entity_coverage: float
     # finding_accuracy is None when detailed mode has NOT been run this
-    # iteration (review note: the old `1.0 if not yet run` default flattered
+    # iteration (the old `1.0 if not yet run` default flattered
     # un-judged iterations and biased keep/revert toward "keep").
     finding_accuracy: float | None
     field_fill_rate: float
@@ -32,7 +32,7 @@ class IterationRecord:
     rationale: str
     overfitting_test_passed: bool | None = None
     papers_evaluated: list[str] = field(default_factory=list)
-    # --- audit fields (F3/F7/F21): make every keep/revert reproducible ---
+    # --- Audit fields: make every keep/revert reproducible ---
     composite_mode: str = "full"          # "full" | "aggregate_only"
     raw_composite: float | None = None     # code-computed from raw metrics
     adjusted_composite: float | None = None  # if agent_adjusted reported
@@ -43,7 +43,7 @@ class IterationRecord:
     gold_hash: str | None = None           # pins composite to a gold version
     papers_detailed_this_iter: list[str] = field(default_factory=list)
     attribution_confounded: bool = False   # True if schema changed mid-iteration
-    # --- round-2 audit fields ---
+    # --- Round-2 audit fields ---
     # 100% recall gate: gold findings with values but no extraction match.
     unmatched_gold_with_values: int = 0
     coverage_gate_passed: bool = True
@@ -67,9 +67,9 @@ class Trajectory:
 
     @property
     def _full_iters(self) -> list[IterationRecord]:
-        # Only full-mode iterations are comparable watermarks (review note):
-        # an aggregate-only composite must not set best/converge. R2-07:
-        # attribution-confounded iterations (schema changed mid-iteration)
+        # Only full-mode iterations are comparable watermarks:
+        # an aggregate-only composite must not set best/converge.
+        # Attribution-confounded iterations (schema changed mid-iteration)
         # are likewise excluded — CLAUDE.md Step 8 said so, the code didn't.
         return [
             r for r in self.iterations
@@ -92,8 +92,8 @@ class Trajectory:
 
     def is_converged(self, window: int = 3, threshold: float | None = None) -> bool:
         """Plateau over the last N *full-mode, unconfounded* iterations, with
-        no open value gate (review note/F10/F19) and no open recall gate
-        (R2-03: a gold finding with values but no extraction match blocks
+        no open value gate and no open recall gate
+        (a gold finding with values but no extraction match blocks
         convergence — 100% recall against gold is a hard requirement).
         The plateau threshold defaults to the noise-calibrated delta when
         sigma is known, else 0.01."""
@@ -112,7 +112,7 @@ class Trajectory:
         scores = [r.composite_score for r in recent]
         return max(scores) - min(scores) < threshold
 
-    # --- R2-07: noise-calibrated minimum effect size for keep/revert ---
+    # --- Noise-calibrated minimum effect size for keep/revert ---
 
     @property
     def sigma(self) -> float | None:
@@ -136,7 +136,7 @@ class Trajectory:
     def meets_delta(self, composite_before: float, composite_after: float,
                     floor: float = 0.01) -> bool:
         """Keep-eligibility: improvement must exceed the noise-calibrated
-        minimum effect size. 'Any amount' is not enough (review note)."""
+        minimum effect size. 'Any amount' is not enough."""
         return (composite_after - composite_before) >= self.delta_required(floor)
 
     def instruction_size_trend(self) -> list[int]:

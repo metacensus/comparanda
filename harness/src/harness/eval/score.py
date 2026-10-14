@@ -1,6 +1,6 @@
 """Compute the gating composite for an iteration — in code, not by the LLM.
 
-Wiring for review note/F10/F21: the eval agent no longer self-computes the
+The eval agent no longer self-computes the
 headline composite. It runs aggregate metrics, runs the deterministic
 value-diff over the prepared comparisons, supplies its detailed-mode
 finding_accuracy (a number it reasons to, per paper, on the *pairing* — not
@@ -53,7 +53,7 @@ def load_finding_scores(
 ) -> tuple[float, dict]:
     """Validate a per-finding scores file and recompute finding_accuracy IN CODE.
 
-    review note: the gate's plurality input must not be a bare self-reported
+    The gate's plurality input must not be a bare self-reported
     LLM float. The eval agent emits one record per gold row —
     {gold_index, completeness, accuracy, extraction_index|null, reasoning} —
     and this function recomputes the mean of completeness×accuracy, enforcing
@@ -283,7 +283,7 @@ def compute_score(
             "reason": cmp.get("reason"),
         }
 
-    # review note: finding_accuracy is recomputed in code from per-finding
+    # finding_accuracy is recomputed in code from per-finding
     # records whenever a finding-scores file is supplied. A bare scalar is a
     # flagged degraded mode that cannot satisfy convergence.
     finding_scores_summary: dict | None = None
@@ -359,7 +359,7 @@ def compute_score(
 
     sizes = measure_instruction_sizes(agents_dir) if agents_dir else {}
 
-    # ----- Gate-vacuity guard (review note) -----------------------------------
+    # ----- Gate-vacuity guard -----------------------------------
     # The value/recall gates pass when their counts are zero — which is also
     # what happens when the comparison machinery never engaged (wrong or
     # missing gold_config column names → nothing compared → vacuous pass).
@@ -371,7 +371,7 @@ def compute_score(
     )
     if gold_rows_by_paper and len(value_map_columns_missing) == len(gold_config.value_column_map):
         raise ValueError(
-            "Gate-vacuity check (review note): NONE of the gold_config "
+            "Gate-vacuity check: NONE of the gold_config "
             f"value_column_map columns {sorted(gold_config.value_column_map)} "
             "exist in the gold-standard sheet — the deterministic value gate "
             "and recall gate would pass vacuously. Fix eval_config/gold_config.json "
@@ -383,7 +383,7 @@ def compute_score(
         and total_unmatched_gold == 0
     )
 
-    # Gold-side internal consistency (review note): the gold standard is
+    # Gold-side internal consistency: the gold standard is
     # corrigible, so screen it with the same deterministic checks the
     # extraction validator applies to extraction rows. Warnings, never gates.
     gold_df = load_gold_standard(gold_standard, gold_config=gold_config)
@@ -419,7 +419,7 @@ def compute_score(
         ),
         "value_gate_source": value_gate_source,
         "value_gate_passed": result.value_gate_passed,
-        # R3-01: a gate that never engaged must be distinguishable from a gate
+        # A gate that never engaged must be distinguishable from a gate
         # that passed. Vacuous = gold rows exist but zero mapped numeric values
         # were seen by either the comparison or the recall side.
         "value_gate_vacuous": value_gate_vacuous,
@@ -430,7 +430,7 @@ def compute_score(
         "precision_only_papers": sorted(
             pid for pid, body in benchmark_statuses.items() if body.get("precision_only")
         ),
-        # --- recall gate (review note; design decision: 100% recall vs gold) ---
+        # --- Recall gate (100% recall vs gold is required) ---
         "unmatched_gold_with_values": gate_unmatched_gold,
         "per_paper_unmatched_gold": per_paper_unmatched_gold_for_gate,
         "recall_gate_source": recall_gate_source,
@@ -439,14 +439,14 @@ def compute_score(
         "coverage_gate_passed": result.coverage_gate_passed,
         "adjudicated_gold_errors": total_adjudicated_gold_errors,
         "ambiguous_pairings": ambiguous_pairings,
-        # --- accuracy decomposition (review note): what was confirmed by
+        # --- Accuracy decomposition: what was confirmed by
         # code vs judged semantically, so the headline number is auditable ---
         "finding_accuracy": finding_accuracy,
         "finding_accuracy_source": finding_accuracy_source,
         "finding_scores_summary": finding_scores_summary,
         "semantic_value_gate": semantic_value_gate,
         "papers_without_finding_scores": papers_without_finding_scores,
-        # R3-07: gold-side internal consistency screen (warnings, never gates —
+        # Gold-side internal consistency screen (warnings, never gates —
         # gold is corrigible; these are adjudication inputs).
         "gold_consistency": {
             "warning_count": len(gold_warnings),
@@ -495,7 +495,7 @@ def compute_score(
         "instruction_sizes": sizes,
         "total_instruction_words": sum(sizes.values()),
         "note": (
-            "Composite computed in code (review note). agent_adjusted metrics are "
+            "Composite computed in code. agent_adjusted metrics are "
             "report-only. finding_accuracy recomputed from per-finding records "
             "when --finding-scores is given; a bare --finding-accuracy "
             "scalar is a degraded mode that cannot satisfy convergence. "

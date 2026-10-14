@@ -44,24 +44,24 @@ MISSING_REASONS_REQUIRING_SOURCES = MISSING_REASONS - {"not_found", "not_applica
 ALLOWED_PROVENANCE_TYPES = frozenset({"paper", "derived"})
 STRUCTURAL_EXEMPT_FIELDS = frozenset({"provenance", "_meta_commentary"})
 
-# review note: per-field confidence/abstention, mechanically anchored (not
+# Per-field confidence/abstention, mechanically anchored (not
 # self-reported). derivation_kind records HOW the value was obtained;
 # extraction_certainty records HOW reliable the read was. These are optional
 # on a field entry but VALIDATED when present, and `clean` is rejected when
 # the source is uncorroborated/figure — so the tag cannot lie.
 ALLOWED_DERIVATION_KINDS = frozenset({"verbatim", "derived", "inferred"})
 ALLOWED_CERTAINTIES = frozenset({"clean", "ambiguous"})
-# Table validation statuses (from paper-prep, review note) that forbid a `clean`
+# Table validation statuses (from paper-prep) that forbid a `clean`
 # tag on a value sourced from that table.
 _UNCORROBORATED_TABLE = frozenset({"single_source", "unresolved_conflict"})
 
 # Quote locations matching this pattern are excluded from quote-verbatim
-# checks: bundle text doesn't include figure interiors. review note tightened
-# this from the old loose `plot|chart|graph` (which let any quote be routed
+# checks: bundle text doesn't include figure interiors. This was tightened
+# from the old loose `plot|chart|graph` (which let any quote be routed
 # around the check via a creative location string) to anchored figure
 # references only — a real figures/ bundle path or the words figure/forest
 # plot. A value sourced only from a figure is necessarily `inferred`
-# (review note) and cannot be marked `clean`.
+# and cannot be marked `clean`.
 FIGURE_LOCATION_PATTERN = re.compile(
     r"(^|/)figures/|\bfigure\b|forest[\s.-]?plot", re.IGNORECASE
 )
@@ -270,7 +270,7 @@ def find_quote_in_source(quote: str, source_text: str) -> bool:
 
 
 # ────────────────────────────────────────────────────────────────────
-# Value-against-source helpers (review note)
+# Value-against-source helpers
 #
 # verbatim-quote-in-bundle proves only that a string exists somewhere.
 # These helpers add the missing semantic checks: the value must appear
@@ -372,7 +372,7 @@ def evaluate_derivation(derivation: str, value: Any) -> tuple[str, str]:
 
 
 # ────────────────────────────────────────────────────────────────────
-# Cell-anchor matching (review note)
+# Cell-anchor matching
 #
 # A table-sourced value gains a structured `cell: {row, column}` anchor so a
 # reviewer can locate exactly which row × column of the grid the value sits
@@ -503,7 +503,7 @@ def load_bundle_text(bundle_dir: Path) -> str:
 
 @dataclass
 class BundleSources:
-    """Per-location view of a bundle (review note/F6).
+    """Per-location view of a bundle.
 
     `full_text` is the legacy whole-bundle concatenation (kept for the
     figure-exempt fallback). `by_file` maps each bundle-relative file path
@@ -620,7 +620,7 @@ class BundleSources:
 
     def table_grid_for(self, location: str) -> tuple[str | None, dict | None]:
         """Resolve a location to the parsed table grid ({headers, rows, ...})
-        backing it (review note cell anchors).
+        backing it.
 
         Returns (matched_file_key, grid) where grid is the parsed tables/*.json
         dict. A `tables/*.json` location resolves to its own grid; a
@@ -637,7 +637,7 @@ class BundleSources:
     def table_validation_for(self, location: str) -> str | None:
         """Return the paper-prep validation status of the table a location
         names ('corroborated' | 'single_source' | 'unresolved_conflict'), or
-        None if the location is not a table (review note/F4)."""
+        None if the location is not a table."""
         matched, _ = self.resolve_location(location)
         if not matched or not matched.startswith("tables/"):
             return None
@@ -656,7 +656,7 @@ class BundleSources:
 # ────────────────────────────────────────────────────────────────────
 
 
-ALLOWED_SOURCE_KEYS = frozenset({"quote", "location", "page", "cell"})  # review note
+ALLOWED_SOURCE_KEYS = frozenset({"quote", "location", "page", "cell"})
 ALLOWED_SOURCE_COMPONENT_KEYS = frozenset({"label", "value", "sources", "role"})
 
 
@@ -693,7 +693,7 @@ def _validate_cell_anchor(
     bundle: BundleSources,
     check_value: bool = True,
 ) -> list[Failure]:
-    """R2-01: a non-null field's source located in a `tables/*.json` grid MUST
+    """A non-null field's source located in a `tables/*.json` grid MUST
     carry a resolvable `cell: {row, column}` anchor. Sources in sections/,
     figures/, or `tables/*.md` are exempt from the *requirement*; a `cell`
     present on a `tables/*.md` source is still validated against the sibling
@@ -1094,7 +1094,7 @@ def _validate_field_entry(
     ALLOWED_FIELD_ENTRY_KEYS = {
         "name", "value", "type", "sources", "derivation",
         "source_components",
-        "derivation_kind", "extraction_certainty",  # review note
+        "derivation_kind", "extraction_certainty",
         "reasoning", "missing_reason",  # Explanations and structured missingness
     }
     unknown = set(entry.keys()) - ALLOWED_FIELD_ENTRY_KEYS
@@ -1160,9 +1160,9 @@ def _validate_field_entry(
             location_str = src.get("location", "")
             if FIGURE_LOCATION_PATTERN.search(location_str):
                 # Figure-located quotes can't be verified against text; skip
-                # the verbatim/location check (the value is `inferred`, F4).
+                # the verbatim/location check (the value is `inferred`).
                 continue
-            # F1: quote must appear in the file the location NAMES, not just
+            # Quote must appear in the file the location NAMES, not just
             # anywhere in the bundle. Decorative locations are now caught.
             matched_key, loc_text = bundle.resolve_location(location_str)
             if loc_text is None:
@@ -1204,7 +1204,7 @@ def _validate_field_entry(
             else:
                 valid_nonfigure_sources.append(src)
 
-            # R2-01: structured cell anchors for table-sourced values.
+            # Structured cell anchors for table-sourced values.
             failures.extend(_validate_cell_anchor(
                 src, value=value, loc=loc, src_index=i,
                 matched_key=matched_key, bundle=bundle,
@@ -1214,7 +1214,7 @@ def _validate_field_entry(
                 ),
             ))
 
-    # F1: the value must be supported by its own quote, not merely co-present
+    # The value must be supported by its own quote, not merely co-present
     # in the bundle. Applies to transcribed (`paper`) values with at least one
     # verifiable (non-figure) source. Figure-only values are exempt.
     if (
@@ -1238,7 +1238,7 @@ def _validate_field_entry(
                 "type='derived' requires a non-empty 'derivation' string",
             ))
         else:
-            # F1: evaluate pure-arithmetic derivations; prose composition
+            # Evaluate pure-arithmetic derivations; prose composition
             # ("concatenated from ...") is left to LLM attestation.
             status, detail = evaluate_derivation(deriv, value)
             if status == "mismatch":
@@ -1249,7 +1249,7 @@ def _validate_field_entry(
 
     failures.extend(_validate_source_components(entry, loc=loc, bundle=bundle))
 
-    # review note: anchor the confidence tags to mechanical signals so `clean`
+    # Anchor the confidence tags to mechanical signals so `clean`
     # cannot be self-asserted on an uncorroborated or figure-only value.
     all_sources = entry.get("sources") if isinstance(entry.get("sources"), list) else []
     has_figure_source = any(
@@ -1290,11 +1290,11 @@ def _validate_field_entry(
             failures.append(Failure(
                 "clean_on_uncorroborated_table", loc,
                 "extraction_certainty='clean' requires a corroborated source; this "
-                "value cites a single_source/unresolved_conflict table (review note). "
+                "value cites a single_source/unresolved_conflict table. "
                 "Use 'ambiguous'.",
             ))
 
-    # R2-01: prose reasoning is REQUIRED when the interpretive step is
+    # Prose reasoning is REQUIRED when the interpretive step is
     # non-trivial — a derived/inferred value, an ambiguous read, or a
     # multi-source field. For verbatim+clean single-source values the cell
     # anchor itself is the context, so reasoning stays optional (cost
@@ -1362,7 +1362,7 @@ def _numeric(value: Any) -> float | None:
 def _check_internal_consistency(
     fields_list: list[Any], *, row_loc: str
 ) -> list[Failure]:
-    """R2-09: internal-consistency checks over the Standards Core numerics of
+    """Internal-consistency checks over the Standards Core numerics of
     one assembled row. HARD failures — a transcription that is faithful but
     incoherent (inverted CI, estimate outside its own CI, events > total) is
     caught here, which also flags the right-value-wrong-cell / column-transpose
@@ -1525,7 +1525,7 @@ def _validate_row(
                 "new rows must explicitly provide a value or missing(reason, explanation); automatic bare nulls are not allowed",
             ))
 
-    # R2-09: internal-consistency over the assembled row's Standards Core
+    # Internal-consistency over the assembled row's Standards Core
     # numerics (CI ordering, estimate-in-CI, events ≤ total).
     failures.extend(_check_internal_consistency(fields_list, row_loc=row_loc))
 
@@ -1665,7 +1665,7 @@ def validate_prior_quotes(
 ) -> list[Failure]:
     """Re-validate every provenance quote in the prior JSONL against the
     current bundle. Run on itern to surface bundle drift early (OQ2:
-    re-validate everything every time). Checks at the cited location (F1)
+    re-validate everything every time). Checks at the cited location
     and falls back to whole-bundle so legacy free-text locations still
     surface a genuinely-vanished quote."""
     failures: list[Failure] = []

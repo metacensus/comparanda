@@ -1,4 +1,4 @@
-"""Deterministic value-against-gold comparison (review note / R2-03).
+"""Deterministic value-against-gold comparison.
 
 The eval composite was 70% structural counting; the only value-correctness
 signal was a selectively-run LLM judge. This module adds an always-on,
@@ -11,7 +11,7 @@ It consumes the output of `prepare_comparison.prepare_comparison` (gold rows
 paired to extraction candidates by canonical entity token) so it reuses the
 existing deterministic identity resolution rather than re-implementing it.
 
-R2-03 hardening (the value gate was satisfiable *silently*):
+Hardening (the value gate was satisfiable *silently*):
 
   * **100% recall gate** — `unmatched_gold_with_values`: gold rows that carry a
     mapped numeric value but paired to *no* extraction candidate. Previously
@@ -178,7 +178,7 @@ def _best_candidate(
     """Pick the candidate that represents this finding.
 
     Narrow by outcome-token overlap, then pick the candidate whose
-    effect_estimate is nearest the gold effect (review note)."""
+    effect_estimate is nearest the gold effect."""
     if not candidates:
         return None
     pool = _narrow_candidates(candidates, gold_outcome_tokens, stopwords)
@@ -252,7 +252,7 @@ def compute_value_diff(
 ) -> dict:
     """Deterministic numeric diff of paired gold vs extraction values.
 
-    Returns a dict with the mismatch gate plus the R2-03 recall/ambiguity/
+    Returns a dict with the mismatch gate plus the recall/ambiguity/
     adjudication signals (see module docstring and the returned `note`).
 
     `column_map` (if given) overrides the config's value_column_map for
@@ -297,7 +297,7 @@ def compute_value_diff(
                 })
             continue
 
-        # R3-15: identity-based narrowing BEFORE any value-proximity selection.
+        # Identity-based narrowing BEFORE any value-proximity selection.
         cands = _narrow_by_identity_pairs(cands, gold, cfg.narrow_columns, stopwords)
 
         # Flag pairings nearest-effect cannot uniquely disambiguate.
@@ -357,7 +357,7 @@ def compute_value_diff(
         "adjudicated_gold_errors": adjudicated_gold_errors,
         "note": (
             "Deterministic numeric diff of paired gold vs extraction values "
-            "(config-driven matching, review note). A mismatch flags a value "
+            "(config-driven matching). A mismatch flags a value "
             "differing > rel_tol or flipping sign on a best-matched candidate; "
             "mismatch_count is a hard convergence gate. unmatched_gold_with_values "
             "is the 100% recall gate — gold findings with values and no extraction "

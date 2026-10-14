@@ -22,9 +22,12 @@ marker:
      invoke the script (or use an empty-diff itern invocation for legitimate
      no-op cases).
 
-Includes a silent escape hatch: after MAX_ATTEMPTS consecutive blocks for the
-same subagent transcript, allow the stop to prevent infinite loops. The
-escape hatch is invisible to the agent — its block reason is never altered.
+Includes an escape hatch: after MAX_ATTEMPTS consecutive blocks for the same
+subagent transcript, allow the stop to prevent infinite loops. The escape is
+reported, not silent: it appends a record to
+.claude/hooks/.state/FINALIZE_FAILED.jsonl and surfaces a systemMessage so the
+orchestrator and a human can see that the paper stopped without a validated
+write.
 
 Trace appends to .claude/hooks/.state/extraction-finalize-trace.log.
 """
@@ -48,7 +51,7 @@ EXTRACTOR_AGENT_TYPE = "extractor"
 # count as a just-stopped candidate. Generous window because extraction runs can
 # pause for many minutes on Bash subprocesses (large staging writes, slow
 # validator runs) — a too-small window silently DISARMS the hook for exactly
-# the long extractions that most need it (review note). Overridable via env.
+# the long extractions that most need it. Overridable via env.
 RECENT_WINDOW_SECONDS = int(os.environ.get("COMPARANDA_FINALIZE_WINDOW_SECONDS", "1800"))
 
 # Success markers emitted by sanctioned finalizers on a clean write.
@@ -298,7 +301,7 @@ def main() -> int:
     write_attempts(counter_path, attempts)
 
     if attempts >= MAX_ATTEMPTS:
-        # review note: the escape hatch must not be SILENT. Write a loud sentinel
+        # The escape hatch must not be SILENT. Write a loud sentinel
         # and surface a systemMessage so the orchestrator (and a human) see
         # that an extraction was allowed to stop WITHOUT a validated write —
         # rather than silently treating the paper as successfully extracted.

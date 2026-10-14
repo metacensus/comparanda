@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Risk-ranked, field-level human review queue (review note).
+"""Risk-ranked, field-level human review queue.
 
 The audit found the design had the vocabulary of human review but no mechanism.
 This builds the mechanism: a queue of (paper, row, field) items a reviewer should
-check, sorted by risk, feeding off the confidence/abstention tags (F4) and the
-bundle's per-table validation (F2). Full review is impossible; this triages scarce
+check, sorted by risk, feeding off the confidence/abstention tags and the
+bundle's per-table validation. Full review is impossible; this triages scarce
 human time to the values most likely to be wrong AND most consequential (the
 effect/precision/denominator fields that drive pooling).
 
@@ -17,7 +17,7 @@ Risk tiers (highest first; ranks match TIER_RANK, 0-4):
 
 Corrections are applied by writing the corrected value with a provenance entry
 carrying `reviewed_by`/`reviewed_at`; write_extraction.py then protects that field
-from being overwritten on the next iteration (F17 durability).
+from being overwritten on the next iteration (so review decisions survive re-extraction).
 
 Usage:
   python3 scripts/review/review_queue.py --extractions-dir <project-root>/extractions \
@@ -31,7 +31,7 @@ import sys
 from pathlib import Path
 
 # Hardcoded identity fallback (used when --schema is not supplied), matching
-# the pre-R2-08 behavior.
+# the behavior before identity fields became schema-configurable.
 DEFAULT_IDENTITY_FIELDS = ("entity_raw", "outcome_raw", "comparison_group")
 
 HIGH_LEVERAGE = {
@@ -78,7 +78,7 @@ def _loc_is_uncorroborated(sources, tbl_validation) -> bool:
 
 def _first_cell(sources) -> dict | None:
     """The structured cell anchor from the first source that carries one
-    (review note) — gives the reviewer claim → located evidence."""
+    — gives the reviewer claim → located evidence."""
     for s in sources or []:
         if isinstance(s, dict) and isinstance(s.get("cell"), dict):
             return s["cell"]
@@ -144,7 +144,7 @@ def build_queue(
         tbl_validation = _table_validation(bundles_dir / paper_id) if bundles_dir else {}
         # row_index counts DATA rows (blank lines and the _meta_commentary line
         # excluded) so it addresses the same row apply_review.py will address
-        # (R3-06 — the two previously used different indexing schemes).
+        # (the two previously used different indexing schemes).
         ri = -1
         for line in jf.read_text().splitlines():
             line = line.strip()
@@ -160,7 +160,7 @@ def build_queue(
             li = ri
             prov = row.get("provenance") or {}
 
-            # R3-03: normalizer disputes — a `_raw` value whose mapping was
+            # Normalizer disputes — a `_raw` value whose mapping was
             # disputed (confidence < 0.7) and whose paired `_id` is still null
             # is an unresolved canonical assignment a human must adjudicate.
             for key, val in row.items():
@@ -219,7 +219,7 @@ def build_queue(
                     "rank": TIER_RANK.get(tier, 9),
                     "high_leverage": field in HIGH_LEVERAGE,
                     "sources": entry.get("sources"),
-                    # R2-01: claim → located evidence → rationale in one artifact.
+                    # Claim → located evidence → rationale in one artifact.
                     "cell": _first_cell(entry.get("sources")),
                     "reasoning": entry.get("reasoning"),
                     "identity": {k: row.get(k) for k in identity_fields if k in row},
@@ -231,7 +231,7 @@ def build_queue(
 
 def _identity_fields_from_schema(schema_path: Path) -> tuple[str, ...]:
     """Derive the per-item identity context from the schema's
-    identity_dimensions (review note), replacing the hardcoded triple."""
+    identity_dimensions, replacing the hardcoded triple."""
     sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "extraction"))
     import extraction_validator as ev  # noqa: E402
 

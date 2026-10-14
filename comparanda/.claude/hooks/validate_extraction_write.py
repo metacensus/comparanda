@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""PreToolUse gate (review note): the extraction JSONL may ONLY be produced by
+"""PreToolUse gate: the extraction JSONL may ONLY be produced by
 `scripts/extraction/write_extraction.py` or the unified `scripts/extraction/extraction_builder.py`
 finalization path, never by a direct Write/Edit.
 

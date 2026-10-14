@@ -1,4 +1,4 @@
-"""Cross-domain regression gate (review note, hardened in R2-06).
+"""Cross-domain regression gate.
 
 Runs the code-computed composite on each frozen domain fixture and fails if any
 regresses beyond its epsilon. An EMPTY suite is its own status — it does NOT

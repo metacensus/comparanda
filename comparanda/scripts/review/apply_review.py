@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Apply human review decisions to extraction rows (review note).
+"""Apply human review decisions to extraction rows.
 
 `review_queue.py` triages which (paper, row, field) values a human should
 check; this is the apply side — the backend interface a reviewer (today a CLI,
@@ -148,10 +148,10 @@ def cmd_status(a: argparse.Namespace) -> int:
         "phase6_gate_passed": hi_blocking == 0,
         "note": ("Phase-6 gate: tier-0 (abstained) and tier-1 (ambiguous) "
                  "high-leverage items must be reviewed or waived before the "
-                 "final commit (review note)."),
+                 "final commit."),
     }
     print(json.dumps(out, indent=2))
-    # R3-02: the gate must be mechanically enforceable. A failing gate exits
+    # The gate must be mechanically enforceable. A failing gate exits
     # non-zero so scripts/CI/orchestrators can actually block on it; pass
     # --informational to restore the old always-0 behavior for dashboards.
     if a.informational:
@@ -209,7 +209,7 @@ def cmd_apply(a: argparse.Namespace) -> int:
               file=sys.stderr)
         return 2
 
-    # R3-06: positional addressing is fragile across re-extractions. When the
+    # Positional addressing is fragile across re-extractions. When the
     # reviewer supplies the identity tuple they saw in the queue item, verify
     # it against the addressed row and refuse on mismatch — a correction
     # landing on the wrong row is itself a silent wrong value.
@@ -243,7 +243,7 @@ def cmd_apply(a: argparse.Namespace) -> int:
         "review_action": a.action,
         "review_note": a.note,
     }
-    # R3-06: re-reviewing a field must not destroy the prior review — the
+    # Re-reviewing a field must not destroy the prior review — the
     # disagreement trail IS the committee-relevant signal. Push the prior
     # review's metadata onto review_history before it is superseded.
     if prior.get("reviewed_by"):
@@ -323,7 +323,7 @@ def build_parser() -> argparse.ArgumentParser:
     ps.add_argument("--schema", default=None)
     ps.add_argument("--informational", action="store_true",
                     help="always exit 0 (default exits 1 when the Phase-6 "
-                         "gate is failing — R3-02)")
+                         "gate is failing)")
     ps.set_defaults(handler=cmd_status)
 
     pa = sub.add_parser("apply", help="record one review decision")
@@ -345,7 +345,7 @@ def build_parser() -> argparse.ArgumentParser:
     pa.add_argument("--expect-identity", default=None,
                     help="JSON object of identity-field values as shown in the "
                          "queue item; apply refuses if the addressed row does "
-                         "not match (R3-06 — protects against index drift)")
+                         "not match (protects against index drift)")
     pa.add_argument("--bundles-dir", default=None,
                     help="when given, a corrected --quote/--location is "
                          "validated against the paper's bundle with the same "

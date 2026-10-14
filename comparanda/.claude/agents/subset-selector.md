@@ -80,8 +80,8 @@ python3 scripts/observation_log.py append \
 ```json
 {
   "iteration": 1,
-  "anchor_id": "deVries2023",
-  "selected_ids": ["deVries2023", "Meulendijks2015", "Henricks2018", "Lee2014"],
+  "anchor_id": "Smith2023",
+  "selected_ids": ["Smith2023", "Jones2019", "Patel2021", "Lee2014"],
   "rationale": {
     "Smith2023": "Anchor — prospective, multiple entities, moderate complexity",
     "Jones2019": "Retrospective, outcome-focused, effect sizes, data-dense",
