@@ -19,11 +19,10 @@ The primary purpose — document a paper so thoroughly at the atomic level that 
 ### 2. Auditability and Traceability
 Each atomic row is linked back to a **map anchor** on the source PDF. Reviewers can click any data point and see exactly where it was found in the original paper. No more manual hunting with Ctrl+F.
 
-
-### 4. Inter-Study Translation
+### 3. Inter-Study Translation
 Atomic granularity enables the Rosetta Stone translation layer. When different studies use different nomenclature for the same concept, the atomic level provides enough specificity to map between them without conflating definitions.
 
-### 5. Meta-Analysis Input
+### 4. Meta-Analysis Input
 Atomic rows with proper typing feed directly into meta-analysis tooling. The typed, granular data can be aggregated, filtered, and transformed to produce forest plots, odds ratios, and other statistical outputs.
 
 ## "True" Atomic Row

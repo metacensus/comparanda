@@ -4,10 +4,7 @@ Bundles are NOT auto-built by the comparanda orchestrator — they are produced
 manually by `paper-prep` BEFORE running any comparanda extraction phases.
 
 The preprocessor lives in-tree at `comparanda/scripts/paper_prep/` as a
-self-contained `uv` workspace. (Historically it was an external repo
-`<owner>/comparanda-paper-prep`; that repo still exists for ad-hoc
-debug tooling — interactive viewer, alternative extractor experiments — but
-is no longer needed to produce bundles.)
+self-contained `uv` workspace.
 
 ## Pre-step: build the bundles before running comparanda
 
@@ -30,7 +27,7 @@ Corpus build (subset JSON maps PMID → paper_id):
 
 ```bash
 uv run python -m paper_prep.batch \
-    --subset examples/dpyd_batch_subset.json \
+    --subset examples/example_batch_subset.json \
     --pdfs-dir "$COMPARANDA_PROJECT_DIR/data/raw/pdfs/" \
     --bundle-out "$COMPARANDA_PROJECT_DIR/data/processed/"
 ```
@@ -62,19 +59,30 @@ The bundle lands at:
     _provenance/
 ```
 
-Use `--no-arbitrate` for a free dry-run (deterministic merge only). Bundle
+Use `--no-arbitrate` to skip the Stage-2 arbiter calls (deterministic merge only;
+the per-table first-pass `claude -p` calls still run and cost money). Bundle
 drops any two-sided table whose conflicts went unresolved.
 
-## What changed at the extractor agent + provenance hook (when paper-prep landed)
+## How the extractor and guardrails use bundles
 
-- `.claude/agents/extractor.md` — reads bundles instead of flat markdown.
-  Always emits its JSONL via Bash + Python heredoc (iterative materialization).
-- `.claude/hooks/validate_provenance_quotes.py` — bundle-aware. Source of
-  truth is the bundle (sections + table cells + table markdown), not the PDF.
-  No PyMuPDF dependency. Triggers on both `Write` AND `Bash` (for the
-  heredoc path).
-- `comparanda/CLAUDE.md` is unchanged. The orchestrator doesn't know about
-  bundles; it invokes the extractor agent which knows where to look.
+- `.claude/agents/extractor.md` reads bundles (`manifest.json`, sections,
+  tables, figures) rather than PDFs or flat markdown, and writes rows through
+  the staged Extraction Builder SDK (see
+  `comparanda/docs/extraction-sdk-agent-contract.md`).
+- Provenance is validated by `scripts/extraction/extraction_validator.py`,
+  which the sanctioned finalizers (`write_extraction.py`,
+  `extraction_builder.py`, `run_extraction_build.py`) call with the paper's
+  bundle (`--bundle`). The bundle is the source of truth: every cited quote
+  must appear verbatim in `sections/*.md`, the flattened `tables/*.json` cell
+  values, or `tables/*.md`; table values need resolvable row/column anchors.
+- `.claude/hooks/validate_extraction_write.py` (PreToolUse on Write, Edit,
+  MultiEdit, NotebookEdit, and Bash) blocks any direct write to
+  `extractions/<paper_id>.jsonl` outside the sanctioned finalizers, so the
+  validator cannot be bypassed.
+- `.claude/hooks/ensure_extraction_finalized.py` (SubagentStop) blocks an
+  extractor from stopping until a sanctioned finalizer has reported success.
+- `comparanda/CLAUDE.md` does not build bundles. The orchestrator passes the
+  bundle path to the extractor agent, which knows where to look.
 
 ## What to do if a bundle is missing
 
@@ -86,16 +94,16 @@ agent will fail at the "Read manifest.json" step with a missing-file error
 Fix: build the missing bundle via the pre-step above. The bundle build is
 deterministic on a given run-root state, so re-running is safe.
 
-The provenance hook also expects the bundle to exist when an extraction is
-written. If the bundle is missing it returns `provenance_validation: skipped`
-rather than failing — the agent gets no validation feedback in that case.
+Finalization also needs the bundle: the sanctioned finalizers take a
+required `--bundle` argument and validate every quote against it.
 
 ## Outstanding follow-ups
 
-- **Provenance Option C** (structured-by-source) — deferred. See
-  rewrite. Today's hook is Option B (search the whole bundle blob).
-- **Boige content-filter fallback** — per-table extraction path for papers
-  where `claude -p` first-pass hits a content filter. Not built yet.
+- **Structured-by-source provenance** — deferred. Quote validation currently
+  searches the whole bundle text rather than the specific cited section or
+  table.
+- **Content-filter fallback** — a per-table extraction path for papers where
+  the `claude -p` first pass hits a content filter. Not built yet.
 - **Figure quality / caption pairing.** A handful of bundles have duplicate
   or missing figure captions; the agent has no figure-access protocol yet.
 

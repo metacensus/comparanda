@@ -16,5 +16,5 @@ The tests here cover the reusable inner-loop methodology contracts.
 Run from `comparanda/`:
 
 ```bash
-uv run --with pytest pytest tests
+uv run --with pytest --with pymupdf pytest tests
 ```

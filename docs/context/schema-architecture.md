@@ -2,7 +2,7 @@
 
 ## Overview
 
-
+The Comparanda schema is **dynamic and topic-dependent**, not a fixed table. It presents as structured columns with data types to users and extraction agents.
 
 The schema describes a source-grounded evidence substrate. Schema convergence means that the system can preserve and retrieve the material evidence encountered in the corpus; it does not mean that one downstream synthesis question, inclusion set, arm construction, or model has been chosen correctly.
 
@@ -78,6 +78,7 @@ Schema definition and extraction are **tightly iterative** — they "blend toget
 3. Propose a schema with data types
 4. Re-extract to fill gaps and align with the converging schema
 5. Handle temporal nomenclature shifts via Rosetta Stone patch-ins
+6. Review the converging schema with domain experts before finalizing
 
 The AI assists in this loop by suggesting data types and identifying which papers contain specific outcomes.
 
@@ -109,8 +110,3 @@ normalization tables, identity keys, grouped-completeness rules, and weighting
 are collaborative design gates. Cross-paper overlap conclusions and analyst
 actions may be retained as explanatory benchmark metadata showing why the
 per-paper facts matter, but they are unscored and not expected from Comparanda.
-
-## Backend Storage
-
-
-

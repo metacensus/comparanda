@@ -67,7 +67,7 @@ To apply Comparanda to a domain: keep the harness architecture and agents, and p
 ## Architecture
 
 ```
-comparanda-harness/           (System 2)
+harness/                      (System 2)
 ├── .claude/
 │   ├── agents/               monitor, eval, diagnostician, critic
 │   └── settings.json         permissions + guard hooks
@@ -117,7 +117,6 @@ uv run python -m harness.eval.aggregate \
   --extractions-dir <project-root>/extractions \
   --gold-standard "<gold-standard-dir>/<gold-standard-file>.xlsx" \
   --document-id-map <eval-config-dir>/document_id_map.json \
-  --with-judge \
   --output <iterations-dir>/iter_N/eval_report.json
 
 # Field-level semantic coverage and one-shot/outer-loop eval are owned by the
@@ -129,7 +128,7 @@ The historical composite score is emitted from aggregate row/field, finding-accu
 
 That composite score is an evidence-recovery calibration signal. It should not be labeled synthesis accuracy or decision accuracy. Corpus-absent, inaccessible, or unmatched papers should be reported as coverage status rather than scored as if the extractor had read them and failed.
 
-The normalized legacy view must preserve the historical result before the the domain expert
+The normalized legacy view must preserve the historical result before the domain-expert
 prerequisite slice is added. The exact normalized tables, identity keys,
 grouped-completeness rules, weighting, report presentation, and any future
 effect on convergence are collaborative design gates; they should not be

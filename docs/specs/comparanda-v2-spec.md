@@ -2,7 +2,7 @@
 
 > **Historical document.** This captures the April 2026 architecture and is not
 > the current authority for Comparanda's product boundary or benchmark claims.
-> See `../context/project-vision.md`, `../context/mvp-scope.md`, and
+> See the top-level `README.md` (responsibility boundary) and
 > `../context/schema-architecture.md`. In particular, "meta-analysis ready"
 > language here must not be read as assigning research-question selection,
 > eligibility decisions, model selection, or analysis execution to Comparanda.
@@ -777,7 +777,6 @@ Applied to v1 code during migration, independent of architectural changes.
 ## 10. Migration Plan
 
 ### From v1 to v2
-
 
 **What exists in v1:**
 - `.claude/agents/*.md` — 6 agent definitions (thin, reference instruction files)

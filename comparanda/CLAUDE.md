@@ -381,7 +381,6 @@ Keep schema-defined non-null `not_applicable` and `not_stated` values where requ
 
 ## Architecture Reference
 
-See `docs/specs/comparanda-v2-spec.md` for full architecture.
-See `docs/specs/implementation-plan.md` for implementation plan.
-See `docs/research/v1-lessons-extracted.md` for v1 lessons.
-See `docs/research/prompt-engineering-reference.md` for prompting guide.
+See `../docs/specs/comparanda-v2-spec.md` for full architecture.
+See `../docs/research/v1-lessons-extracted.md` for v1 lessons.
+See `../docs/research/prompt-engineering-reference.md` for prompting guide.

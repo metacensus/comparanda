@@ -2,9 +2,63 @@
 
 Agentic system for building source-grounded, normalized evidence substrates from scientific papers.
 
+## Status
+
+Comparanda is research software under active development. It was developed on
+a first domain, DPYD pharmacogenomics, and its agent instructions, file
+contracts, and evaluation metrics still change between versions. Expect rough
+edges, breaking changes, and real model costs when you run it. Treat its
+output as material for expert review, not as a finished dataset.
+
+## Requirements
+
+- **[Claude Code](https://docs.claude.com/en/docs/claude-code) CLI**, installed
+  and authenticated (`claude` on your `PATH`). The inner loop and harness run
+  as Claude Code sessions, and paper-prep calls `claude -p` as a subprocess.
+- **[uv](https://docs.astral.sh/uv/)** for every Python entry point.
+- **Python 3.12+** (`requires-python = ">=3.12"` in `harness/pyproject.toml`
+  and `comparanda/scripts/paper_prep/pyproject.toml`; uv can install it). The
+  inner-loop hooks run as `python3` scripts, so a `python3` must be on `PATH`.
+- **jq**, used by the harness guard hook
+  (`harness/.claude/hooks/harness-guardrail-comparanda-writes.sh`).
+- **PyMuPDF**, only for the reviewer-portal exporter
+  (`comparanda/scripts/review/portal_export.py`) and its tests. It is pulled in
+  on demand with `uv run --with pymupdf`.
+- **Model access.** Most inner-loop agents declare `model: "claude-sonnet-5[1m]"`
+  (a 1M-context Sonnet) in their frontmatter under `comparanda/.claude/agents/`;
+  the survey agent uses `haiku`, and harness agents use `haiku`, `sonnet`, or
+  `opus`. If your account cannot use a model, edit the `model:` line in the
+  affected agent file. The isolated field-coverage eval agent in the harness
+  defaults to `claude-sonnet-5[1m]`; override it with the
+  `COMPARANDA_EVAL_MODEL` environment variable or the `--model` flag of
+  `harness.eval.field_coverage_workspace`.
+
+## Quickstart
+
+See [`docs/getting-started.md`](./docs/getting-started.md) for a walkthrough
+that goes from a handful of open-access PDFs to bundles, an inner-loop run, and
+(optionally) a harness evaluation against your own gold standard.
+
+## Running tests
+
+Each component has its own test suite:
+
+```bash
+# Inner-loop scripts and hooks (PyMuPDF is needed by the portal-export tests)
+cd comparanda && uv run --with pytest --with pymupdf pytest tests
+
+# Calibration harness
+cd harness && uv run pytest
+
+# Paper-prep preprocessor
+cd comparanda/scripts/paper_prep && uv run pytest
+```
+
+None of these suites call a model.
+
 ## Problem
 
-
+[MetaCensus](https://github.com/metacensus) is building an open-access platform to modernize scientific meta-analysis — tightening the loop between published evidence and policy by making extraction granular enough to do once and query forever.
 
 The bottleneck is the first step: turning a collection of papers into structured, comparable data. Today this is grueling manual work, repeated independently across institutions. Existing tools (Covidence, Elicit, etc.) can help with extraction — but they all assume a schema already exists. Someone still has to decide *what fields to extract* and *how to reconcile terminology* that has evolved across decades of literature. That schema design work is the hard part, and nobody automates it.
 
@@ -91,6 +145,7 @@ Other harness components:
 - **Guard hook:** `harness/.claude/hooks/harness-guardrail-comparanda-writes.sh` — PreToolUse hook that prevents the harness from modifying anything in `comparanda/` except the universal instruction sections of `comparanda/.claude/agents/*.md`.
 - **Eval scripts:** `harness/src/harness/eval/` — aggregate metrics, claim faithfulness, semantic field coverage, scoring, rendering, batching, and workbench helpers invoked by the `eval` agent. See [`harness/AGENT_INDEX.md`](./harness/AGENT_INDEX.md#eval).
 - **Benchmark config:** supplied by the domain superproject or by explicit eval CLI arguments. Canonical does not ship a live domain gold standard.
+- **`harness-commit` (optional maintainer tooling):** a console script declared in `harness/pyproject.toml` that routes commits in legacy two-branch domain forks. You do not need it; in a domain superproject, commit in the repository that owns the changed path (see [`docs/domain-superproject.md`](./docs/domain-superproject.md)).
 
 The outer-loop agents modify the inner-loop agent prompts in
 `comparanda/.claude/agents/`. They do **not** modify Python or hook code.
@@ -140,7 +195,7 @@ docs/                # Architecture, specs, research, paper-prep integration not
 
 ## Application data in a domain superproject
 
-Each domain has one private composition repository. Its root is the project
+Each domain has one domain repository (a superproject). Its root is the project
 root, so application state is not nested under a redundant
 `projects/<domain>/` directory.
 
@@ -166,3 +221,19 @@ Recommended naming convention for `<paper_id>`: `Author_Year_DocumentID`.
 
 See [`docs/domain-superproject.md`](./docs/domain-superproject.md) for setup and
 [`CLAUDE.md`](./CLAUDE.md) for the inner-loop bootstrap walkthrough.
+
+## Contributing
+
+Contributions to the system code are welcome. See
+[`CONTRIBUTING.md`](./CONTRIBUTING.md) for setup, tests, and pull-request
+expectations. Domain data does not belong in this repository.
+
+## Security
+
+Please report vulnerabilities privately; see [`SECURITY.md`](./SECURITY.md).
+Comparanda runs LLM agents that execute tools on your machine, so read that
+file before running it on untrusted inputs.
+
+## License
+
+License: to be announced before the first tagged release.

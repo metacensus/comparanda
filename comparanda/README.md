@@ -4,7 +4,7 @@ Agentic system for scientific paper schema extraction and structured data encodi
 
 ## Problem
 
-
+[MetaCensus](https://github.com/metacensus) is building an open-access platform to modernize scientific meta-analysis — tightening the loop between published evidence and policy by making extraction granular enough to do once and query forever.
 
 The bottleneck is the first step: turning a collection of papers into structured, comparable data. Today this is grueling manual work, repeated independently across institutions. Existing tools (Covidence, Elicit, etc.) can help with extraction — but they all assume a schema already exists. Someone still has to decide *what fields to extract* and *how to reconcile terminology* that has evolved across decades of literature. That schema design work is the hard part, and nobody automates it.
 

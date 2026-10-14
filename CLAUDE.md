@@ -88,7 +88,7 @@ iterations directory.
 
 ```text
 comparanda-<domain>/
-├── comparanda/                 submodule -> metacensus/comparanda
+├── comparanda/                 submodule -> this repository
 ├── export/                     submodule -> comparanda-<domain>-data
 ├── schema/, surveys/, extractions/, observations/
 ├── normalization/, critiques/, domain/, data/
@@ -105,14 +105,15 @@ superproject; deployable reviewer runs belong in the export submodule.
 
 ## Bootstrap a domain superproject
 
-### 1. Create the private repositories
+### 1. Create the domain repositories
 
-Create private `comparanda-<domain>` and `comparanda-<domain>-data`
-repositories. In the domain repository:
+Create a `comparanda-<domain>` repository for domain state and a
+`comparanda-<domain>-data` repository for reviewer exports (both may be
+private). In the domain repository:
 
 ```bash
-git submodule add git@github.com:metacensus/comparanda.git comparanda
-git submodule add git@github.com:comparanda-<domain>-data.git export
+git submodule add <comparanda-repo-url> comparanda
+git submodule add <comparanda-domain-data-repo-url> export
 ```
 
 Pin both submodules deliberately. Do not configure the engine submodule to
@@ -143,7 +144,7 @@ export COMPARANDA_EXPORT_RUNS_DIR="$COMPARANDA_PROJECT_DIR/export/runs"
 
 Create `domain/deep_research.md` and `domain/seed_knowledge.md`. Put methodology
 references in `data/raw/pdfs/phase0-references/` and the source corpus under
-`data/raw/pdfs/`. Private domain repositories may track binary inputs with Git
+`data/raw/pdfs/`. Domain repositories may track binary inputs with Git
 LFS.
 
 ### 4. Build paper-prep bundles

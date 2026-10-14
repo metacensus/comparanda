@@ -1,6 +1,6 @@
 # Comparanda Calibration Harness
 
-You are you orchestrator for Comparanda. Your job is to improve Comparanda's
+You are the orchestrator for Comparanda. Your job is to improve Comparanda's
 agent instructions by running Comparanda, evaluating its output against a gold standard,
 diagnosing instruction-level problems, and applying fixes that generalize across domains.
 
@@ -69,7 +69,7 @@ checkout. Pass resolved paths to agents and CLI tools.
 
 ## Step 1: Run Comparanda
 
-**CRITICAL: You are running from you directory. Comparanda must run from
+**CRITICAL: You are running from the harness directory. Comparanda must run from
 `../comparanda/`. There is no `--cwd` flag — you MUST use `cd ../comparanda &&`
 before every `claude -p` invocation.**
 
@@ -167,6 +167,7 @@ Read `/tmp/comparanda_monitor.log` at any time to see what has happened.
 The monitor appends events as they occur:
 ```
 [11:30:15] SESSION: <session-id>
+  log: ~/.claude/projects/.../<session-id>.jsonl
 [11:31:02] SUBAGENT: agent-a3fc7b32 spawned
   type: extractor
   description: Extract Teh 2013
@@ -206,7 +207,8 @@ skipped phases. Read the actual session and subagent logs to confirm alignment.
 
 **Step 1: Find and read the orchestrator session log.**
 ```bash
-# Find the most recent Comparanda session
+# Find the most recent Comparanda session (<encoded-project-dir> is the Comparanda
+# checkout path with '/' replaced by '-')
 ls -t ~/.claude/projects/<encoded-project-dir>/*.jsonl | head -1
 ```
 Parse the session JSONL. For each assistant message, check:
@@ -307,6 +309,7 @@ Invoke @eval in aggregate mode. Produces:
 - **Normalization completeness** — which extraction rows have canonical IDs vs raw-only values for configured normalization fields
 - **Identity dimension completeness** — are all ID dims populated
 
+These catch completeness issues (e.g. per-group rows collapsed into coarser groups) immediately.
 Aggregate mode does NOT compute finding_accuracy — that requires detailed mode.
 
 ### Detailed mode (accuracy evaluation, selective but required)
@@ -359,7 +362,7 @@ that already has a field-level eval session:
 4. Never ask the orchestrator to adjudicate fields or browse old row-level eval
    artifacts directly. The eval agent owns that scope.
 
-**Accuracy is not optional.** It is 30% of the composite signal. Skipping it
+**Accuracy is not optional.** It is 50% of the composite signal. Skipping it
 means you are optimizing blind. Every gold standard paper must be evaluated for
 accuracy at least once before convergence — but not all at once. Prioritize
 flagged papers, then fill in the rest over subsequent iterations.
@@ -373,14 +376,14 @@ this file. Check it before convergence decisions.
 ### Composite score
 ```
 composite = (
-    0.4 * row_coverage          # extracted_rows / gold_rows per paper, averaged, capped at 1.0
-  + 0.3 * finding_accuracy      # eval agent detailed mode score (NOT a Python formula)
-  + 0.2 * field_value_recoverability_rate
-                                  # gold field values recoverable from extraction
-  + 0.1 * field_fill_rate       # non-null rate for key fields
+    0.30 * row_coverage         # extracted_rows / gold_rows per paper, averaged, capped at 1.0
+  + 0.15 * entity_coverage      # gold entities present in the extraction
+  + 0.05 * field_fill_rate      # non-null rate for key fields
+  + 0.50 * finding_accuracy     # eval agent detailed mode score (NOT a Python formula)
 )
 ```
-In aggregate-only mode, finding_accuracy is null and composite maxes at 0.7.
+Weights live in `src/harness/eval/composite.py`. In aggregate-only mode,
+finding_accuracy is null and composite maxes at 0.50.
 The full composite requires detailed mode to have been run.
 
 ---
@@ -422,6 +425,7 @@ Targeted re-extraction only happens as bounded verification after `fix_instructi
 ### Failure taxonomy
 | Category | Example | Fixable by harness? |
 |----------|---------|---------------------|
+| Completeness: under-extraction | Per-genotype rows collapsed to carrier vs non-carrier | Yes — instruction granularity |
 | Completeness: missing entities | Gold has entity X, extraction doesn't | Maybe — depends on cause |
 | Accuracy: wrong values | Effect size doesn't match gold | Yes — extraction guidance |
 | Schema: forced compression | Identity dims too coarse for data | Yes — schema-proposer guidance |

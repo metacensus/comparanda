@@ -1,11 +1,13 @@
 # Foundational Principles
 
-> **Historical presentation source.** This document preserves the original
-> system-architecture narrative; it is not the current authority for product
-> scope or benchmark claims. See `../../context/project-vision.md`,
-> `../../context/mvp-scope.md`, and `../../context/schema-architecture.md`.
-> References below to meta-analysis readiness and legacy composite metrics
-> should be interpreted as historical framing.
+> **Historical v1 snapshot.** This deck (this document and the `01`–`03`
+> diagrams, including their rendered PNG/SVG exports) records the original v1
+> system-architecture narrative. It is not the current authority for product
+> scope, agent responsibilities, or benchmark claims; see the top-level
+> `README.md` and `../../context/schema-architecture.md`. Some diagram labels
+> are stale, for example "C16: only place schema changes" and "MA Readiness"
+> (now the substrate-readiness MA Critique), and references to meta-analysis
+> readiness and legacy composite metrics should be read as historical framing.
 
 > The architecture isn't arbitrary — it's driven by real constraints. This document captures the three-tier reasoning: immutable constraints force design principles, which lead to architectural choices.
 >
@@ -51,7 +53,7 @@ A cheap, fast model surveys each paper individually (fits in context). A synthes
 The core mechanism is a loop: schema proposal → extraction → evaluation → refinement → repeat. The schema and the extraction improve together through iteration, not through a single brilliant design.
 
 ### Iteration without acceptance criteria is just burning tokens → Measurable convergence
-The system needs to know when to stop — at two levels. **System 1's core loop** converges when the schema stabilizes (rate of change approaching zero) and the Meta-Analysis Readiness Agent confirms the extraction is suitable for pooling across studies. The acceptance test is functional: can a researcher make inclusion/exclusion decisions, derive effect sizes, and pool results without going back to the papers? (C8) **System 2's outer loop** converges separately, using the gold standard benchmark — composite metric of schema coverage (40%) + extraction F1 (60%) against the human expert's data. System 2 stops when this metric plateaus (<1% improvement over 3 iterations) or hits a hard cap (10 iterations). Crucially, System 1 never sees the gold standard — it optimizes for internal quality and meta-analysis readiness. System 2 uses the benchmark to decide when to stop modifying instructions. Progressive expansion to new papers detects overfitting at both levels.
+The system needs to know when to stop — at two levels. **System 1's core loop** converges when the schema stabilizes (rate of change approaching zero) and the Meta-Analysis Readiness Agent confirms the extraction is suitable for pooling across studies. The acceptance test is functional: can a researcher make inclusion/exclusion decisions, derive effect sizes, and pool results without going back to the papers? (C8) **System 2's outer loop** converges separately, using the gold standard benchmark — composite metric of schema coverage (40%) + extraction F1 (60%) against an expert-curated gold standard. System 2 stops when this metric plateaus (<1% improvement over 3 iterations) or hits a hard cap (10 iterations). Crucially, System 1 never sees the gold standard — it optimizes for internal quality and meta-analysis readiness. System 2 uses the benchmark to decide when to stop modifying instructions. Progressive expansion to new papers detects overfitting at both levels.
 
 ### Separation of concerns → Two systems
 System 1 does the work (develops schema, extracts data). System 2 improves how the work is done (evaluates results, identifies failure patterns, modifies agent instructions). Separating "do" from "improve" prevents the system from being unable to reflect on its own process.

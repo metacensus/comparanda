@@ -238,13 +238,6 @@ These inform our system design — what works, what doesn't, architectural patte
 
 ## Acquisition Notes
 
-**Paywalled (need institutional access or purchase):**
-- Meulendijks 2015 (Lancet Oncology) — HIGH PRIORITY
-- Campbell 2016 (Pharmacogenomics) — lower priority
-- Khraisha 2024 (Research Synthesis Methods) — check
-
-**Everything else is open access.**
-
 **Recommended acquisition order:**
 1. Le Teuff 2024, Meulendijks 2015, CPIC 2017, PRISMA 2020 (core references)
 2. Khan 2024, de Moraes 2024, Kim 2022 (schema extraction targets)

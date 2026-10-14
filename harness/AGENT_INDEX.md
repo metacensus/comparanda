@@ -94,7 +94,7 @@ Scope: measurement layer. Runs aggregate completeness/faithfulness surfaces and 
 
 Claim boundary: this agent currently evaluates configured evidence-recovery
 targets. Phase 1 will translate gold into normalized entity-aware records,
-preserve a reproducible legacy view, add the domain expert prerequisite facts, and extend
+preserve a reproducible legacy view, add domain-expert prerequisite facts, and extend
 failure attribution. The artifact and runner contract are not yet chosen. It
 does not score cross-paper overlap conclusions, analyst
 actions, the uniquely correct downstream synthesis, or a statistical model.

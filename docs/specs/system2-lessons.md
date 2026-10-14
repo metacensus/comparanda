@@ -13,6 +13,7 @@
 
 ## Lesson 2: Identity dimensions must accommodate the finest granularity in the corpus
 
+**Observed:** One paper reported per-genotype data (AA, AG, GG for each variant). The extractor collapsed everything to carrier vs wildtype (dominant model), producing a fraction of the rows the paper supports; most of the extractable data was silently lost. The MA Critique declared "ready" because the rows it saw WERE poolable — it has no way to know about the missing rows.
 
 **Root cause:** The schema's identity dimension guidance and the extractor's instructions were domain-specific about genotypes but missed the universal principle. The real issue is: if the schema's identity dimensions can only represent coarse groupings, fine-grained data gets silently compressed during extraction — and no System 1 agent can detect the loss.
 
@@ -23,10 +24,11 @@
 - ma-critique.md: "check whether identity dimensions force lossy data compression"
 - extractor.md: "extract at the paper's granularity, never collapse"
 
-**System 2 implication:** This is the strongest evidence for why System 2 is needed. The MA Critique (System 1's quality signal) cannot detect completeness issues — it evaluates whether EXISTING rows are poolable, not whether MISSING rows exist. Only comparison against a gold standard (the harness) reveals that 73% of data was dropped. System 2 would: (1) detect the row count discrepancy, (2) trace it to the schema's identity dimension granularity, (3) propose the universal principle above.
+**System 2 implication:** This is the strongest evidence for why System 2 is needed. The MA Critique (System 1's quality signal) cannot detect completeness issues — it evaluates whether EXISTING rows are poolable, not whether MISSING rows exist. Only comparison against an expert-curated gold standard (the harness) reveals that most of the data was dropped. System 2 would: (1) detect the row count discrepancy, (2) trace it to the schema's identity dimension granularity, (3) propose the universal principle above.
 
 ## Lesson 3: MA Critique convergence is necessary but not sufficient
 
+**Observed:** The inner loop converged ("ready") after 3 iterations, yet comparison with the gold standard showed substantially incomplete row coverage across the subset, and very low coverage for the paper in Lesson 2. The MA Critique correctly assessed that the EXTRACTED data supports meta-analysis — but it cannot assess whether the extraction is COMPLETE.
 
 **Implication for System 2 architecture:** The harness must provide a completeness signal that System 1 lacks. Two mechanisms:
 1. **Gold standard comparison** (when available): row count comparison, field coverage, finding-level matching
@@ -46,6 +48,7 @@ The protocol should clearly separate these phases. Previous subset extractions s
 
 ## Lesson 9: Complementary threshold vocabulary gap — structural limitation
 
+**Observed:** For a paper whose counts support both grade 0-2 and grade 3-4 rows for each variant×genotype, the gold standard expected both thresholds while the extraction contained only the ge3 rows. The extractor has a CRITICAL instruction about complementary thresholds, the schema proposer has Rule 11 about complementary vocabulary, and the MA Critique reads schema_vocabulary_gaps — but none of them trigger because:
 
 - Surveys don't catalog derivable complements, only explicitly reported thresholds
 - Domain references from prior meta-analyses focus on ge3 pooling, not complementary extraction
@@ -61,3 +64,4 @@ The protocol should clearly separate these phases. Previous subset extractions s
 3. The domain reference files to explicitly note that gold-standard-quality extraction includes complementary thresholds
 4. A direct vocabulary addition during calibration based on the gold standard pattern
 
+**Status:** Documented as known gap. Coverage stays low for papers where complementary thresholds matter. The fix is upstream in the information pipeline, not in the extractor instructions.

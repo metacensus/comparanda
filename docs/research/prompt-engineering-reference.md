@@ -33,8 +33,9 @@ models (Opus 4.6, Sonnet 4.6, Haiku 4.5).
 Claude responds best to explicit instructions. Do not rely on the model to infer intent from
 vague prompts.
 
-**Golden rule** (from Anthropic): Show your prompt to a colleague with minimal context on the
-task and ask them to follow it. If they'd be confused, Claude will be too.
+**Colleague test** (adapted from Anthropic's guidance): imagine handing the prompt to a
+capable coworker who knows nothing about the task. Anything that would leave them guessing
+will leave the model guessing too.
 
 - Be specific about the desired output format and constraints.
 - Provide instructions as sequential steps using numbered lists or bullet points when order
@@ -48,11 +49,11 @@ bare rules.
 
 ```
 # Less effective
-NEVER use ellipses
+Never abbreviate units.
 
 # More effective
-Your response will be read aloud by a text-to-speech engine, so never use
-ellipses since the TTS engine will not know how to pronounce them.
+These values will be parsed by a script that only recognizes full unit names,
+so always write units out in full (e.g. "milligrams", not "mg").
 ```
 
 ### 1.3 Use XML Tags for Structure
@@ -97,17 +98,19 @@ Positive framing is more effective than prohibitions.
 
 ```
 # Less effective
-Do not use markdown in your response.
+Don't leave any field blank.
 
 # More effective
-Your response should be composed of smoothly flowing prose paragraphs.
+Fill every field; when the paper does not report a value, record it as
+missing with a short explanation of why.
 ```
 
 ### 1.8 Prefer General Instructions Over Prescriptive Steps
 
-From Anthropic's thinking guidance: "A prompt like 'think thoroughly' often produces better
-reasoning than a hand-written step-by-step plan. Claude's reasoning frequently exceeds what
-a human would prescribe." Guide the *what* and *why*; let the model decide *how*.
+Anthropic's extended-thinking guidance observes that a high-level nudge to reason carefully
+tends to work better than a detailed, hand-authored reasoning procedure, because the model's
+own plan is often better than the one a prompt author would write. Guide the *what* and
+*why*; let the model decide *how*.
 
 ---
 
@@ -197,16 +200,16 @@ You are [role description with domain expertise].
 Claude Opus 4.6 may take irreversible actions without guidance. Add explicit guardrails:
 
 ```
-Consider the reversibility and potential impact of your actions. You are
-encouraged to take local, reversible actions like editing files or running
-tests, but for actions that are hard to reverse, affect shared systems, or
-could be destructive, ask the user before proceeding.
+Before acting, weigh how reversible the action is and what it could affect.
+Go ahead with local, easily undone work such as editing files in your scope
+or running tests. Pause and ask before anything destructive, hard to undo,
+or touching shared resources.
 ```
 
 ### 3.4 Tool Documentation
 
-From Anthropic: "Put as much effort into tool configuration -- name, description, etc --
-as you do into crafting your prompts." Each tool needs:
+Anthropic recommends investing as much care in tool definitions (names, descriptions,
+parameters) as in the prompt itself. Each tool needs:
 
 - A distinct purpose and clear description
 - Descriptive parameter names with docstring-quality descriptions
@@ -218,13 +221,11 @@ as you do into crafting your prompts." Each tool needs:
 Claude 4.6 excels at parallel execution. Boost to near-100% with:
 
 ```xml
-<use_parallel_tool_calls>
-If you intend to call multiple tools and there are no dependencies between
-the tool calls, make all of the independent tool calls in parallel.
-However, if some tool calls depend on previous calls to inform dependent
-values, do NOT call these tools in parallel. Never use placeholders or
-guess missing parameters.
-</use_parallel_tool_calls>
+<parallel_tools>
+When several tool calls don't depend on each other, issue them together in
+one step. When a call needs a value produced by an earlier call, wait for
+that result first. Don't invent placeholder or guessed arguments.
+</parallel_tools>
 ```
 
 ### 3.6 Long-Horizon State Tracking
@@ -238,11 +239,10 @@ For agents that span multiple context windows:
 5. On context refresh, start by reviewing state files rather than relying on compaction.
 
 ```
-Your context window will be automatically compacted as it approaches its
-limit, allowing you to continue working indefinitely. Do not stop tasks
-early due to token budget concerns. As you approach your token budget
-limit, save your current progress and state to memory before the context
-window refreshes.
+Older context will be summarized automatically as you near the limit, so
+keep working; don't wrap up early to save tokens. When you get close to the
+limit, write your progress and current state to the state files so you can
+pick up cleanly after the refresh.
 ```
 
 ### 3.7 Controlling Overeagerness (Claude 4.5/4.6 Specific)
@@ -251,8 +251,8 @@ These models are more proactive than predecessors. If prompts were designed to r
 undertriggering (e.g., "CRITICAL: You MUST use this tool"), dial back to normal language.
 
 ```
-Avoid over-engineering. Only make changes that are directly requested or
-clearly necessary. Keep solutions simple and focused.
+Keep the work to what was asked or is plainly required. Prefer the simplest
+solution that does the job; don't add extras.
 ```
 
 ---
@@ -649,9 +649,9 @@ Wrap examples in dedicated tags so Claude distinguishes them from instructions:
 
 ### 7.5 Thinking in Examples
 
-From Anthropic: "Multishot examples work with thinking. Use `<thinking>` tags inside your
-few-shot examples to show Claude the reasoning pattern. It will generalize that style to
-its own extended thinking blocks."
+Anthropic notes that few-shot examples combine well with extended thinking: if the
+examples include their reasoning inside `<thinking>` tags, the model tends to carry that
+reasoning style into its own thinking.
 
 ```xml
 <example>
@@ -725,8 +725,8 @@ When the lead agent delegates to subagents, the delegation prompt must include:
 4. **Task boundaries**: What is in-scope and out-of-scope
 5. **Effort budget**: How many tool calls / how much depth is appropriate
 
-From Anthropic's research: "Vague instructions caused duplicate work and misaligned
-searches."
+Anthropic's multi-agent research write-up reports that underspecified delegation led
+subagents to repeat each other's work and search in the wrong directions.
 
 ### 8.4 Effort Scaling Rules
 

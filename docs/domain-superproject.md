@@ -2,12 +2,13 @@
 
 Comparanda methodology, domain working state, and deployable reviewer data have
 different ownership and release cadences. They therefore live in three separate
-repositories composed with Git submodules.
+repositories composed with Git submodules (the domain and data repositories may
+be private).
 
 ```text
-metacensus/comparanda                 reusable engine + harness
+comparanda                            reusable engine + harness (this repository)
 
-metacensus/comparanda-<domain>        single-domain superproject
+comparanda-<domain>                   single-domain superproject
 ├── comparanda/                       pinned engine submodule
 ├── export/                           pinned comparanda-<domain>-data submodule
 ├── schema/, surveys/, extractions/, observations/
@@ -17,7 +18,7 @@ metacensus/comparanda-<domain>        single-domain superproject
 ├── iterations/
 └── comparanda-project.json
 
-comparanda-<domain>-data   immutable deployable runs
+comparanda-<domain>-data              immutable deployable runs
 └── runs/<run-id>/
 ```
 
@@ -55,9 +56,9 @@ in-repository project remains usable when its path is explicitly passed.
   superproject, commit in the repository that owns the changed path; no router
   can atomically redirect one staged change set across a repository boundary.
 
-The superproject and Demo may intentionally pin different data commits. This
-allows the domain workspace to test a candidate while Demo stays on the last
-approved release.
+The superproject and a downstream consumer may intentionally pin different data
+commits. This allows the domain workspace to test a candidate while the
+consumer stays on the last approved release.
 
 ## Exporting a reviewer run
 

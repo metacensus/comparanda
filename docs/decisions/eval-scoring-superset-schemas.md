@@ -1,3 +1,5 @@
+> **Historical (v1).** This record describes the v1 eval harness (`alignment.py`, `schema_bridge.py`, `scorer.py`), which has since been replaced; it is kept for design context.
+
 # Decision Record: Superset Schema Scoring Problem
 
 **Date:** 2026-04-01

@@ -1,5 +1,10 @@
 # Harness commit wrapper — spec
 
+> **Optional maintainer tooling.** `harness-commit` is only relevant if you run
+> Comparanda through a fork-based workflow (a per-domain fork with separate
+> `methodology` and `main` branches). It is not needed to use or contribute to
+> Comparanda.
+>
 > **Status:** legacy per-domain-fork compatibility only. Domain superprojects
 > use separate Git repositories for methodology, application state, and exports;
 > commit directly in the repository that owns the path. Do not use this router
@@ -70,7 +75,7 @@ Subject-line prefixes (`methodology:` / `dpyd:` / etc.) are emitted by the wrapp
 3. **`.gitignore` files.** Fork-only override lines (`!/projects/dpyd/` etc.) live on `main`. If the harness stages a `.gitignore` change that only adds/modifies override lines, it's a domain commit. If it stages canonical-shape lines (anything not under the override block), it's methodology. The wrapper distinguishes via a marker comment in the gitignore file (e.g., `# Fork-local override (main only):` — everything after this line is fork-only).
 4. **Crash mid-commit.** If `git checkout methodology` succeeds but `git commit` fails, the wrapper restores by `git checkout main` and surfacing the original staged paths.
 5. **Operator already on `methodology`.** Wrapper detects, skips the branch-switch dance, commits directly.
-6. **No `methodology` branch present.** This is canonical (`metacensus/comparanda`) or any non-fork checkout. The wrapper detects via `git rev-parse --verify methodology` and falls back to committing on the current branch (with classification still applied for subject-prefix purposes, but no branch switch). Log a one-line info message: "no methodology branch found — assuming canonical/non-fork checkout, committing on <current-branch>." This makes the wrapper safe to invoke from canonical's own CI / dev workflows.
+6. **No `methodology` branch present.** This is canonical (the upstream Comparanda repository) or any non-fork checkout. The wrapper detects via `git rev-parse --verify methodology` and falls back to committing on the current branch (with classification still applied for subject-prefix purposes, but no branch switch). Log a one-line info message: "no methodology branch found — assuming canonical/non-fork checkout, committing on <current-branch>." This makes the wrapper safe to invoke from canonical's own CI / dev workflows.
 
 ## Configuration
 
@@ -100,6 +105,6 @@ The wrapper lands in canonical's `harness/src/` in Phase 2.5, before the fork is
 
 ## Not in scope
 
-- Squash-merge prevention at the canonical level (handled separately via `gh repo edit metacensus/comparanda --enable-squash-merge=false`).
+- Squash-merge prevention at the canonical level (handled separately, e.g. `gh repo edit <owner>/comparanda --enable-squash-merge=false`).
 - Branch protection on canonical `main` (also handled separately).
 - A pre-commit hook variant: the wrapper is sufficient because the harness is the only auto-committer in the fork. Human commits use the standard `git checkout methodology` + `git merge --ff` flow documented in the root README / CLAUDE.md.
