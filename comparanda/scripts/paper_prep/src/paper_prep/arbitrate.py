@@ -28,6 +28,7 @@ import subprocess
 from collections import Counter, defaultdict
 from pathlib import Path
 
+from paper_prep.claude_cli import build_claude_argv
 from paper_prep.markdown_parser import parse_extractor_markdown
 from paper_prep.normalize import normalize_strict
 from paper_prep.schema import Table
@@ -599,20 +600,6 @@ Format:
 4. The corrected table in GitHub-flavored markdown
 5. `## Arbitration notes` section: bullet per change with row, col, what was wrong, what's correct, and **which Pattern** (A/B/C/D/E) triggered the action.
 
-## Verify
-
-After writing, verify it parses:
-```
-uv run python -c "
-from pathlib import Path
-from paper_prep.markdown_parser import parse_extractor_markdown
-o = parse_extractor_markdown(Path('{arbited_path}'), '{paper_id}', 'arbited')
-for t in o.tables: print(t.table_id, 'rows=', len(t.rows))
-"
-```
-
-Expect Table {table_id}.
-
 Be consistent: if you decide a table is in Pattern A, apply the move to ALL fitting groups. If Pattern B, leave ALL of them. Don't hedge per-row unless the PDF clearly shows different conventions for different groups within the same table.
 """
 
@@ -621,21 +608,43 @@ def _run_arbiter(
     prompt: str,
     max_budget_usd: float,
     timeout_s: int,
+    *,
+    arbited_path: Path,
+    read_dirs: list[Path],
 ) -> tuple[int, str, str]:
-    """Invoke `claude -p` for Stage-2 arbitration. Returns (rc, stdout, stderr)."""
+    """Invoke `claude -p` for Stage-2 arbitration. Returns (rc, stdout, stderr).
+
+    Runs in the output file's directory; the model may read `read_dirs` and
+    write only `arbited_path` (see `paper_prep.claude_cli`).
+    """
+    cwd = arbited_path.resolve().parent
     proc = subprocess.run(
-        [
-            "claude", "-p", prompt,
-            "--model", "sonnet",
-            "--max-budget-usd", f"{max_budget_usd:.2f}",
-            "--dangerously-skip-permissions",
-            "--output-format", "json",
-        ],
+        build_claude_argv(
+            prompt,
+            cwd=cwd,
+            output_path=arbited_path,
+            model="sonnet",
+            max_budget_usd=max_budget_usd,
+            read_dirs=read_dirs,
+        ),
+        cwd=str(cwd),
         timeout=timeout_s,
+        stdin=subprocess.DEVNULL,
         capture_output=True,
         text=True,
     )
     return proc.returncode, proc.stdout or "", proc.stderr or ""
+
+
+def _arbited_parses(arbited_path: Path, paper_id: str, table_id: str) -> bool:
+    """True if the arbited markdown parses and contains Table `table_id`."""
+    if not arbited_path.exists():
+        return False
+    try:
+        out = parse_extractor_markdown(arbited_path, paper_id, "arbited")
+    except Exception:  # noqa: BLE001
+        return False
+    return any((t.table_id or "").lower() == table_id.lower() for t in out.tables)
 
 
 def _write_passthrough_arbited(
@@ -707,11 +716,14 @@ def merge_and_arbitrate(
     Returns the merge result dict (headers, grid, conflicts, counts, etc.),
     augmented with `arbiter_ok` and `arbiter_cost_usd` when arbitration ran.
     """
-    sonnet_md = Path(sonnet_md)
-    docling_md = Path(docling_md)
-    pdf_path = Path(pdf_path)
-    merged_out = Path(merged_out)
-    arbited_out = Path(arbited_out)
+    # Resolved paths: the arbiter's write permission is matched against the
+    # resolved output path (e.g. /tmp -> /private/tmp on macOS), so the
+    # prompt must name the same resolved path.
+    sonnet_md = Path(sonnet_md).resolve()
+    docling_md = Path(docling_md).resolve()
+    pdf_path = Path(pdf_path).resolve()
+    merged_out = Path(merged_out).resolve()
+    arbited_out = Path(arbited_out).resolve()
 
     table_a = find_table(sonnet_md, a_label, paper_id, table_id)
     table_b = find_table(docling_md, b_label, paper_id, table_id)
@@ -762,6 +774,7 @@ def merge_and_arbitrate(
         diff_guide_out = (
             merged_out.parent / f"{merged_out.stem}_arbitration" / "diff_guide.md"
         )
+    diff_guide_out = Path(diff_guide_out).resolve()
     _write_diff_guide(
         merged=result,
         first_pass_md=sonnet_md,
@@ -783,7 +796,13 @@ def merge_and_arbitrate(
     )
 
     arbited_out.parent.mkdir(parents=True, exist_ok=True)
-    rc, stdout, stderr = _run_arbiter(prompt, max_budget_usd, arbiter_timeout_s)
+    rc, stdout, stderr = _run_arbiter(
+        prompt,
+        max_budget_usd,
+        arbiter_timeout_s,
+        arbited_path=arbited_out,
+        read_dirs=[p.resolve().parent for p in (sonnet_md, docling_md, pdf_path, diff_guide_out)],
+    )
 
     cost: float | None = None
     if stdout:
@@ -800,7 +819,12 @@ def merge_and_arbitrate(
                 except ValueError:
                     pass
 
-    result["arbiter_ok"] = arbited_out.exists() and rc == 0
+    # The arbiter has no shell, so the parse check the prompt used to ask
+    # the model to run happens here instead.
+    parses = _arbited_parses(arbited_out, paper_id, table_id)
+    if arbited_out.exists() and not parses:
+        print(f"[warn] {arbited_out.name} does not parse to Table {table_id}")
+    result["arbiter_ok"] = parses and rc == 0
     result["arbiter_cost_usd"] = cost
     result["arbiter_returncode"] = rc
 

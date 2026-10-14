@@ -3,8 +3,8 @@
 The corpus convention is that PDF filenames embed the PubMed ID inside the
 last bracket group, e.g.:
 
-    Zhang 2007 (Med Oncol) [17848752].pdf
-    Amstutz 2018 (Clin Pharmacol Ther) [29152729 CPIC].pdf
+    Smith 2024 (J Example) [12345678].pdf
+    Jones 2025 (Example Rev) [23456789 guideline].pdf
 
 Some files have no bracket (e.g. preprints, papers with DOI-only ids). Those
 are skipped — callers that need them must locate them another way.

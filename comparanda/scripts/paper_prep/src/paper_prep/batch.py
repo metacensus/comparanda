@@ -1,9 +1,9 @@
 """Batch runner for paper-prep: bundle a corpus of PDFs in one go.
 
 RUN THIS FROM A REGULAR TERMINAL — NOT from inside a Claude Code session.
-The Sonnet first-pass + arbiter steps invoke `claude -p` as subprocesses
-which need OAuth keychain auth. Nested invocations from inside an outer
-Claude Code session are slow and broken.
+The Sonnet steps invoke `claude -p` as subprocesses, which use your Claude
+Code login (subscription or API key). Nested invocations from inside an
+outer Claude Code session are slow and unreliable.
 
 Usage:
     uv run python -m paper_prep.batch \\
@@ -20,14 +20,14 @@ Usage:
 Subset JSON shape (one entry per paper):
     {
       "papers": [
-        {"pmid": 19530960, "survey_key": "Amstutz_2009_19530960"},
+        {"pmid": 12345678, "survey_key": "smith_2024_12345678"},
         ...
       ]
     }
 
 The `pmid` is resolved against `--pdfs-dir` by `paper_prep.pdf_index`,
 which expects filenames with the PMID in the last `[...]` group (e.g.
-`Amstutz 2009 (Pharmacogenomics) [19530960].pdf`). `survey_key` becomes
+`Smith 2024 (J Example) [12345678].pdf`). `survey_key` becomes
 the paper_id used for the bundle directory name and for intermediates
 under `--run-root`.
 

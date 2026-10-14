@@ -1,7 +1,7 @@
 """Shared helpers for the bundle builder.
 
-Pruned from the original paper-prep Phase-3.4 manifest builder. Only the
-helpers still consumed by `scripts/build_bundle.py` remain; the obsolete
+Pruned from an earlier manifest builder. Only the helpers still consumed
+by `paper_prep.layer2` remain; the obsolete
 whole-paper-rewrite `build()` and its Section/Docling-pairing infrastructure
 are gone.
 """

@@ -2,9 +2,9 @@
 + deterministic merge + (optional) Stage-2 LLM arbiter + bundle assembly.
 
 RUN THIS FROM A REGULAR TERMINAL — NOT from inside a Claude Code session.
-The Sonnet calls invoke `claude -p` as subprocesses which need OAuth
-keychain auth. Nested invocations from inside an outer Claude Code
-session are slow and broken.
+The Sonnet steps invoke `claude -p` as subprocesses, which use your Claude
+Code login (subscription or API key). Nested invocations from inside an
+outer Claude Code session are slow and unreliable.
 
 Usage:
     uv run python -m paper_prep <paper_id> \\

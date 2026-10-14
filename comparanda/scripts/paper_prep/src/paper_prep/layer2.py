@@ -32,7 +32,7 @@ smoke that skips the LLM step (deterministic merge only — still gives
 dual-extractor cross-validation, just no Sonnet conflict resolution).
 
 Usage:
-    uv run python scripts/build_bundle.py <paper_id> \\
+    uv run python -m paper_prep.layer2 <paper_id> \\
         --run-root <run_root> \\
         --output-root <bundle_root> \\
         --pdf <pdf_path> \\

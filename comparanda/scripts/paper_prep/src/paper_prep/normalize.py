@@ -36,13 +36,13 @@ _MD_BOLD_RE = re.compile(r"\*\*(.+?)\*\*")
 _MD_UNDERSCORE_BOLD_RE = re.compile(r"__(.+?)__")
 _MD_ITALIC_RE = re.compile(r"(?<!\w)_(.+?)_(?!\w)")
 # Single-asterisk italic. Must run AFTER _MD_BOLD_RE so it doesn't see
-# the inner asterisks of `**bold**`. Common case: gene names rendered as
-# `*UGT1A1*` per scientific convention.
+# the inner asterisks of `**bold**`. Common case: italicised names (e.g.
+# gene or species names) rendered as `*Name*` per scientific convention.
 #
-# Restrictions, to avoid eating star-allele notation like `*28/*28` (where
-# the asterisks are part of the data, not markdown):
-#  - Inner content must start with a LETTER (gene symbols start with letters;
-#    star-allele numbers start with digits, so `*28...*` won't match).
+# Restrictions, to avoid eating data that legitimately contains asterisks
+# (e.g. allele / variant notation like `*2/*2`):
+#  - Inner content must start with a LETTER (italicised names start with
+#    letters; numbered notation starts with digits, so `*2...*` won't match).
 #  - Outside the opening `*`: not a word char and not another `*` (so we
 #    don't bleed into bold).
 #  - Outside the closing `*`: not a word char and not another `*`.

@@ -3,7 +3,7 @@
 Produces markdown plus structured table JSON (cells, headers, merged cell info)
 and per-figure PNGs + a pictures index JSON.
 
-Phase 4 adds `extract_split`: writes the same conversion into a two-tree
+`extract_split`: writes the same conversion into a two-tree
 layout (`paper_runs/` for things Sonnet sees, `arbiter_inputs/` for things
 Sonnet must not see), plus per-section markdown files split via
 HierarchicalChunker — the basis for the section-iterating first-pass.
@@ -178,7 +178,7 @@ def _picture_to_dict(picture_item: Any, doc: Any, index: int) -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
-# Phase 4 — section split via HierarchicalChunker
+# Section split via HierarchicalChunker
 # ---------------------------------------------------------------------------
 
 
@@ -471,7 +471,7 @@ def extract_split(
     paper_runs_dir: Path | str,
     arbiter_inputs_dir: Path | str,
 ) -> dict[str, Path]:
-    """Phase-4 layout: convert once, write outputs into the two-tree split.
+    """Convert once, write outputs into the two-tree split.
 
     paper_runs_dir/ (Sonnet-visible) gets:
       - docling_pictures.json + docling_pictures/picture_*.png

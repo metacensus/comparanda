@@ -2,7 +2,7 @@
 
 Orchestrates, for one paper:
 
-    1. Docling extraction (split layout — preserves Phase 4's extract_split)
+    1. Docling extraction (split layout via `extract_split`)
         paper_runs/<paper>/{docling_pictures, docling_pictures.json,
                             docling_sections/, docling_sections.json}
         arbiter_inputs/<paper>/{docling.md, docling_tables.json,
@@ -14,17 +14,17 @@ Orchestrates, for one paper:
     3. Run status -> paper_runs/<paper>/run_status.json
 
 Per-table dispatch (smallest possible per-call context) avoids the
-32K output cap that killed Phase 4 verify-and-patch on long papers.
-See `docs/phase4_findings.md` for the trajectory + revival roadmap.
+32K output cap that an earlier whole-paper verify-and-patch design hit
+on long papers.
 
 Each step is idempotent. The first-pass resumes at per-table granularity
 (tables with a `sonnet_tables/<docling_idx>.md` already on disk are
 skipped). Failed tables are retried once before being reported as failures.
 
-Steps 3+ (per-table arbitration + bundle build) get wired in by P5 + P6.
+Per-table arbitration + bundle build happen in `paper_prep.layer2`.
 
 Usage:
-    uv run python scripts/run_paper.py <paper_id> \\
+    uv run python -m paper_prep.layer1 <paper_id> \\
         --pdf <path> \\
         --run-root <path> \\
         [--table-batch-size 4] \\

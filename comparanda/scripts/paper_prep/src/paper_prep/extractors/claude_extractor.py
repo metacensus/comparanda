@@ -3,16 +3,20 @@
 Subprocess wrapper that asks Claude to extract ONE table from the source
 PDF and write `sonnet_tables/<docling_idx>.md`. Per-table direct dispatch
 keeps each Sonnet call's context tiny — avoids the 32K output cap that
-killed the Phase 4 verify-and-patch architecture on long papers.
+broke an earlier whole-paper verify-and-patch design on long papers.
 
 The first-pass extracts tables only. Prose flows from Docling raw into
-the bundle (see scripts/build_bundle.py). Figure decoration filtering
+the bundle (see `paper_prep.layer2`). Figure decoration filtering
 happens at extractor time via Comparanda's survey `figure_inventory`.
 
-History: Phase 4 (verify-and-patch with per-section edit JSONs + figure
-descriptions + prose patches) is preserved on branch
-`phase4-section-pipeline-paused`. This module is the pivot to a faster /
-cheaper minimal first-pass — see `docs/phase4_findings.md` (May-13 update).
+History: an earlier whole-paper verify-and-patch design (per-section edit
+JSONs, figure descriptions, prose patches) hit the output cap on long papers;
+this module is the faster / cheaper tables-only replacement.
+
+Permissions: the `claude -p` call is scoped by
+`paper_prep.claude_cli.build_claude_argv` (Read/Write/Edit only, reads
+confined to the run dir + the PDF's directory, writes to the one output
+file only).
 
 Idempotent at per-table granularity: re-runs only fill in tables that
 don't yet have `sonnet_tables/<docling_idx>.md` written.
@@ -26,6 +30,7 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
+from paper_prep.claude_cli import build_claude_argv
 
 _PROMPT_TEMPLATE = """\
 You are extracting ONE table from a scientific paper PDF for paper-prep.
@@ -226,16 +231,18 @@ def extract_table(
 
     try:
         proc = subprocess.run(
-            [
-                "claude", "-p", prompt,
-                "--model", "sonnet",
-                "--effort", "medium",
-                "--max-budget-usd", f"{max_budget_usd:.2f}",
-                "--dangerously-skip-permissions",
-                "--output-format", "json",
-            ],
+            build_claude_argv(
+                prompt,
+                cwd=paper_runs_dir,
+                output_path=out_path,
+                model="sonnet",
+                effort="medium",
+                max_budget_usd=max_budget_usd,
+                read_dirs=[pdf_path.parent],
+            ),
             cwd=str(paper_runs_dir),
             timeout=timeout,
+            stdin=subprocess.DEVNULL,
             capture_output=True,
             text=True,
             env=env,
