@@ -12,7 +12,7 @@ Built by [MetaCensus](https://github.com/metacensus), a nonprofit working on ope
 > Evaluation runs, extracted datasets and the papers they come from are not published here, because the papers are under copyright.
 
 ```mermaid
-flowchart LR
+flowchart TB
     PDFs[/"Paper PDFs"/] --> Prep["paper_prep<br/>Docling + Claude table pass + arbiter"]
     Notes[/"Domain notes"/] --> Survey
     Prep --> Bundles[/"Paper bundles"/] --> Survey
