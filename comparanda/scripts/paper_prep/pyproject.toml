@@ -3,6 +3,7 @@ name = "paper-prep"
 version = "0.1.0"
 description = "PDF → structured bundle preprocessor for Comparanda (Docling + per-table Sonnet + Stage-2 LLM arbiter)"
 readme = "README.md"
+license = "AGPL-3.0-only"
 authors = [{ name = "MetaCensus" }]
 requires-python = ">=3.12"
 dependencies = [

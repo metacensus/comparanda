@@ -82,7 +82,8 @@ covered by unit tests.
    name (for example `fix/normalizer-reconcile-empty-table`).
 2. Keep each pull request to one logical change, and add or update tests
    for behavior changes.
-3. Make sure the relevant test suites pass locally.
+3. Make sure the relevant test suites pass locally, and sign off every
+   commit (see [License and sign-off](#license-and-sign-off)).
 4. In the description, explain what changed and why, how you tested it, and
    any effect on file contracts (`AGENT_INDEX.md`) or docs. Update those docs
    in the same pull request.
@@ -104,7 +105,15 @@ Do not attach copyrighted PDFs or private domain data. A minimal synthetic
 example is better. Report security problems privately as described in
 [`SECURITY.md`](./SECURITY.md), not in a public issue.
 
-## Contributor terms and license
+## License and sign-off
 
-License: to be announced before the first tagged release. Contributor terms
-will be announced with the license.
+Comparanda is licensed under the [GNU Affero General Public License v3.0
+only](./LICENSE) (`AGPL-3.0-only`). By contributing, you agree that your
+contribution is licensed under the same terms.
+
+Every commit must carry a `Signed-off-by` line certifying the
+[Developer Certificate of Origin](https://developercertificate.org/): that you
+wrote the change, or otherwise have the right to submit it under this
+project's license. Add it with `git commit -s`; the name and email must match
+the commit author. To sign off commits you already made on a branch, run
+`git rebase --signoff main`.

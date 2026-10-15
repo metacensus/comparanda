@@ -3,6 +3,7 @@ name = "harness"
 version = "0.1.0"
 description = "Calibration harness for Comparanda — evaluates and improves agent instructions"
 requires-python = ">=3.12"
+license = "AGPL-3.0-only"
 authors = [{ name = "MetaCensus" }]
 dependencies = [
     "pandas>=2.2",
