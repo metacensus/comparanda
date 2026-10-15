@@ -89,6 +89,8 @@ def _git(*args: str, cwd: Path, check: bool = True, env: dict | None = None) -> 
 def repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """Create a temp git repo with a methodology + main branch and a baseline commit."""
     _git("init", "-b", "main", cwd=tmp_path)
+    _git("config", "user.name", "Test", cwd=tmp_path)
+    _git("config", "user.email", "test@example.com", cwd=tmp_path)
     # Baseline commit on main with placeholder system code.
     (tmp_path / "comparanda").mkdir()
     (tmp_path / "comparanda" / ".claude").mkdir()
