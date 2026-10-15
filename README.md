@@ -8,6 +8,43 @@ It runs as [Claude Code](https://docs.claude.com/en/docs/claude-code) agents bac
 
 Built by [MetaCensus](https://github.com/metacensus), a nonprofit working on open, reusable evidence for meta-analysis.
 
+> This repository contains the system only.
+> Evaluation runs, extracted datasets and the papers they come from are not published here, because the papers are under copyright.
+
+```mermaid
+flowchart LR
+    PDFs[/"Paper PDFs"/] --> Prep["paper_prep<br/>Docling + Claude table pass + arbiter"]
+    Notes[/"Domain notes"/] --> Survey
+    Prep --> Bundles[/"Paper bundles"/] --> Survey
+
+    subgraph Pipeline["Extraction pipeline (comparanda/)"]
+        direction TB
+        Survey["Survey every paper"] --> Schema["Propose schema"]
+        Schema --> Extract["Extract rows<br/>with validated provenance"]
+        Extract --> QC["Extraction QC"]
+        QC --> Normalize["Normalize terms"]
+        Normalize --> Critique{"Ready for<br/>meta-analysis?"}
+        Critique -->|"no: refine schema"| Extract
+        Critique -->|"yes: test on fresh papers"| Rotate{"3 clean<br/>rotations?"}
+        Rotate -->|no| Extract
+        Rotate -->|yes| Full["Full-corpus extraction"]
+    end
+
+    Full --> Out[/"Schema, source-linked rows,<br/>normalization tables"/]
+
+    subgraph Harness["Calibration harness (harness/)"]
+        direction TB
+        Eval["Score vs gold standard"] --> Diagnose["Diagnose failures"]
+        Diagnose --> Critic["Propose one<br/>instruction change"]
+        Critic --> Keep{"Score improved?"}
+    end
+
+    Gold[/"Expert gold standard"/] --> Eval
+    Out --> Eval
+    Keep -->|"keep or revert"| Instr[/"Agent instructions"/]
+    Instr -.-> Pipeline
+```
+
 ## Why
 
 Extraction tools like Covidence and Elicit assume someone has already designed the schema.
