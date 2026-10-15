@@ -19,15 +19,18 @@ flowchart TB
 
     subgraph Pipeline["Extraction pipeline (comparanda/)"]
         direction TB
-        Survey["Survey every paper"] --> Schema["Propose schema"]
-        Schema --> Extract["Extract rows<br/>with validated provenance"]
+        Survey["Survey every paper"] --> Select["Pick 3–4 diverse papers"]
+        Select --> Schema["Propose schema"]
+        Schema --> Extract["Extract rows from the subset<br/>with validated provenance"]
         Extract --> QC["Extraction QC"]
         QC --> Normalize["Normalize terms"]
         Normalize --> Critique{"Ready for<br/>meta-analysis?"}
-        Critique -->|"no: refine schema"| Extract
-        Critique -->|"yes: test on fresh papers"| Rotate{"3 clean<br/>rotations?"}
-        Rotate -->|no| Extract
-        Rotate -->|yes| Full["Full-corpus extraction"]
+        Critique -->|"no"| Refine["Refine schema<br/>(resets rotation count)"]
+        Refine --> Extract
+        Critique -->|yes| Count{"3 clean rotations<br/>in a row?"}
+        Count -->|no| Rotate["Rotate to 3–4 fresh papers<br/>(keep one anchor paper)"]
+        Rotate --> Extract
+        Count -->|yes| Full["Full-corpus extraction"]
     end
 
     Full --> Out[/"Schema, source-linked rows,<br/>normalization tables"/]
