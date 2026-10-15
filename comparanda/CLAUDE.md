@@ -369,7 +369,7 @@ Once the schema is validated across multiple rotated subsets:
 5. **Read observation log before each phase** — maintain context across iterations
 6. **One row = one finding** — Cartesian expansion: paper × entities × outcomes × grade levels × groups
 7. **Reference/control group is always a row** — not implicit background
-8. **Provenance on everything** — tag as `paper`, `derived`, or `external`
+8. **Provenance on everything** — tag as `paper` or `derived` (the extraction validator rejects any other provenance type)
 9. **Always delegate to agents** — never perform extraction, normalization, survey, or critique yourself. Invoke the appropriate @agent. Each agent has specialized instructions that the orchestrator does not replicate. This applies to re-extraction as well as initial extraction.
 10. **Neutral agent prompts** — when invoking any agent, pass file paths to its inputs only. Do not summarize, interpret, or pre-digest file content in the prompt. Do not embed MA Critique findings, survey conclusions, or your own analysis into agent prompts. Each agent reads its own inputs and makes its own decisions — that is what we are testing. If the prompt tells the agent what to do, you are testing prompt compliance, not instruction quality.
 
