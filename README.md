@@ -23,7 +23,7 @@ Comparanda discovers the schema from the papers and extracts at a granularity th
 - **Extraction QC.** Each extraction is checked against its paper's survey and the schema, with targeted repairs sent back to the original extractor session.
 - **Lossless normalization.** Raw values map to standardized IDs (lookup table first, LLM second) while the raw value is kept, with a ledger of every mapping decision.
 - **Readiness testing.** A reviewer agent asks whether the data supports meta-analysis and proposes the smallest schema fix; the schema must then hold across three fresh subsets of papers in a row.
-- **Human review.** A risk-ranked review queue, review packets, audited corrections that survive re-extraction, and an exporter that highlights each source quote on the PDF page.
+- **Human review.** A risk-ranked review queue, review packets, and audited corrections that survive re-extraction.
 - **PDF preparation.** `paper_prep` turns PDFs into bundles with Docling, a Claude pass over each table, and an optional arbiter. Every LLM call has a cost cap and can only read its inputs and write one file.
 - **Self-calibration.** The harness scores runs against your gold standard, traces failures to the responsible instruction, and tests one general fix at a time, keeping or reverting it on the score.
 - **Domain-independent.** Agents, scripts and hooks contain no domain knowledge; everything specific to a research area lives in its own repository.
@@ -31,16 +31,14 @@ Comparanda discovers the schema from the papers and extracts at a granularity th
 ## Status
 
 Research software under active development, built on its first domain: DPYD pharmacogenomics (gene variants that predict severe toxicity from fluoropyrimidine chemotherapy).
-Instructions, file contracts and metrics still change between versions.
-Treat the output as material for expert review, not a finished dataset.
+Recent runs were executed mostly with GLM 5.3 Flash.
+A port of the pipeline to [Temporal](https://temporal.io/) is in progress.
 
-Known limits:
+Considerations:
 
-- Phase order, convergence and keep-or-revert decisions are instructions the model follows. Only the provenance validator, finalizers and hooks are enforced in code.
-- Only `paper_prep` has cost caps. Watch your first extraction runs closely.
-- Batch PDF prep keys on PubMed IDs, and the default gold-standard layout expects a biomedical effect-size spreadsheet.
-- The harness measures how much of the gold standard's evidence was recovered, not whether a meta-analysis built on it is valid.
-- The reviewer portal's UI is not in this repository; only the exporter is.
+- Comparanda is built to be general, but the default gold-standard layout expects a biomedical effect-size spreadsheet.
+- Cost caps exist only in `paper_prep`.
+- Workflow steps are enforced through agent instructions; the Temporal port will move them into code.
 
 ## Responsibility boundary
 
@@ -60,7 +58,6 @@ Known analyst decisions can test whether the extraction preserved enough evidenc
 - [Claude Code](https://docs.claude.com/en/docs/claude-code) CLI, installed and authenticated. Model usage is billed to your Claude Code account.
 - [uv](https://docs.astral.sh/uv/) and Python 3.12+, with `python3` on your `PATH` for the hooks.
 - `jq`, for the harness guard hook.
-- PyMuPDF, only for the reviewer-portal exporter (pulled in with `uv run --with pymupdf`).
 - Model access: most extraction agents use `claude-sonnet-5[1m]`, the survey agent `haiku`, and harness agents `haiku`, `sonnet` or `opus`. Change the `model:` line in an agent file if your account lacks a model; the harness eval model can also be set with `COMPARANDA_EVAL_MODEL`.
 
 ## Getting started
@@ -137,7 +134,6 @@ Each research area gets its own repository, which includes Comparanda as a Git s
 ```text
 comparanda-<domain>/
 ├── comparanda/                 submodule -> this repository
-├── export/                     optional: reviewer-portal snapshots
 ├── schema/, surveys/, extractions/, observations/
 ├── normalization/, critiques/, domain/
 ├── data/raw/                   source PDFs
