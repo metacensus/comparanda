@@ -4,7 +4,8 @@ Turn a pile of scientific papers into a structured, source-linked dataset ready 
 
 Give Comparanda a research area and the PDFs.
 It works out what to extract, extracts each finding as its own row, links every value to the passage or table cell it came from, and reconciles terminology across decades of literature.
-It runs as [Claude Code](https://docs.claude.com/en/docs/claude-code) agents backed by deterministic Python tooling, with a calibration harness that scores the agents against an expert gold standard and improves their instructions.
+It runs as [Claude Code](https://docs.claude.com/en/docs/claude-code) agents backed by deterministic Python tooling.
+A hill-climbing prompt-improvement harness scores the agents against an expert gold standard, tries one instruction change at a time, and keeps a change only if the score goes up, so the instructions only ratchet forward.
 
 Built by [MetaCensus](https://github.com/metacensus), a nonprofit working on open, reusable evidence for meta-analysis.
 
@@ -35,7 +36,7 @@ flowchart TB
 
     Full --> Out[/"Schema, source-linked rows,<br/>normalization tables"/]
 
-    subgraph Harness["Calibration harness (harness/)"]
+    subgraph Harness["Prompt-improvement harness (harness/)"]
         direction TB
         Eval["Score vs gold standard"] --> Diagnose["Diagnose failures"]
         Diagnose --> Critic["Propose one<br/>instruction change"]
@@ -65,7 +66,7 @@ Comparanda discovers the schema from the papers and extracts at a granularity th
 - **Readiness testing.** A reviewer agent asks whether the data supports meta-analysis and proposes the smallest schema fix; the schema must then hold across three fresh subsets of papers in a row.
 - **Human review.** A risk-ranked review queue, review packets, and audited corrections that survive re-extraction.
 - **PDF preparation.** `paper_prep` turns PDFs into bundles with Docling, a Claude pass over each table, and an optional arbiter. Every LLM call has a cost cap and can only read its inputs and write one file.
-- **Self-calibration.** The harness scores runs against your gold standard, traces failures to the responsible instruction, and tests one general fix at a time, keeping or reverting it on the score.
+- **Prompt-improvement ratchet.** The harness scores runs against your gold standard, traces failures to the responsible instruction, and tests one general fix at a time, keeping or reverting it on the score.
 - **Domain-independent.** Agents, scripts and hooks contain no domain knowledge; everything specific to a research area lives in its own repository.
 
 ## Status
@@ -126,7 +127,7 @@ For biomedical papers the document ID is usually the PubMed ID.
 
 ## How it works
 
-This repository has two parts: the extraction pipeline in [`comparanda/`](./comparanda/) and the calibration harness in [`harness/`](./harness/).
+This repository has two parts: the extraction pipeline in [`comparanda/`](./comparanda/) and the prompt-improvement harness in [`harness/`](./harness/).
 
 ### Extraction pipeline
 
@@ -151,7 +152,7 @@ A run also leaves a versioned schema, normalization tables, critiques, and an ap
 Hooks in `comparanda/.claude/hooks/` block direct writes to extraction files and keep the extractor from stopping before a validated finalization ([guardrails](./comparanda/AGENT_INDEX.md#guardrails)).
 Scripts are indexed in [`comparanda/scripts/README.md`](./comparanda/scripts/README.md), and the SDK and normalization contracts are in `comparanda/docs/`.
 
-### Calibration harness
+### Prompt-improvement harness
 
 The harness runs the pipeline, scores it against a gold standard, and improves the agents' instructions one change at a time.
 See [`harness/CLAUDE.md`](./harness/CLAUDE.md) and [`harness/AGENT_INDEX.md`](./harness/AGENT_INDEX.md).
@@ -190,7 +191,7 @@ See [`docs/domain-superproject.md`](./docs/domain-superproject.md) for the path 
 ```
 CLAUDE.md            setup walkthrough and routing for Claude Code
 comparanda/          extraction pipeline: agents, hooks, scripts, contracts, tests
-harness/             calibration harness: agents, guard hook, eval tooling, tests
+harness/             prompt-improvement harness: agents, guard hook, eval tooling, tests
 docs/                getting started, domain repositories, paper_prep, design notes
 ```
 
