@@ -52,7 +52,7 @@ This table was detected by Docling at index {docling_idx} on page {page}.
    covers captions that may be on the previous page and tables that
    may spill to the next page.
 2. Locate the target table. Identify the canonical paper-assigned ID
-   (e.g. "1", "2", "S1", "S2", "A1A"). Tables are typically labeled
+   (e.g. 1, 2, S1, S2, A1A). Tables are typically labeled
    "Table N", "Supplementary Table N", or similar.
 3. Extract the table exactly as the paper renders it.
 4. Write the result to `sonnet_tables/{docling_idx}.md` in the working
@@ -76,7 +76,7 @@ your output back to Docling's table without parsing the caption:
 ```
 <!-- paper-prep-meta
 docling_idx: {docling_idx}
-canonical_id: <the canonical ID you determined, e.g. "1", "S2", "A1A">
+canonical_id: <the canonical ID you determined, e.g. 1, S2, A1A>
 page: <the page number where the table starts in the PDF>
 -->
 # {paper_id} — Table <canonical_id> (Sonnet first-pass)
@@ -90,7 +90,8 @@ page: <the page number where the table starts in the PDF>
 
 The `docling_idx` value must echo {docling_idx} verbatim (it's the key
 the orchestrator uses to find your file). The `canonical_id` is what the
-paper calls the table (no "Table " prefix, no period — just the ID).
+paper calls the table, written bare: no quotes, no "Table " prefix, no
+period — just the ID (`canonical_id: S2`, not `canonical_id: "S2"`).
 The `page` is where the table starts.
 
 ## Content rules (apply verbatim — these are validated downstream)
