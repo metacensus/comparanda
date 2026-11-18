@@ -89,7 +89,8 @@ def _read_table_meta(md_path: Path) -> dict[str, str]:
         if ":" not in line:
             continue
         key, _, value = line.partition(":")
-        out[key.strip().lower()] = value.strip()
+        # The model sometimes writes `canonical_id: "1"`; the ID is the bare value.
+        out[key.strip().lower()] = value.strip().strip("\"'`").strip()
     return out
 
 
