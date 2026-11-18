@@ -181,7 +181,7 @@ def _render_table_markdown(table: Table) -> str:
         n_cols = max((len(r) for r in table.rows), default=0)
         headers = [f"col_{i}" for i in range(n_cols)]
     lines: list[str] = []
-    lines.append("| " + " | ".join(h or "" for h in headers) + " |")
+    lines.append("| " + " | ".join((h or "").replace("|", "\\|") for h in headers) + " |")
     lines.append("| " + " | ".join("---" for _ in headers) + " |")
     for row in table.rows:
         cells = list(row) + [""] * (len(headers) - len(row))
