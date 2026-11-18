@@ -79,7 +79,7 @@ def main() -> int:
         return 1
 
     print(f"\n=== Layer 2: merge + arbiter + bundle assembly ===")
-    layer2.build(
+    manifest_path = layer2.build(
         paper_id=args.paper_id,
         run_root=run_root,
         output_root=args.output_root,
@@ -90,6 +90,13 @@ def main() -> int:
     bundle_dir = args.output_root / args.paper_id
     print(f"\nBundle: {bundle_dir}")
     print(f"Intermediates: {run_root}")
+
+    failed = layer2.failed_tables(manifest_path)
+    if failed:
+        print(f"Layer 2 left {len(failed)} table(s) out of the bundle:", file=sys.stderr)
+        for f in failed:
+            print(f"  table {f['id'] or '?'} (docling_idx {f['docling_idx']}): {f['error']}", file=sys.stderr)
+        return 1
     return 0
 
 

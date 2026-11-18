@@ -151,13 +151,15 @@ def _build_combined_sonnet_md(
     sonnet_tables_dir: Path,
     out_path: Path,
     paper_id: str,
+    failures: list[dict[str, Any]],
 ) -> dict[str, str]:
     """Concat every valid `sonnet_tables/<idx>.md` into one synthetic
     extractor-style markdown that `parse_extractor_markdown` can read.
     Each table gets a canonical `Table <canonical_id>.` caption line
     constructed from the meta block.
 
-    Returns {canonical_id: docling_idx} mapping for valid tables.
+    Returns {canonical_id: docling_idx} mapping for valid tables; appends
+    tables it has to leave out to `failures`.
     """
     id_map: dict[str, str] = {}
     parts: list[str] = [f"# {paper_id} (Sonnet first-pass extraction)\n"]
@@ -171,6 +173,7 @@ def _build_combined_sonnet_md(
         canon = meta.get("canonical_id")
         if not canon:
             print(f"  [warn] missing canonical_id in meta block: {md_path.name} — skipping")
+            failures.append({"id": None, "docling_idx": md_path.stem, "error": "missing canonical_id"})
             continue
         if canon in id_map:
             print(f"  [warn] duplicate canonical ID {canon!r} — keeping {id_map[canon]}, dropping {md_path.stem}")
@@ -227,7 +230,8 @@ def build(
     # ── Stage 0: concatenate per-table Sonnet outputs into one md ────────
     sonnet_tables_dir = paper_runs_dir / "sonnet_tables"
     sonnet_combined = paper_runs_dir / "sonnet_combined.md"
-    canon_to_idx = _build_combined_sonnet_md(sonnet_tables_dir, sonnet_combined, paper_id)
+    table_failures: list[dict[str, Any]] = []
+    canon_to_idx = _build_combined_sonnet_md(sonnet_tables_dir, sonnet_combined, paper_id, table_failures)
     print(f"[{paper_id}] {len(canon_to_idx)} Sonnet tables: {sorted(canon_to_idx.keys(), key=_table_id_sort_key)}")
 
     # ── Stage 1+2: merge + arbitrate per table (library call) ────────────
@@ -253,6 +257,11 @@ def build(
             )
         except Exception as e:  # noqa: BLE001
             print(f"    FAIL: {type(e).__name__}: {e}")
+            table_failures.append({
+                "id": canonical_id,
+                "docling_idx": canon_to_idx[canonical_id],
+                "error": f"{type(e).__name__}: {e}",
+            })
             continue
 
         counts = result.get("counts") or {}
@@ -263,6 +272,12 @@ def build(
 
         if arbited_out.exists():
             arbited_md_by_id[canonical_id] = arbited_out
+        else:
+            table_failures.append({
+                "id": canonical_id,
+                "docling_idx": canon_to_idx[canonical_id],
+                "error": f"{arbited_out.name} not written",
+            })
 
     # ── Bundle: sections from Docling raw (no prose verification) ────────
     docling_sections_full_dir = arbiter_inputs_dir / "docling_sections_full"
@@ -399,6 +414,7 @@ def build(
         "sections": section_entries,
         "tables": table_entries,
         "figures": figure_entries,
+        "table_failures": table_failures,
         "pipeline": "paper-prep-minimal-v0",
     }
     manifest_path = bundle_dir / "manifest.json"
@@ -407,9 +423,14 @@ def build(
     print(
         f"[{paper_id}] bundle ready at {bundle_dir} "
         f"({len(section_entries)} sections, {len(table_entries)} tables, "
-        f"{len(figure_entries)} figures kept)"
+        f"{len(figure_entries)} figures kept, {len(table_failures)} tables failed)"
     )
     return manifest_path
+
+
+def failed_tables(manifest_path: Path) -> list[dict[str, Any]]:
+    """Tables the first pass produced that `build` left out of the bundle."""
+    return json.loads(Path(manifest_path).read_text()).get("table_failures") or []
 
 
 def main() -> None:
