@@ -53,8 +53,9 @@ def _is_md_table_separator(line: str) -> bool:
 
 def _split_row(line: str) -> list[str]:
     """Split a markdown table row line into cells. Handles `<br>` -> newline."""
-    s = line.strip().strip("|")
-    cells = [c.strip() for c in s.split("|")]
+    # `\|` is a pipe inside a cell, as `arbitrate._render_table_markdown` writes it.
+    s = line.strip().replace("\\|", "\x00").strip("|")
+    cells = [c.strip().replace("\x00", "|") for c in s.split("|")]
     # Many extractors use <br> for line breaks within cells
     return [re.sub(r"\s*<br\s*/?>\s*", " | ", c) for c in cells]
 
