@@ -35,7 +35,8 @@ Outputs:
     <run-root>/paper_runs/<paper_id>/  (intermediates per paper)
     <run-root>/arbiter_inputs/<paper_id>/
     <bundle-out>/<paper_id>/  (final bundle)
-    <bundle-out>/_run_summary.csv  (per-paper status row)
+    <bundle-out>/_run_summary.csv  (per-paper status row; `tables_failed`
+        when the bundle was built without some of the first pass's tables)
     <run-root>/logs/<paper_id>.log  (captured per-paper log)
 
 Idempotency:
@@ -93,10 +94,15 @@ def _log(msg: str) -> None:
 class BatchState:
     def __init__(self) -> None:
         self.running_total = 0.0
+        self.failed_tables = 0
 
     def add(self, cost: float) -> None:
         with _total_lock:
             self.running_total += cost
+
+    def add_failed_tables(self, n: int) -> None:
+        with _total_lock:
+            self.failed_tables += n
 
     def get(self) -> float:
         with _total_lock:
@@ -199,9 +205,19 @@ def _process_paper(
         _append_csv(summary_csv, [paper_id, pmid, "bundle_failed", fp_cost, wall, False, bundle_err])
         return
 
-    if not (bundle_out / paper_id / "manifest.json").exists():
+    manifest_path = bundle_out / paper_id / "manifest.json"
+    if not manifest_path.exists():
         _log(f"[FAIL no-manifest] {paper_id}")
         _append_csv(summary_csv, [paper_id, pmid, "no_manifest", fp_cost, wall, False, "manifest.json not produced"])
+        return
+
+    failed = layer2.failed_tables(manifest_path)
+    if failed:
+        state.add_failed_tables(len(failed))
+        detail = "; ".join(f"table {f['id'] or '?'} (docling_idx {f['docling_idx']}): {f['error']}" for f in failed)
+        _log(f"[FAIL tables] {paper_id} — {len(failed)} table(s) left out of the bundle")
+        _append_csv(summary_csv, [paper_id, pmid, "tables_failed", fp_cost, wall, True,
+                                  f"{len(failed)} table(s) left out of the bundle: {detail}"])
         return
 
     _log(f"[ok] {paper_id} — ${fp_cost:.4f} in {wall}s (running total ${state.get():.4f})")
@@ -314,6 +330,7 @@ def main() -> int:
     print(f"DONE. Summary: {summary_csv}")
     print(f"Per-paper logs: {log_dir}/")
     print(f"Total spent: ${state.get():.4f}")
+    print(f"Tables left out of bundles: {state.failed_tables}")
     print("=" * 65)
     print()
     print("Status breakdown:")
