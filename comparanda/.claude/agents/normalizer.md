@@ -136,6 +136,9 @@ If no candidates exist, still report that reconciliation ran and found no stale/
 
 Scan all extraction JSONL files. For each normalizable field, collect every unique raw value that lacks a corresponding canonical ID. Build a deduplicated work list: `{table_name -> [raw_value, ...]}`.
 
+`uv run scripts/normalization/normalization_api.py unresolved --project {project_root}` prints this work list.
+If `COMPARANDA_NORMALIZE_PAPERS` names papers, this list, the reconciliation helper and `apply` cover only those papers: work only on their values (new table entries still go into the shared tables).
+
 ## Step 3: Deterministic pass
 
 For each raw value in the work list, check the corresponding normalization table for a match:

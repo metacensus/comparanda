@@ -123,6 +123,24 @@ The apply command discovers source/canonical companion field pairs from schema
 annotations and extraction guidance. It is domain-agnostic and does not contain
 single-domain rules or assumptions about one naming convention.
 
+### Paper Scope
+
+`apply`, `unresolved` and `normalization_reconcile.py` accept `--papers <paper_id>` (repeatable or comma-separated).
+A paper id is the name of its extraction file without `.jsonl`.
+Without `--papers` they read `COMPARANDA_NORMALIZE_PAPERS`; unset or empty means every paper.
+Under a scope, `apply` reads and rewrites only those papers' extraction files, `unresolved` lists only their values, and the reconciliation helper lists only entries for raw values those papers report.
+Normalization tables stay shared.
+Each command's JSON output carries a `paper_scope` block.
+
+### List Unresolved Values
+
+```bash
+uv run scripts/normalization/normalization_api.py unresolved \
+  --project {project_root}
+```
+
+Prints, per table, the raw values whose canonical field is still null: `not_in_table` (no table entry yet) and `in_table` (an exact or case/whitespace match exists, shown with its canonical id and confidence).
+
 ### Validate Writes
 
 ```bash

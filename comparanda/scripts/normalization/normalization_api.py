@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import subprocess
 import sys
 import time
@@ -35,6 +36,10 @@ VALID_DISPOSITIONS = {
     "keep_disputed",
     "defer_with_reason",
 }
+
+# Default paper scope when --papers is not given: comma-separated paper ids
+# (extraction file stems). Unset or empty means every paper.
+PAPER_SCOPE_ENV = "COMPARANDA_NORMALIZE_PAPERS"
 
 COMPACT_REVIEW_KEYS = {
     "raw",
@@ -272,6 +277,48 @@ def eligible_raws(args: argparse.Namespace) -> set[str] | None:
     return set(args.raws) if args.raws else None
 
 
+def paper_scope(papers: list[str] | None) -> tuple[set[str] | None, str | None]:
+    """Papers in scope and where the scope came from; (None, None) means every paper.
+
+    `--papers` wins over the environment. Values may be repeated or
+    comma-separated; a trailing `.jsonl` is ignored.
+    """
+    if papers:
+        values, source = papers, "--papers"
+    else:
+        values, source = [os.environ.get(PAPER_SCOPE_ENV, "")], PAPER_SCOPE_ENV
+    scope = {
+        item.strip().removesuffix(".jsonl")
+        for value in values
+        for item in value.split(",")
+        if item.strip()
+    }
+    if not scope:
+        if papers:
+            raise SystemExit("--papers was given but names no paper")
+        return None, None
+    return scope, source
+
+
+def extraction_paths(project: Path, scope: set[str] | None) -> list[Path]:
+    """Finalized extraction files, limited to the scoped papers when a scope is set."""
+    paths = sorted((project / "extractions").glob("*.jsonl"))
+    if scope is None:
+        return paths
+    return [path for path in paths if path.stem in scope]
+
+
+def scope_report(scope: set[str], source: str | None, paths: list[Path]) -> dict[str, Any]:
+    found = {path.stem for path in paths}
+    return {
+        "source": source,
+        "papers": sorted(scope),
+        "files_in_scope": [str(path) for path in paths],
+        "papers_without_extraction_file": sorted(scope - found),
+        "note": "Only files_in_scope were opened; no other extraction file was read or written.",
+    }
+
+
 def build_mapping(project: Path, table: str, threshold: float) -> dict[str, Any]:
     path = table_path(project, table)
     if not path.exists():
@@ -321,6 +368,7 @@ def cmd_apply(args: argparse.Namespace) -> int:
             "application is explicit and auditable"
         )
     _, schema_data = load_schema(project, args.schema)
+    scope, scope_source = paper_scope(args.papers)
     table_filter = eligible_tables(args)
     raw_filter = eligible_raws(args)
     pairs = [
@@ -334,10 +382,10 @@ def cmd_apply(args: argparse.Namespace) -> int:
             for table, mapping in mappings.items()
         }
 
-    extraction_dir = project / "extractions"
+    paths = extraction_paths(project, scope)
     changed_files: dict[str, int] = {}
     field_changes = 0
-    for path in sorted(extraction_dir.glob("*.jsonl")):
+    for path in paths:
         old_lines = path.read_text().splitlines()
         rows = [json.loads(line) for line in old_lines if line.strip()]
         row_changes = 0
@@ -365,8 +413,99 @@ def cmd_apply(args: argparse.Namespace) -> int:
         "changed_files": changed_files,
         "field_changes": field_changes,
     }
+    scope_note = ""
+    if scope is not None:
+        summary["paper_scope"] = scope_report(scope, scope_source, paths)
+        scope_note = f" paper_scope={len(paths)}/{len(scope)} files"
     print(json.dumps(summary, indent=2))
-    marker(f"apply field_changes={field_changes} dry_run={args.dry_run}")
+    marker(f"apply field_changes={field_changes} dry_run={args.dry_run}{scope_note}")
+    return 0
+
+
+def match_key(value: str) -> str:
+    """Case- and whitespace-insensitive key, as the deterministic pass matches."""
+    return " ".join(value.split()).casefold()
+
+
+def unresolved_items(row: dict[str, Any], pair: NormalizationPair) -> list[str]:
+    """Raw values in one row whose canonical companion is still null."""
+    raw = row.get(pair.raw_field)
+    canonical = row.get(pair.canonical_field)
+    if pair.is_array:
+        if not isinstance(raw, list):
+            return []
+        if not isinstance(canonical, list) or len(canonical) != len(raw):
+            canonical = [None] * len(raw)
+        items = [item for item, mapped in zip(raw, canonical) if mapped is None]
+    else:
+        items = [raw] if canonical is None else []
+    return [str(item) for item in items if item is not None and str(item).strip()]
+
+
+def cmd_unresolved(args: argparse.Namespace) -> int:
+    project = Path(args.project).resolve()
+    _, schema_data = load_schema(project, args.schema)
+    scope, scope_source = paper_scope(args.papers)
+    table_filter = eligible_tables(args)
+    pairs = [
+        p for p in discover_pairs(schema_data)
+        if table_filter is None or p.table in table_filter
+    ]
+    paths = extraction_paths(project, scope)
+
+    found: dict[str, dict[str, set[str]]] = {}
+    for path in paths:
+        for line in path.read_text().splitlines():
+            if not line.strip():
+                continue
+            row = json.loads(line)
+            for pair in pairs:
+                if pair.raw_field not in row:
+                    continue
+                for raw in unresolved_items(row, pair):
+                    found.setdefault(pair.table, {}).setdefault(raw, set()).add(path.stem)
+
+    tables: dict[str, Any] = {}
+    for table in sorted(found):
+        entries = []
+        path = table_path(project, table)
+        if path.exists():
+            entries = [e for e in load_json(path).get("entries", []) if isinstance(e, dict)]
+        exact = {str(e.get("raw")): e for e in entries if e.get("raw") is not None}
+        loose = {match_key(raw): e for raw, e in reversed(list(exact.items()))}
+        not_in_table, in_table = [], []
+        for raw in sorted(found[table]):
+            papers = sorted(found[table][raw])
+            entry, match = exact.get(raw), "exact"
+            if entry is None:
+                entry, match = loose.get(match_key(raw)), "case_or_whitespace"
+            if entry is None:
+                not_in_table.append({"raw": raw, "papers": papers})
+            else:
+                in_table.append({
+                    "raw": raw,
+                    "match": match,
+                    "table_raw": entry.get("raw"),
+                    "canonical_id": entry.get("canonical_id"),
+                    "confidence": entry.get("confidence"),
+                    "papers": papers,
+                })
+        tables[table] = {"not_in_table": not_in_table, "in_table": in_table}
+
+    result: dict[str, Any] = {
+        "pairs": [pair.__dict__ for pair in pairs],
+        "extraction_files": len(paths),
+        "counts": {
+            table: {"not_in_table": len(v["not_in_table"]), "in_table": len(v["in_table"])}
+            for table, v in tables.items()
+        },
+        "tables": tables,
+    }
+    if scope is not None:
+        result["paper_scope"] = scope_report(scope, scope_source, paths)
+    print(json.dumps(result, indent=2))
+    pending = sum(len(v["not_in_table"]) for v in tables.values())
+    marker(f"unresolved not_in_table={pending} files={len(paths)}")
     return 0
 
 
@@ -574,6 +713,15 @@ def build_parser() -> argparse.ArgumentParser:
     app.add_argument("--threshold", type=float, default=0.9)
     app.add_argument("--tables", action="append", default=[])
     app.add_argument("--raws", "--raw", action="append", default=[])
+    app.add_argument(
+        "--papers",
+        action="append",
+        default=[],
+        help=(
+            "Rewrite only these papers' extraction files (paper ids, repeatable or "
+            f"comma-separated). Defaults to ${PAPER_SCOPE_ENV}; unset means every paper."
+        ),
+    )
     app.add_argument("--dry-run", action="store_true")
     app.add_argument(
         "--allow-reviewed-medium",
@@ -584,6 +732,21 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     app.set_defaults(func=cmd_apply)
+
+    unr = sub.add_parser(
+        "unresolved",
+        help="List raw values whose canonical field is null, split by whether the table already has them",
+    )
+    unr.add_argument("--project", required=True)
+    unr.add_argument("--schema")
+    unr.add_argument("--tables", action="append", default=[])
+    unr.add_argument(
+        "--papers",
+        action="append",
+        default=[],
+        help=f"Only these papers (as for apply). Defaults to ${PAPER_SCOPE_ENV}.",
+    )
+    unr.set_defaults(func=cmd_unresolved)
 
     val = sub.add_parser("validate", help="Validate normalizer writes")
     val.add_argument("--project", required=True)
