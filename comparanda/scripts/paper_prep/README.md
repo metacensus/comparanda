@@ -63,6 +63,11 @@ the same `--run-root` skips first-pass tables already on disk, and `batch`
 skips papers whose bundle already exists. `--no-arbitrate` skips the arbiter
 (no Stage-2 LLM calls). See `--help` on either command for all options.
 
+A table the first pass produced but layer 2 left out of the bundle is
+listed under `table_failures` in the bundle's `manifest.json`. `batch` then
+gives that paper status `tables_failed` in `<bundle-out>/_run_summary.csv`,
+and the single-paper command exits 1.
+
 ### Batch subset and PDF filenames
 
 `batch` takes a subset JSON (see `examples/example_batch_subset.json`):

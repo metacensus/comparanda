@@ -61,7 +61,9 @@ The bundle lands at:
 
 Use `--no-arbitrate` to skip the Stage-2 arbiter calls (deterministic merge only;
 the per-table first-pass `claude -p` calls still run and cost money). Bundle
-drops any two-sided table whose conflicts went unresolved.
+drops any two-sided table whose conflicts went unresolved. Every table left
+out is listed under `table_failures` in `manifest.json`, and the batch
+reports the paper as `tables_failed` rather than `ok`.
 
 ## How the extractor and guardrails use bundles
 
