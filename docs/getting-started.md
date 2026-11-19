@@ -174,6 +174,7 @@ Useful flags (see `--help` on either command):
 | `--max-concurrent` (batch) | `1` | Papers processed in parallel |
 
 The batch runner skips papers whose bundle already has a `manifest.json`, writes `<bundle-out>/_run_summary.csv`, and stops cleanly if you `touch <run-root>/STOP`.
+A paper whose bundle lacks tables the first pass produced gets status `tables_failed` in that file, and those tables are listed under `table_failures` in its `manifest.json`; the single-paper command exits 1 in that case.
 Spot-check a few bundles' `tables/*.md` against the PDFs before going further; bundle quality limits everything downstream.
 
 ## 5. Run the inner loop
