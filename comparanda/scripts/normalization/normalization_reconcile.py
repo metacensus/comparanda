@@ -22,6 +22,15 @@ from typing import Any
 
 import yaml
 
+from normalization_api import (
+    PAPER_SCOPE_ENV,
+    discover_pairs,
+    extraction_paths,
+    match_key,
+    paper_scope,
+    scope_report,
+)
+
 
 DEFAULT_CATCHALL_IDS = {
     "other",
@@ -219,6 +228,24 @@ def candidate_for_entry(
     }
 
 
+def scoped_raw_keys(schema_path: Path, paths: list[Path]) -> dict[str, set[str]]:
+    """Per table, the match keys of every raw value the scoped papers report."""
+    pairs = discover_pairs(yaml.safe_load(schema_path.read_text()) or {})
+    keys: dict[str, set[str]] = {}
+    for path in paths:
+        for line in path.read_text().splitlines():
+            if not line.strip():
+                continue
+            row = json.loads(line)
+            for pair in pairs:
+                value = row.get(pair.raw_field)
+                items = value if isinstance(value, list) else [value]
+                for item in items:
+                    if item is not None:
+                        keys.setdefault(pair.table, set()).add(match_key(str(item)))
+    return keys
+
+
 def build_report(args: argparse.Namespace) -> dict[str, Any]:
     project = Path(args.project)
     schema_dir = project / "schema"
@@ -275,13 +302,34 @@ def build_report(args: argparse.Namespace) -> dict[str, Any]:
                 else:
                     appendix_candidates.append(candidate)
 
+    scope, scope_source = paper_scope(args.papers)
+    scope_info = None
+    if scope is not None:
+        # Under a paper scope only entries for raw values those papers report are
+        # reviewed; a missing table is still reported.
+        paths = extraction_paths(project, scope)
+        keys = scoped_raw_keys(current.path, paths)
+
+        def in_scope(candidate: dict[str, Any]) -> bool:
+            if "raw" not in candidate:
+                return True
+            return match_key(str(candidate["raw"])) in keys.get(candidate["table"], set())
+
+        excluded = sum(
+            not in_scope(c) for c in primary_candidates + appendix_candidates
+        )
+        primary_candidates = [c for c in primary_candidates if in_scope(c)]
+        appendix_candidates = [c for c in appendix_candidates if in_scope(c)]
+        scope_info = scope_report(scope, scope_source, paths)
+        scope_info["candidates_excluded_by_scope"] = excluded
+
     candidates = (
         primary_candidates + appendix_candidates
         if args.include_appendix_in_candidates
         else primary_candidates
     )
 
-    return {
+    report = {
         "project": str(project),
         "iteration": args.iteration,
         "current_schema": {
@@ -308,6 +356,9 @@ def build_report(args: argparse.Namespace) -> dict[str, Any]:
         "primary_candidates": primary_candidates,
         "appendix_candidates": appendix_candidates,
     }
+    if scope_info is not None:
+        report["paper_scope"] = scope_info
+    return report
 
 
 def default_output_path(project: Path, iteration: int) -> Path:
@@ -343,6 +394,15 @@ def main() -> int:
             "Also include low-confidence/null/catch-all entries from schema-unaffected "
             "tables in the main candidates list. By default these are emitted only "
             "under appendix_candidates."
+        ),
+    )
+    parser.add_argument(
+        "--papers",
+        action="append",
+        default=[],
+        help=(
+            "Review only entries for raw values these papers report (paper ids, "
+            f"repeatable or comma-separated). Defaults to ${PAPER_SCOPE_ENV}."
         ),
     )
     args = parser.parse_args()

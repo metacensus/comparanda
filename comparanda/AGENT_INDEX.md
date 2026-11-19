@@ -219,7 +219,7 @@ Inputs:
 
 Outputs:
 - updated `normalization/{table}.json`
-- canonical-field updates in `extractions/*.jsonl` through `normalization_api.py apply`
+- canonical-field updates in `extractions/*.jsonl` through `normalization_api.py apply`; only the named papers' files when `COMPARANDA_NORMALIZE_PAPERS` is set
 - normalization observations in `observations/log.jsonl`
 - in reference-generation mode: `domain/normalization_ref.md`
 
@@ -227,6 +227,7 @@ Scripts and contracts:
 - `scripts/normalization/normalization_reconcile.py`
 - `scripts/normalization/normalization_api.py reconcile`
 - `scripts/normalization/normalization_api.py apply`
+- `scripts/normalization/normalization_api.py unresolved`
 - `scripts/normalization/normalization_api.py validate`
 - `scripts/observation_log.py append`
 - `docs/normalization-api-agent-contract.md`

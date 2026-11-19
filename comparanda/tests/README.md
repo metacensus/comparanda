@@ -10,6 +10,7 @@ The tests here cover the reusable inner-loop methodology contracts.
 | `test_extractor_session_registry.py` | Extractor session metadata used for QC repair/resume. |
 | `test_normalization_api.py` | Normalizer write API, apply flow, and validation. |
 | `test_normalization_reconcile.py` | Deterministic stale-entry/reconciliation hint generation. |
+| `test_normalization_scope.py` | Paper scope (`--papers` / `COMPARANDA_NORMALIZE_PAPERS`) for apply, unresolved and the reconciliation hints. |
 | `test_observation_log.py` | Structured observation-log append/query behavior. |
 | `test_orchestrator_docs.py` | Orchestrator/prompt contract checks for repair, registry, SDK, and QC action fields. |
 
