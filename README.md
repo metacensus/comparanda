@@ -208,7 +208,7 @@ cd comparanda/scripts/paper_prep && uv run pytest                     # paper_pr
 ## Contributing
 
 Contributions to the system code are welcome; domain data belongs in domain repositories.
-See [`CONTRIBUTING.md`](./CONTRIBUTING.md), including the DCO sign-off every commit needs.
+See [`CONTRIBUTING.md`](./CONTRIBUTING.md).
 
 ## Security
 

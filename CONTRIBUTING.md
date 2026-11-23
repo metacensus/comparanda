@@ -65,7 +65,7 @@ If you change agent instructions, also describe in your pull request how you exe
 
 1. Fork the repository and branch from `main`, using a descriptive branch name (for example `fix/normalizer-reconcile-empty-table`).
 2. Keep each pull request to one logical change, and add or update tests for behavior changes.
-3. Make sure the relevant test suites pass locally, and sign off every commit (see [License and sign-off](#license-and-sign-off)).
+3. Make sure the relevant test suites pass locally.
 4. In the description, explain what changed and why, how you tested it, and any effect on file contracts (`AGENT_INDEX.md`) or docs.
    Update those docs in the same pull request.
 5. A maintainer will review it.
@@ -87,11 +87,7 @@ Do not attach copyrighted PDFs or private domain data.
 A minimal synthetic example is better.
 Report security problems privately as described in [`SECURITY.md`](./SECURITY.md), not in a public issue.
 
-## License and sign-off
+## License
 
 Comparanda is licensed under the [GNU Affero General Public License v3.0 only](./LICENSE) (`AGPL-3.0-only`).
 By contributing, you agree that your contribution is licensed under the same terms.
-
-Every commit must carry a `Signed-off-by` line certifying the [Developer Certificate of Origin](https://developercertificate.org/): that you wrote the change, or otherwise have the right to submit it under this project's license.
-Add it with `git commit -s`; the name and email must match the commit author.
-To sign off commits you already made on a branch, run `git rebase --signoff main`.
