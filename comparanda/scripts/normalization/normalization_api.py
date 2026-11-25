@@ -281,6 +281,13 @@ def build_mapping(project: Path, table: str, threshold: float) -> dict[str, Any]
     for entry in data.get("entries", []):
         if not isinstance(entry, dict):
             continue
+        # Reconciliation can preserve a prior canonical value while marking it
+        # disputed or deferred.  Those values are audit history, not mappings
+        # eligible to write into extraction output.  Tables created before the
+        # status field was introduced remain eligible for backwards
+        # compatibility.
+        if entry.get("status") not in (None, "active"):
+            continue
         raw = entry.get("raw")
         conf = entry.get("confidence")
         canonical_id = entry.get("canonical_id")
