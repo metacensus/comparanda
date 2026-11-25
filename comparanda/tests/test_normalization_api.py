@@ -236,6 +236,58 @@ def test_apply_below_auto_threshold_requires_explicit_reviewed_medium_flag(tmp_p
     assert '"allow_reviewed_medium": true' in ok.stdout
 
 
+def test_apply_excludes_disputed_and_deferred_mappings_but_keeps_active_and_legacy(
+    tmp_path: Path,
+) -> None:
+    project = make_project(tmp_path)
+    write_table(
+        project,
+        "materials",
+        [
+            {"raw": "Disputed", "canonical_id": "disputed_id", "confidence": 0.95},
+            {"raw": "Deferred", "canonical_id": "deferred_id", "confidence": 0.95},
+            {"raw": "Active", "canonical_id": "active_id", "confidence": 0.95, "status": "active"},
+            {"raw": "Legacy", "canonical_id": "legacy_id", "confidence": 0.95},
+        ],
+    )
+    write_extraction(
+        project,
+        [
+            {"paper_id": "paper_1", "material_raw": raw, "material_id": None, "assay_names": [], "assay_ids": None}
+            for raw in ("Disputed", "Deferred", "Active", "Legacy")
+        ],
+    )
+    for disposition, raw in (("keep_disputed", "Disputed"), ("defer_with_reason", "Deferred")):
+        run_api(
+            project,
+            "reconcile",
+            "--project",
+            str(project),
+            "--iteration",
+            "2",
+            "--table",
+            "materials",
+            "--raw",
+            raw,
+            "--disposition",
+            disposition,
+            "--reason",
+            "Retain the existing mapping without applying it.",
+        )
+
+    run_api(project, "apply", "--project", str(project))
+    rows = [
+        json.loads(line)
+        for line in (project / "extractions" / "paper_1.jsonl").read_text().splitlines()
+    ]
+    assert {row["material_raw"]: row["material_id"] for row in rows} == {
+        "Disputed": None,
+        "Deferred": None,
+        "Active": "active_id",
+        "Legacy": "legacy_id",
+    }
+
+
 def test_validate_fails_when_raw_field_changes(tmp_path: Path) -> None:
     project = make_project(tmp_path)
     init_git(tmp_path)
